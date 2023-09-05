@@ -1,0 +1,29 @@
+version: 1.0beta1
+
+Line:
+  info: Specify line emission
+  freq_peak:
+    info: Peak frequency of line
+    dtype: float
+    required: true
+  width:
+    info: Width of line in channels
+    dtype: int
+    required: true
+  stokes:
+    info: Intensity of line
+    dtype: float
+    required: true
+
+Cont:
+  info: Specify frequency dependence as a polynomial
+  stokes:
+    info: Intensity
+    dtype: float
+  ref_freq:
+    info: Referency frequency
+    dtype: float
+  coeffs:
+    info: Poly coeffs 
+    dtype: List[float]
+    default: [0.7, 0]  
