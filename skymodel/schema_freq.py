@@ -11,6 +11,7 @@ TYPE_MAP = {
     'float': float,
     'bool': bool,
     'str': str,
+    "List": MyList,
     #'Union': Union,
     }
 
@@ -20,7 +21,7 @@ def type_map(dtype):
     """
     if isinstance (dtype, str):
         if dtype.startswith('List['):
-            return MyList(dtype)
+            return MyList
         else:
             return TYPE_MAP.get(dtype, None)
     else:
@@ -34,16 +35,41 @@ class Parameter(object):
         self.info = info
         self.default = default
         self.required = required
-        print(self.dtype)
+
+
+        
         if self.dtype not in TYPE_MAP.values():
-            raise ValidationError(f"Type {self.dtype} {self.dtype.__class__.__name__} is not supported.")
-        elif isinstance (self.dtype, )
-       
-        if self.default and not isinstance(self.default, self.dtype):
+            raise ValidationError(f"Type {self.dtype} is not supported.")
+
+
+        if self.default and not self.__isinstance(self.default, self.dtype):
             raise ValidationError(f"Default value does not match dtype ({self.dtype.__class__.__name__})")
 
         if not isinstance(self.required, bool):
             raise ValidationError("The required option has to be a boolean")
+    
+    def __isinstance(self, value, dtype):
+        """
+        Extends the isinstance() function to handle our MyList types
+
+        Parameters
+        ---------
+        value: Any
+            The value being checked
+        dtype:
+            The type that value has to be
+
+        
+        Returns
+        --------------
+        Boolean value indicating whether value is of type dtype.
+        """
+        if dtype is MyList:
+            """
+            Need to figure out how to validate list of stuff
+            """
+        else:
+            return isinstance(value, dtype)
     
     def setme(self, value):
         if isinstance(value, self.dtype):
@@ -59,14 +85,12 @@ def validate(valme, schemafile=SCHEMA):
         schema = yaml.load(stdr, Loader=yaml.FullLoader)
 
     section = schema[valme.__class__.__name__]
-    print(section)
     for key in section:
         if isinstance(section[key], str):
             continue 
         param = Parameter(**section[key])
         value = getattr(valme, key, None)
         print(f"Processing key: {key}, value: {value}")
-        print (param, value)
         if value is None and param.required:
             raise ValidationError(f"Required parameter '{key}' has not been set")
         param.setme(value)

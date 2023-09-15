@@ -7,7 +7,7 @@ class ValidationError(Exception):
     pass
 
 @dataclass
-class MyList (list):
+class MyList (object):
     dtype: str
     def __call__(self):
         if isinstance(self.dtype,str):
