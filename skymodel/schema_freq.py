@@ -7,7 +7,7 @@ import yaml
 #from validator import validate
 
 
-SCHEMA = "./schema.yaml"
+SCHEMA = "./schema_freq.yaml"
 
 TYPES = [int, float, bool, str, list, Union]
 
