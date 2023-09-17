@@ -27,7 +27,7 @@ class ValidationError(Exception):
 
 
 class Parameter(object):
-    def __init__(self, dtype, info, default=(), required=False):
+    def __init__(self, dtype, info, default=(), required=true):
         self.dtype = TYPE_MAP.get(dtype, dtype)
         self.info = TYPE_MAP.get(info, info)
         self.default = default
