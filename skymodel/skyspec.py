@@ -82,7 +82,7 @@ def validate(valme, schemafile=SCHEMA):
         param.update_value(value)
 
 
-def validate(valme, schema=SCHEMA):
+def validate(valme, schema):
     class_name = valme.__class__.__name__
     section = schema.get(class_name)
 
@@ -97,7 +97,3 @@ def validate(valme, schema=SCHEMA):
         print(f"Processing key: {key}, value: {attr_value}")
         param.setme(attr_value)
 
-line = Line(1.3, 4, 10.2)
-validate(line)
-cont=Cont(5.2, 10.6, [5.1,2.2,3.4,5.1])
-validate(cont)
