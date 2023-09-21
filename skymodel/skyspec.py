@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any, List, Optional, Union
 from enum import Enum
 import yaml
-from  utilities import ValidationError, ListSpec, BASE_TYPES, SCHEMA
+from  utilities import ValidationError, ListSpec, BASE_TYPES
 from copy import deepcopy
 
 class Parameter(object):
@@ -66,34 +66,18 @@ class Parameter(object):
                                   f"Actual type: {type(value)}, "
                                   f"Actual value: {value}")
     
-def validate(valme, schemafile=SCHEMA):
-    with open(schemafile) as stdr:
-        schema = yaml.load(stdr, Loader=yaml.FullLoader)
+def validate(valme, schemafile=None):
 
-    section = schema[valme.__class__.__name__]
+    
+    valme.set_schema(schemafile)
+    
+    section = valme.schema[valme.schema_section]
     for key in section:
         value = getattr(valme, key, None)
-        print(f"Processing key: {key}, value: {value}")
         if isinstance(section[key], str):
             continue 
+        print(f"Processing key: {key}, value: {value}")
         param = Parameter(**section[key])
         if value is None and param.required:
             raise ValidationError(f"Required parameter '{key}' has not been set")
         param.update_value(value)
-
-
-def validate(valme, schema):
-    class_name = valme.__class__.__name__
-    section = schema.get(class_name)
-
-    if section is None:
-        raise ValidationError(f"No schema found for class '{class_name}'")
-
-    for key, value in section.items():
-        if isinstance(value, str):
-            continue
-        param = Parameter(**value)
-        attr_value = getattr(valme, key, None)
-        print(f"Processing key: {key}, value: {attr_value}")
-        param.setme(attr_value)
-

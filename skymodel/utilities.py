@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from typing import Any, List, Dict, Optional, Union
 from enum import Enum
 import re
+import yaml
 
 
-SCHEMA = "./schema_freq.yaml"
 
 class ValidationError(Exception):
     pass
@@ -74,3 +74,6 @@ class ListSpec (object):
         
         return self.dtype
     
+def readyaml(yamlfile:str) -> dict:
+    with open(yamlfile) as stdr:
+        return yaml.load(stdr, Loader=yaml.FullLoader)
