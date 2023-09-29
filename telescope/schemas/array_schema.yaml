@@ -1,0 +1,22 @@
+version: 1.0beta1
+
+centre:
+  info: Longitude and latitude of array
+  dtype: List[float]
+  required: true
+coord_sys:
+  info: Coordinate system
+  dtype: str
+  default: geodetic
+mount:
+  info: Telescope mount
+  dtype: str
+  default: ALT-AZ
+size:
+  info: Apperture size in metres
+  dtype: float
+  default: 1.0
+antennas:
+  info: List of antenna locations in the coordinate system specified by 'coord_sys'.
+  dtype: List[float]
+  required: true
