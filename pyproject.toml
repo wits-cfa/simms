@@ -8,16 +8,10 @@ authors = [
     "Mukundi Ramanyimi",
     "Shibre Sete",
     ]
-readme = "README.rst"
+readme = "README.md"
 license = "GNU GPL v2"
 include = [{ path = "tests" }]
-packages = [
-    {include = "telescope"},
-    {include = "skymodel"},
-    {include= "simmslib"},
-    {include = "telescope_tests", from = "tests" },
-    {include= "skymodel_tests", from = "tests" },
-]
+packages = [{ include = "simms" }]
 
 [tool.poetry.dependencies]
 python = "^3.10"
