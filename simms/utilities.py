@@ -4,8 +4,6 @@ from enum import Enum
 import re
 import yaml
 
-
-
 class ValidationError(Exception):
     pass
 
@@ -25,7 +23,7 @@ class ObjDict(object):
 
 BASE_TYPES = ObjDict({
     'int': int,
-    'float': float,
+    'float': (float,int),
     'bool': bool,
     'str': str,
     })
@@ -77,3 +75,4 @@ class ListSpec (object):
 def readyaml(yamlfile:str) -> dict:
     with open(yamlfile) as stdr:
         return yaml.load(stdr, Loader=yaml.FullLoader)
+    

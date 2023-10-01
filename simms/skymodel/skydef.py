@@ -1,10 +1,8 @@
 from dataclasses import dataclass
 from typing import List
-#from skymodel import SCHEMADIR
+from simms import SCHEMADIR
 import os
-from utilities import readyaml
-
-SCHEMADIR = "./schemas"
+from simms.utilities import readyaml
 
 class Base(object):
     def __init__(self, schemafile=None):
