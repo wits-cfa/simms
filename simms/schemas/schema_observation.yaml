@@ -1,0 +1,50 @@
+version: 1.0beta1
+
+telescope:
+  info: Array to use for the observation.
+  dtype: str
+  required: true
+direction:
+  info: Pointing direction.
+  dtype: Union[float, str]
+  required: true
+time:
+  start:
+    info: Specify starting time of the observation.
+    dtype: Union[float, str]
+    required: true
+  dt:
+    info: Integration time.
+    dtype: Union[float, str]
+    required: true
+  total:
+    info:   Total observation time.
+    dtype: Union[float, str]
+    required: true
+frequency:
+  start: 
+    info: Starting frequency of the observation.
+    dtype: Union[float, str]
+    required: true
+  df: 
+    info: Frequency interval.
+    dtype: Union[float, str]
+    required: true
+  total: 
+    info: Total bandwidth of observation.
+    dtype: Union[float, str]
+    required: true
+  nchan:
+    info: Number of channels.
+    dtype: int
+correlation:
+  info: Polarization.
+  type: circular, linear
+  fullpol: true
+systemp:
+  sefd:
+    info: Specify system equivalent flux density.
+    dtype: int
+  temp:
+    info: Total system temperature.
+    dtype: float
