@@ -14,6 +14,9 @@ Line:
     info: Intensity of line
     dtype: float
     required: true
+  restfreq:
+    info: Rest frequency
+    dtype: float
 
 Cont:
   info: Specify frequency dependence as a polynomial
@@ -26,4 +29,4 @@ Cont:
   coeffs:
     info: Poly coeffs 
     dtype: List[float]
-    default: [0.7, 0]  
+    default: 0.7 
