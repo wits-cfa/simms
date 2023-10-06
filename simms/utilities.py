@@ -7,6 +7,10 @@ import yaml
 class ValidationError(Exception):
     pass
 
+# nicked from https://www.hackertouch.com/how-to-get-a-list-of-class-attributes-in-python.html
+def get_class_attributes(cls):
+    return [item for item in cls.__dict__ if not callable(getattr(cls, item)) and not item.startswith('__')]
+
 class ObjDict(object):
     def __init__(self, items):
         """

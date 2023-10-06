@@ -7,7 +7,7 @@ class Parameter(object):
         self.info = info
         # ensure that the default is not overwritten if value is updated
         self.default = deepcopy(default)
-        self.value = default
+        self.value = self.default
         self.required = required
         self.islist = False
 
@@ -64,14 +64,22 @@ class Parameter(object):
 def validate(valme, schemafile=None):
 
     valme.set_schema(schemafile)
-    
     section = valme.schema[valme.schema_section]
+    valme.validate_section(valme.schema_section)
+
     for key in section:
         value = getattr(valme, key, None)
+        # valid parameters can only be dicts, strings are either meta or infomation data
+        # which does need to be validated
+
         if isinstance(section[key], str):
             continue 
-        print(f"Processing key: {key}, value: {value}")
+
         param = Parameter(**section[key])
-        if value is None and param.required:
-            raise ValidationError(f"Required parameter '{key}' has not been set")
-        param.update_value(value)
+        if value is None:
+            if param.required:
+                raise ValidationError(f"Required parameter '{key}' has not been set")
+        else:
+            param.update_value(value)
+
+        print(f"Setting key: {key}, value: {param.value}")
