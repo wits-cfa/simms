@@ -124,28 +124,12 @@ class Array(object):
             raise ValueError('Either name of the array or antenna positions and center should be provided.')
 
 
-        # Check if the antennas argument is a string (file path)
-        #if isinstance(antennas, str):
-          #  if antennas.endswith(".yaml"):
-                # Load antenna data from a YAML file
-            #    with open(antennas, 'r') as file:
-            #        antenna_data = yaml.safe_load(file)
-            #        self.antennas = np.array(antenna_data)
-          #  else:
-                # Load antenna data from a text file (assuming space-separated values)
-          #      self.antennas = np.genfromtxt(antennas)
-
-        #else:
-            # If antennas is not a string, assume it's a NumPy array or list
-          #  self.antennas = np.array(antennas)
-
         self.point_dir = point_dir
         self.degrees  = degrees
         self.lon = self.antennas[:,0]
         self.lat = self.antennas[:,1]
         self.alt = self.antennas[:,2]
     
-
 
     def geodetic2global(self,degrees=True):
        
@@ -162,6 +146,8 @@ class Array(object):
         ---
         XYZ: ndarray
             : An array containing global coordinates XYZ
+        XYZ0: ndarray
+            : Array center position in global frame
         """
         #lons and lats
         lon = self.lon
