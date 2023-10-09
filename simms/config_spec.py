@@ -1,8 +1,11 @@
 from  simms.utilities import ValidationError, ListSpec, BASE_TYPES
 from copy import deepcopy
+from simms import LOG
+
 
 class Parameter(object):
-    def __init__(self, dtype, info, default=None, required=False):
+    def __init__(self, key, dtype, info, default=None, required=False):
+        self.key = key 
         self.dtype = dtype
         self.info = info
         # ensure that the default is not overwritten if value is updated
@@ -19,9 +22,6 @@ class Parameter(object):
                 self.dtype = getattr(BASE_TYPES, self.dtype)
             else:
                 raise ValidationError(f"Type {self.dtype} is not supported.")
-
-        if self.value is not None:
-            self.validate_value()
 
         if not isinstance(required, bool):
             raise ValidationError("The required option has to be a boolean")
@@ -45,7 +45,8 @@ class Parameter(object):
         value = value or self.value
         if self.islist:
             if not isinstance(value, list):
-                #TODO(sphe) add a warning here
+                LOG.warning(f"List parameter, {self.key}, given as a single value."
+                            f" Setting it to a single-valued List")
                 value = [value]
             self.dtype.set_dtype()
             return all( isinstance(item, self.dtype.dtype) for item in value )
@@ -75,11 +76,11 @@ def validate(valme, schemafile=None):
         if isinstance(section[key], str):
             continue 
 
-        param = Parameter(**section[key])
+        param = Parameter(key, **section[key])
         if value is None:
             if param.required:
                 raise ValidationError(f"Required parameter '{key}' has not been set")
         else:
             param.update_value(value)
 
-        print(f"Setting key: {key}, value: {param.value}")
+        LOG.debug(f"Setting key: {param.key}, value: {param.value}")
