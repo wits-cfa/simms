@@ -114,10 +114,10 @@ class Array(object):
                 raise ValueError(f"Antenna array '{array_name}' not found in predefined arrays.")
             
         #if antennas positions file is given as input as a yaml file, read the file
-        elif antennas is not None and array_center is not None:
+        elif array_name is None and antennas is not None and array_center is not None:
             with open(antennas,'r') as file:
                 antenna_data = yaml.safe_load(file)
-                self.antennas = np.array(antennas)
+                self.antennas = np.array(antenna_data)
                 self.array_center = array_center
         #if both cases fail, raise an error.
         else:
