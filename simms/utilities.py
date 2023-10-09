@@ -3,9 +3,35 @@ from typing import Any, List, Dict, Optional, Union
 from enum import Enum
 import re
 import yaml
+import logging
+import os
 
 class ValidationError(Exception):
     pass
+
+class File(str):
+    def __init__(self, path, check=True):
+        self.path = os.path.abspath(path)
+        self.name = os.path.basename(path)
+        self.exists = os.path.exists(self.path)
+        self.dirname = os.path.dirname(self.path)
+
+        if check:
+            self.isdir = os.path.isdir(self.path)
+            self.isfile = os.path.isdir(self.path)
+            if not self.exists:
+                raise FileNotFoundError(f"File {self.path} does not exist.")
+
+    
+class Directory(File):
+    @property
+    def isdir(self):
+        if self.check and not os.path.isdir(self.path):
+            raise FileNotFoundError(f"File {self.path} is not a directory. (does it exist?)")
+        else:
+            return True
+
+
 
 # nicked from https://www.hackertouch.com/how-to-get-a-list-of-class-attributes-in-python.html
 def get_class_attributes(cls):
@@ -79,4 +105,3 @@ class ListSpec (object):
 def readyaml(yamlfile:str) -> dict:
     with open(yamlfile) as stdr:
         return yaml.load(stdr, Loader=yaml.FullLoader)
-    
