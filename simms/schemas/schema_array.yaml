@@ -16,7 +16,13 @@ size:
   info: Apperture size in metres
   dtype: float
   default: 1.0
-antennas:
-  info: List of antenna locations in the coordinate system specified by 'coord_sys'.
-  dtype: List[float]
+antnames:
+  info: Names of antennas listed in antlocations.
+  dtype: List[str]
+antlocations:
+  info: List of antenna locations in the coordinate system specified by 'coord_sys'. 
+  dtype: List[Any]
   required: true
+groups:
+  info: Specify antenna groups. Each group can define its own size, mount, sefd, tsys_over_eta, or tsys_over_eta via a YAML file
+  dtype: List[str]
