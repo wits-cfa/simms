@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Any, Dict
+from typing import List, Any, Union
 from simms import SCHEMADIR
 from simms.utilities import File
 import os
@@ -15,14 +15,33 @@ class Antenna(SpecBase):
     sensitivity_file: File = None
     schema_section: str = "Antenna"
     antnames: List[str] = None
+    schemafile: str = os.path.join(SCHEMADIR, "schema_observation.yaml")
+    schema_section: str = "Antenna"
 
 @dataclass
-class Array(SpecBase):
+class ArrayTelescope(SpecBase):
     name: str
     centre: List[float]
     antlocations: List[Any]
     antnames: List[str] = None
     groups: List[File] = None
     coord_sys: str = "geodetic"
-    schemafile: str = os.path.join(SCHEMADIR, "schema_freq.yaml")
+    schemafile: str = os.path.join(SCHEMADIR, "schema_observation.yaml")
     schema_section: str = "Array"
+
+@dataclass
+class Observation(SpecBase):
+    name: str
+    desc: str
+    telescope: Any
+    direction: List[str]
+    start_time: str
+    dtime: float = 10
+    ntimes: int = 10 
+    start_freq: Union[str,float] = "900MHz"
+    dfreq: Union[str,float] = "2MHz"
+    nchan: int = 10
+    correlations: List[str]
+    schemafile: str = os.path.join(SCHEMADIR, "schema_observation.yaml")
+    schema_section: str = "Observation"
+    
