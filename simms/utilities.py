@@ -104,3 +104,6 @@ class ListSpec (object):
 def readyaml(yamlfile:str) -> dict:
     with open(yamlfile) as stdr:
         return yaml.load(stdr, Loader=yaml.FullLoader)
+
+def singlegauss(nu,flux,sigma,nu0):
+    return flux*np.exp(-(nu-nu0)**2/(2*sigma**2))

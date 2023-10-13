@@ -41,8 +41,7 @@ class Base(object):
 class Line(Base):
     freq_peak: float
     width: int
-    stokes: List[float]
-    restfreq: Optional[float] = None
+    restfreq: float
     schemafile: str = os.path.join(SCHEMADIR, "schema_freq.yaml")
     schema_section: str = "Line"
 
@@ -58,14 +57,13 @@ class Line(Base):
 @dataclass
 class Cont(Base):
     ref_freq: float
-    stokes: List[float]
     coeffs: Optional[List[float]] = None
     schema_section: str = "Cont"
     schemafile: str = os.path.join(SCHEMADIR, "schema_freq.yaml")
 
 @dataclass
 class Pointsource(Base):
-   stokes_i: List[float]
+   stokes: List[float]
    ra: float
    dec: float
    schema_section: str = "Pointsource"
@@ -74,7 +72,7 @@ class Pointsource(Base):
 
 @dataclass
 class Extendedsource(Base):
-    stokes_i: List[float]
+    stokes: List[float]
     ra: float
     dec: float
     majoraxis: float
@@ -88,7 +86,6 @@ class Catalogue(Base):
     racol: int 
     deccol: int 
     fluxcol: int 
-    stokes_i: float
+    stokes: float
     schema_section: str = "Catalogue"
     schemafile: str = os.path.join(SCHEMADIR, "schema_source.yaml")
-

@@ -1,4 +1,4 @@
-#import matplotlib
+/#import matplotlib
 import numpy as np
 from casacore.tables import table
 #import matplotlib.pylab as plt
@@ -15,7 +15,6 @@ import os
 from  simms.utilities import ValidationError, ListSpec, BASE_TYPES, singlegauss
 from simms.config_spec import  getvals
 from simms.skymodel.skydef import Line, Cont, Pointsource, Extendedsource, Catalogue
-
 
 ms = "/workspaces/simms/tests/msdir/mytestsKAT-7.ms" #This should be replaced with the actual ms file˜
 
