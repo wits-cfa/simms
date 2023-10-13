@@ -9,11 +9,11 @@ Pointsource:
     default: 1
   ra:
     info: right ascension(s) in degrees
-    dtype: List[float]
+    dtype: float
     required: true
   dec: 
     info: declination(s) in degress
-    dtype: List[float]
+    dtype: float
     required: true
 
 Extendedsource:
@@ -26,11 +26,11 @@ Extendedsource:
     default: 1
   ra:
     info: right ascension(s) in degrees
-    dtype: List[float]
+    dtype: float
     required: true
   dec: 
     info: declination(s) in degress
-    dtype: List[float]
+    dtype: float
     required: true
   majoraxis :
     info: major axis of ellipse

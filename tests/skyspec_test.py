@@ -1,4 +1,4 @@
-from simms.skymodel.skydef import Line, Cont
+from simms.skymodel.skydef import Line, Cont, Extendedsource, Pointsource
 from simms.config_spec import validate
 
 print("Testing base API")
@@ -24,3 +24,19 @@ print()
 print("Test API with List value given as a single value")
 cont = Cont(5.2, 0.7)
 validate(cont)
+
+print("Test base API")
+extsrc = Extendedsource([10, 0, 0, 0 ], 53, -28.1, 5, 2)
+validate(extsrc)
+
+print("Test API with single value given for stokes")
+extsrc = Extendedsource(10, 53, -28.1, 5, 2)
+validate(extsrc)
+
+print("Test base API")
+ptsrc = Pointsource([10, 0, 0, 0 ], 53, -28.1)
+validate(ptsrc)
+
+print("Test API with single value given for stokes")
+ptsrc = Pointsource(10, 53, -28.1)
+validate(ptsrc)

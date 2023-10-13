@@ -1,44 +1,16 @@
 from dataclasses import dataclass
+from simms.config_spec import SpecBase
 from typing import List, Optional
 from simms import SCHEMADIR
 import os
 from simms.utilities import readyaml, get_class_attributes, ValidationError
-from simms.utilities import singlegauss
+from simms.skymodel.source_factory import singlegauss_1d
+from simms.constants import FWHM_E, C, PI
 import numpy as np
 
-class Base(object):
-    def __init__(self, schemafile=None):
-        self.schemafile = schemafile
-    
-    def set_schema(self, schemafile=None):
-        schemafile = schemafile or self.schemafile
-
-        if os.path.exists(schemafile):
-            self.schema = readyaml(schemafile)
-        else:
-            raise FileNotFoundError(f"Schema file '{schemafile}' could not be found")
-
-    def validate_section(self, section=None):
-        section = section or self.schema_section
-        class_set = set(get_class_attributes(self))
-        section_set = set(self.schema[section].keys())
-
-        # ignore these parameters
-        novalidate = set(["schemafile", "schema_section", "schema"])
-        class_set_valid = class_set.difference(novalidate)
-        # check for schema/class mismatches with the rest of the parameters
-        mismatch = class_set_valid.difference(section_set)
-        if mismatch:
-            raise ValidationError(f"Schema file, {self.schemafile}"
-                                  f", does not match class definition"
-                                  f" for section: {section}."
-                                  f"Mismatched parameters are: {mismatch}")
-
-        return True
-        
 
 @dataclass
-class Line(Base):
+class Line(SpecBase):
     freq_peak: float
     width: int
     restfreq: float
@@ -47,22 +19,22 @@ class Line(Base):
 
     @property
     def sigma(self):
-        return self.width / 2*np.sqrt(2*np.log(2))
+        return self.width / FWHM_E
 
     def spectrum(self, nchan):
         self.chans = np.arange(nchan)
-        return singlegauss(self.chans, self.stokes, self.sigma, self.freq_peak)
+        return singlegauss_1d(self.chans, self.stokes, self.sigma, self.freq_peak)
 
     
 @dataclass
-class Cont(Base):
+class Cont(SpecBase):
     ref_freq: float
     coeffs: Optional[List[float]] = None
     schema_section: str = "Cont"
     schemafile: str = os.path.join(SCHEMADIR, "schema_freq.yaml")
 
 @dataclass
-class Pointsource(Base):
+class Pointsource(SpecBase):
    stokes: List[float]
    ra: float
    dec: float
@@ -71,7 +43,7 @@ class Pointsource(Base):
 
 
 @dataclass
-class Extendedsource(Base):
+class Extendedsource(SpecBase):
     stokes: List[float]
     ra: float
     dec: float
@@ -81,7 +53,7 @@ class Extendedsource(Base):
     schemafile: str = os.path.join(SCHEMADIR, "schema_source.yaml")
 
 @dataclass
-class Catalogue(Base):
+class Catalogue(SpecBase):
     cat: str
     racol: int 
     deccol: int 
