@@ -2,8 +2,12 @@ from simms.telescope.teldef import Antenna, ArrayTelescope, Observation
 from simms.config_spec import validate
 
 print("Testing Antenna API")
-line = Antenna(1.3, 4, 10.2, restfreq=1.42e9)
-validate(line)
+antenna = Antenna(
+    name="MKAT", 
+    mount="KAT-7", 
+    sefd=420,
+    )
+validate(antenna)
 print()
 
 #print("Test ArrayTelescope API")

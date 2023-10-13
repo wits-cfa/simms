@@ -41,7 +41,7 @@ class Observation(SpecBase):
     start_freq: Union[str,float] = "900MHz"
     dfreq: Union[str,float] = "2MHz"
     nchan: int = 10
-    correlations: List[str]
+    correlations: List[str] = ["XX", "YY"]
     schemafile: str = os.path.join(SCHEMADIR, "schema_observation.yaml")
     schema_section: str = "Observation"
     
