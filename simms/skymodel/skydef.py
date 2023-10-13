@@ -17,9 +17,9 @@ class Line(SpecBase):
     schemafile: str = os.path.join(SCHEMADIR, "schema_freq.yaml")
     schema_section: str = "Line"
 
-    @property
-    def sigma(self):
-        return self.width / FWHM_E
+    #@property think this should be part of the function
+    #def sigma(self):
+        #return self.width / FWHM_E
 
     def spectrum(self, nchan):
         self.chans = np.arange(nchan)
