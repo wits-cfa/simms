@@ -1,9 +1,7 @@
-from dataclasses import dataclass
-from typing import Any, List, Dict, Optional, Union
+from typing import List, Optional, Any
 from enum import Enum
 import re
 import yaml
-import logging
 import os
 
 class ValidationError(Exception):
@@ -56,6 +54,7 @@ BASE_TYPES = ObjDict({
     'float': (float,int),
     'bool': bool,
     'str': str,
+    'Any': Any,
     })
 
 

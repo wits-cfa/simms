@@ -8,7 +8,7 @@ def get_logger(name, level="DEBUG"):
     if isinstance(level, str):
         level = getattr(logging, level, 10)
 
-    format_string = '%(asctime)s-%(name)s-%(levelname)-4s| %(message)s'
+    format_string = '%(asctime)s-%(name)s-%(levelname)-8s| %(message)s'
     # set up logging to file - see previous section for more details
     logging.basicConfig(level=logging.DEBUG,
                         format=format_string,

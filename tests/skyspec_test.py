@@ -19,3 +19,8 @@ print()
 print("Test API with default value not set")
 cont = Cont(5.2, 10.6)
 validate(cont)
+print()
+
+print("Test API with List value given as a single value")
+cont = Cont(5.2, 10.6, 0.7)
+validate(cont)
