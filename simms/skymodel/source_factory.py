@@ -9,5 +9,5 @@ def poly(x, coeffs):
     return np.polyval(coeffs, x)
 
 def contspec(nu, flux, coeffs, nu0):
-    alpha = 
+    alpha = poly(nu, coeffs)
     return flux*(nu/nu0)**alpha
