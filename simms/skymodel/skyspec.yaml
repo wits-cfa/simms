@@ -15,4 +15,6 @@ cont_coeff_3: null # spectrum third order term
 # add as many spi terms as required as cont_coef_x
 line_peak: null
 line_width: null
+line_restfreq: null
+line_restfreq: null
 
