@@ -1,18 +1,6 @@
-/#import matplotlib
 import numpy as np
 from casacore.tables import table
-#import matplotlib.pylab as plt
-#import astropy.io.fits as fitsio
-#from astropy.wcs import WCS
-import csv
-import math
-#import pandas
-#import astropy.coordinates as coord
-#from matplotlib.patches import Circle
-#from astropy.coordinates import angular_separation
-import yaml
-import os
-from  simms.utilities import ValidationError, ListSpec, BASE_TYPES, singlegauss
+from  simms.utilities import ValidationError
 from simms.config_spec import  getvals
 from simms.skymodel.skydef import Line, Cont, Pointsource, Extendedsource, Catalogue
 
@@ -32,7 +20,7 @@ freqs = spw_tab.getcol("CHAN_FREQ")[0]
 nrows, nchan, ncorr = data.shape
 
 class Source:
-    def __init__(self, source, ra0, dec0, spectrum, tempo=None):
+    def __init__(self, source, spectrum, tempo=None, ra0=None, dec0=None):
         self.source = source
         self.spectrum = spectrum
         self.tempo = tempo
@@ -45,7 +33,8 @@ class Source:
         return np.cos(self.source.dec) * np.sin(self.dra) 
     @property
     def m(self):
-        return np.sin(self.source.dec) * np.cos(self.dec0) - np.cos(self.source.dec) * np.sin(self.dec0) * np.cos(self.dra)
+        return np.sin(self.source.dec) * np.cos(self.dec0) -\
+              np.cos(self.source.dec) * np.sin(self.dec0) * np.cos(self.dra)
 
     def get_spectrum(self, nchan):
         

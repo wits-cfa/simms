@@ -1,7 +1,6 @@
 from simms.skymodel.skydef import Line, Cont, Extendedsource, Pointsource
 from simms.config_spec import validate
 from simms.skymodel.source_factory import singlegauss_2d
-import matplotlib.pyplot as plt
 import numpy as np
 
 print("Testing base API")
@@ -47,11 +46,3 @@ validate(ptsrc)
 print("Testing gaussian with positive angle with central coords (0, 0)")
 x, y = np.meshgrid(np.linspace(-10, 10, 100), np.linspace(-10, 10, 100))
 gauss2d = singlegauss_2d(x, y, 10, 0, 0, 4, 2, 225)
-
-plt.figure()
-plt.imshow(gauss2d, extent=[-10, 10, -10, 10], origin='lower', cmap='viridis')
-plt.colorbar(label='flux')
-plt.title('2D Gaussian with Elliptical Cross-Section')
-plt.xlabel('X')
-plt.ylabel('Y')
-#plt.savefig('tests/testimage.png')
