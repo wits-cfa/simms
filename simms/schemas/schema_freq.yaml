@@ -2,7 +2,7 @@ version: 1.0beta1
 
 Line:
   info: Specify line emission
-  freq_peak:
+  peak:
     info: Peak frequency of line
     dtype: float
     required: true
@@ -13,7 +13,6 @@ Line:
   restfreq:
     info: Rest frequency
     dtype: float
-
 Cont:
   info: Specify frequency dependence as a polynomial
   stokes:
