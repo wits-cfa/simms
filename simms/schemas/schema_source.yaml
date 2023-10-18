@@ -1,0 +1,66 @@
+version: 1.0beta1
+
+Pointsource:
+  info: defining a point source
+  stokes:
+    info: Intensity of the source(s) 
+    dtype: List[float]
+    required: false
+    default: 1
+  ra:
+    info: right ascension(s) in degrees
+    dtype: float
+    required: true
+  dec: 
+    info: declination(s) in degress
+    dtype: float
+    required: true
+
+Extendedsource:
+  info: defining an extended source
+  #__inherit: Pointsource ask sphe how to do this
+  stokes:
+    info: Intensity of the source(s) 
+    dtype: List[float]
+    required: false
+    default: 1
+  ra:
+    info: right ascension(s) in degrees
+    dtype: float
+    required: true
+  dec: 
+    info: declination(s) in degress
+    dtype: float
+    required: true
+  majoraxis :
+    info: major axis of ellipse
+    dtype: float
+    required: true
+  minoraxis: 
+    info: minor axis
+    dtype: float
+    required: true
+
+Catalogue:
+  info: Catalogue of sources
+  cat:
+    info: Catalogue
+    dtype: str
+    required: true
+  racol:
+    info: Column corresponding to right ascension
+    dtype: int
+    required: true
+  deccol:
+    info: Column corresponding to declination
+    dtype: int
+    required: true
+  fluxcol:
+    info: Column corresponding to flux
+    dtype: int
+    required: true
+  stokes:
+    info: If sources don't have flux column what is the flux you want to assign to all sources 
+    dtype: float
+    required: false
+    default: 2

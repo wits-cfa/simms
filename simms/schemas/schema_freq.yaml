@@ -2,7 +2,7 @@ version: 1.0beta1
 
 Line:
   info: Specify line emission
-  freq_peak:
+  peak:
     info: Peak frequency of line
     dtype: float
     required: true
@@ -10,14 +10,9 @@ Line:
     info: Width of line in channels
     dtype: int
     required: true
-  stokes:
-    info: Intensity of line
-    dtype: float
-    required: true
   restfreq:
     info: Rest frequency
     dtype: float
-
 Cont:
   info: Specify frequency dependence as a polynomial
   stokes:
