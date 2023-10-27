@@ -14,13 +14,13 @@ class Source:
     @property
     def l(self):
         return np.cos(self.source.dec) * np.sin(self.dra) 
+
     @property
     def m(self):
         return np.sin(self.source.dec) * np.cos(self.dec0) -\
               np.cos(self.source.dec) * np.sin(self.dec0) * np.cos(self.dra)
 
     def get_spectrum(self, nchan):
-        
         return self.spectrum.spectrum(nchan)
 
     def chan_to_freq(self, chan,f0,df):
