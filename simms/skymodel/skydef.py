@@ -21,9 +21,10 @@ class Line(SpecBase):
     #def sigma(self):
         #return self.width / FWHM_E
 
-    def spectrum(self, nchan):
+    def set_linespectrum(self, nchan):
         self.chans = np.arange(nchan)
-        return singlegauss_1d(self.chans, self.stokes, self.sigma, self.freq_peak)
+        self.set_spectrum = singlegauss_1d(self.chans, self.stokes, self.sigma, self.freq_peak)
+        return self.set_spectrum
 
     
 @dataclass
@@ -33,6 +34,11 @@ class Cont(SpecBase):
     schema_section: str = "Cont"
     schemafile: str = os.path.join(SCHEMADIR, "schema_freq.yaml")
 
+    def set_contspectrum(self, nchan):
+        self.chans = np.arange(nchan)
+        self.set_spectrum = singlegauss_1d(self.chans, self.stokes, self.sigma, self.freq_peak)
+        return self.set_spectrum
+
 @dataclass
 class Pointsource(SpecBase):
    stokes: List[float]
@@ -41,6 +47,9 @@ class Pointsource(SpecBase):
    schema_section: str = "Pointsource"
    schemafile: str = os.path.join(SCHEMADIR, "schema_source.yaml")
 
+   def set_sourcetype(self, source_type):
+        self.source_type = source_type
+        return self.source_type
 
 @dataclass
 class Extendedsource(SpecBase):
@@ -139,6 +148,7 @@ class Catalogue(SpecBase):
                 for key in "peak width restfreq".split():
                     specdict[key] = src[getattr(self.colname, f"line_{key}")]
                 spectrum = Line(**specdict)
+
             else:
                 specdict.update(self.get_cont_coeffs())
                 specdict["reffreq"] = src[self.colname.cont_reffreq]
@@ -148,8 +158,10 @@ class Catalogue(SpecBase):
                 for key in "ra dec".split():
                     srcdict[key] = src[getattr(self.colname, key)]
                 source = Pointsource(**srcdict)
+                source_type = "POINT"
             else:
                 for key in "emaj emin pa ra dec".split():
                     srcdict[key] = src[getattr(self.colname, key)]
                 source = Extendedsource(**srcdict)
+                source_type = "GAUSSIAN"
             self.sources.append(Source(source=source, spectrum=spectrum))
