@@ -51,11 +51,19 @@ class Observation(SpecBase):
     schema_section: str = "Observation"
     
     
+<<<<<<< HEAD
     def get_uvw(self,h0,longitude,latitude,data_file = None,observatory=None):
         """
         Get the uvw baseline positions using the global2uvw function in Array class
         """
         pointing_direction = self.direction
+=======
+    def get_uvw(self,h0,longitude,latitude,pointing_direction,data_file = None,observatory=None):
+        """
+        Get the uvw baseline positions using the global2uvw function in Array class
+        """
+        pointing_direction = pointing_direction or self.direction
+>>>>>>> 1b54b03711f2f3e97f2dd266c172bbe809f7b28d
         observatory = self.telescope or observatory
 
         initialization = array_utilities.Array(pointing_direction=pointing_direction,
@@ -74,6 +82,7 @@ class Observation(SpecBase):
 
 
 
+<<<<<<< HEAD
 obj = Observation(name = 'test',
                   desc = 'testing',
                   telescope='meerkat',
@@ -87,3 +96,5 @@ obj_uvw = obj.get_uvw(h0 = [-1,1],
                    latitude = -30.714037075541743,
                    )
 print(obj_uvw[0].shape)
+=======
+>>>>>>> 1b54b03711f2f3e97f2dd266c172bbe809f7b28d
