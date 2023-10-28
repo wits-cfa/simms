@@ -3,7 +3,7 @@ from simms.constants import PI, C, FWHM
 
 
 class Source:
-    def __init__(self, source source_type, spectrum, tempo=None, ra0=None, dec0=None):
+    def __init__(self, source, source_type, spectrum, tempo=None, ra0=None, dec0=None):
         self.source = source
         self.source_type = source_type
         self.spectrum = spectrum
@@ -67,7 +67,7 @@ def addsky(uvw, lm, source_type, gauss_shape, frequency, spectrum, dtype):
 
                     vis[r, f, 0] += re + im*1j
         elif source_type[s] == "GAUSSIAN":
-            emaj, emin, angle = gauss_shape[s]
+            emaj, emin, angle = gauss_shape[s] #we need to change the gauss_shape in to shape
 
             # Convert to l-projection, m-projection, ratio
             el = emaj * np.sin(angle)
@@ -108,7 +108,7 @@ def addsky(uvw, lm, source_type, gauss_shape, frequency, spectrum, dtype):
 
 vischan = np.zeros_like(data)
 for row in range(nrow):
-    vischan[row,:,0] =addsky(uvw, lm, source_type, gauss_shape, frequency, spectrum, dtype)
+    vischan[row,:,0] =addsky(uvw, lm, source_type, gauss_shape, frequency, spectrum, dtype)#same as line 69 here
     vischan[row,:,3] = vischan[row,:,0] 
 
 

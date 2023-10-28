@@ -61,6 +61,11 @@ class Extendedsource(SpecBase):
     schema_section: str = "Extendedsource"
     schemafile: str = os.path.join(SCHEMADIR, "schema_source.yaml")
 
+    ##### we didnt define set_sourcetype for extended, we might need it
+   def set_sourcetype(self, source_type)
+       self.source_type = source_type
+       return self.source_type
+
 
 class Catalogue(SpecBase):
     def __init__(self, path: Optional[File] = None, sources:Optional[List[Any]] = None,
