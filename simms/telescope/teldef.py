@@ -9,7 +9,6 @@ from casacore.measures import measures
 import numpy as np
 import ephem
 
-
 @dataclass
 class Antenna(SpecBase):
     name: str
@@ -39,62 +38,52 @@ class Observation(SpecBase):
     name: str
     desc: str
     telescope: Any
-    direction: List[str]
+    longitude: float
+    latitude: float
+    h0: Union[int,float]
     start_time: str
     dtime: float = None
     ntimes: int = None 
     start_freq: Union[str,float] = None
     dfreq: Union[str,float] = None
     nchan: int = None
+    direction: List[str] = None
     correlations: List[str] = None
     schemafile: str = os.path.join(SCHEMADIR, "schema_observation.yaml")
     schema_section: str = "Observation"
     
     
-<<<<<<< HEAD
-    def get_uvw(self,h0,longitude,latitude,data_file = None,observatory=None):
+    def generate_uvw(self,data_file = None,observatory=None):
         """
         Get the uvw baseline positions using the global2uvw function in Array class
         """
         pointing_direction = self.direction
-=======
-    def get_uvw(self,h0,longitude,latitude,pointing_direction,data_file = None,observatory=None):
-        """
-        Get the uvw baseline positions using the global2uvw function in Array class
-        """
-        pointing_direction = pointing_direction or self.direction
->>>>>>> 1b54b03711f2f3e97f2dd266c172bbe809f7b28d
         observatory = self.telescope or observatory
 
-        initialization = array_utilities.Array(pointing_direction=pointing_direction,
-                                              data_file=data_file,
+        initialization = array_utilities.Array(
+                                                data_file=data_file,
                                               observatory=observatory)
         
-        uvw,time = initialization.global2uvw(h0=h0,longitude = longitude,
-                                                  latitude = latitude,
+        uvw,times,frequencies = initialization.global2uvw(h0=self.h0,longitude = self.longitude,
+                                                  latitude = self.latitude,
                                                   date = self.start_time,
                                                   dtime = self.dtime,
                                                   ntimes = self.ntimes)
         
-        return uvw,time
+        return uvw,times,frequencies
 
   
 
 
 
-<<<<<<< HEAD
 obj = Observation(name = 'test',
                   desc = 'testing',
                   telescope='meerkat',
+                  h0 = [-1,1],
+                    longitude = 21.440810448238672,
+                   latitude = -30.714037075541743,
                   direction = ['J200','0deg','-30deg'],
                   start_time=['UTC','2023/10/25 12:0:0'],
                   dtime = 10,
-                  ntimes = 10
-                  )
-obj_uvw = obj.get_uvw(h0 = [-1,1],
-            longitude = 21.440810448238672,
-                   latitude = -30.714037075541743,
-                   )
-print(obj_uvw[0].shape)
-=======
->>>>>>> 1b54b03711f2f3e97f2dd266c172bbe809f7b28d
+                  ntimes = 10 )
+uvw,time,freqs =obj.generate_uvw()

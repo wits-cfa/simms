@@ -1,8 +1,8 @@
 import numpy as np
-import yaml
 from casacore.measures import measures
 import ephem
 import utilities
+import re
 
 class Array(object):
     """
@@ -18,15 +18,12 @@ class Array(object):
     }
 
   
-    def __init__(self,pointing_direction, 
-                 data_file=None, 
+    def __init__(self, data_file=None, 
                  observatory=None, 
                  degrees=True):
 
         """
-        direction: List[float] or List[str]
-                    : Pointing direction, specify as "epoch,ra,dec". Default is
-                    "J2000,0h0m0s,30h0m0s"
+        
         data_file: yaml file.
                     : yaml file containing antenna positions in geodetic frame and
                     array center.
@@ -37,7 +34,7 @@ class Array(object):
 
 
         """
-        self.pointing_direction = pointing_direction
+        
         self.datafile = data_file
         self.observatory = observatory
         self.degrees = degrees
@@ -68,7 +65,7 @@ class Array(object):
             raise ValueError('Either name of the array or antenna positions and center should be provided.')
 
 
-        #overcrowding the space
+        #Other attributes
         #antnames = array_info['antnames']
         centre = array_info['centre']
        # mount = array_info['mount']
@@ -139,11 +136,9 @@ class Array(object):
         """  
         longitude,latitude,_,_ = self.get_arrayinfo()
         
-
+        #we need the positions in xyz
         xyz,xyz0 = self.geodetic2global()
-        x = xyz[:,0]
-        y = xyz[:,1]
-        z = xyz[:,2]
+        x,y,z = zip(*xyz)
         x0,y0,z0 = xyz0[0,0],xyz0[0,1],xyz0[0,2]
 
         #calculate the vector from the origin to the antenna position
@@ -163,7 +158,15 @@ class Array(object):
     
 
 
-    def global2uvw(self, h0,longitude,latitude,date,dtime,ntimes):
+    def global2uvw(self, h0,longitude,latitude,
+                   pointing_direction=None,
+                   date = None,
+                   dtime = None,
+                   ntimes = None,
+                    start_freq = None,
+                     dfreq = None,
+                      nchan = None
+                       ):
 
         """
         Converts the antenna positions from the global frame to the uvw space
@@ -171,37 +174,70 @@ class Array(object):
         Parameters
         ---
 
-        h0: List[float]
+        h0: Union[float,int]
                     : hour angle range
         longitude: float
                     : longitude of the observer
         latitude: float
                     : latitude of the observer
+        pointing_direction: List[str]
+                    : pointing direction. Default is ['J200','0deg','-30deg']
         date: str
-                    : date of the observation
+                    : starting time of the observation. Default is 2023/10/25 12:0:0
         dtime: int
-                    : integration time
+                    : integration time. Default is 10
         ntimes: int
-                    : number of times the sky should be snapped
+                    : number of times the sky should be snapped.
+                    Default is 10
+        start_freq: Union[str,float]
+                    : starting freq of the observation. Defualt is 900MHz
+        dfreq: Union[str,float]
+                    : frequency interval. Default is 2MHz
+        nchan: int
+                    : number of channels. Default is 10
 
         Returns
         ---
-        An array of the uvw positions.
+        An array of the uvw time dependent positions, the time array and the frequency array
         """
-        
+        #casacore direction and epoch measures
         dm = measures()
+
+        #xyz coordinates of the array
         positions_global,_ = self.geodetic2global()
 
-
-        if len(self.pointing_direction) ==3:
-            
-            ra = dm.direction(self.pointing_direction[0],self.pointing_direction[1],self.pointing_direction[2])['m0']['value']
-            dec = dm.direction(self.pointing_direction[0],self.pointing_direction[1],self.pointing_direction[2])['m1']['value']
+        #handle the pointing direction
+        if pointing_direction is None:
+            pointing_direction =  ['J2000','0deg','-30deg']
         else:
-            ra = dm.direction(self.pointing_direction[0],self.pointing_direction[1])['m0']['value']
-            dec = dm.direction(self.pointing_direction[0],self.pointing_direction[1])['m1']['value']
+            pointing_direction = pointing_direction
+
+        #convert the direction using measures
+        ra_dec = dm.direction(*pointing_direction)
+        ra = ra_dec['m0']['value']
+        dec = ra_dec['m1']['value']
         
+        #handle the date/starting time
+        if date is None:
+            date = ['UTC','2023/10/25 12:0:0']
+        else: 
+            date = date
+        
+        #handle the ntimes
+        if ntimes is None:
+            ntimes = 10
+        else:
+            ntimes = ntimes
+        
+        #handle the dtime
+        if dtime is None:
+            dtime = 10.0
+        else:
+            dtime = dtime
+        
+        #hour angle 
         ih0,date_read,H0,altitude = self.source_info(longitude,latitude,date[1])
+        
         h0 = ih0 + np.linspace(h0[0], h0[1], ntimes)*np.pi/12.
         
 
@@ -224,16 +260,44 @@ class Array(object):
         u, v, w = [ x.flatten() for x in (u, v, w) ]
         uvw = np.column_stack((u,v,w))
 
-        start_time_rad = dm.epoch(date[0],date[1])['m0']['value']
+        #starting time of the observation in seconds(sunce 1970) 
+        start_time_rad = dm.epoch(*date)['m0']['value']
         start_time_rad = start_time_rad * 24 * 3600
+
         #total time of observation
         total_time = start_time_rad + ntimes*dtime
 
-        #the time entries
+        #the time table
         time_entries = np.arange(start_time_rad,total_time,dtime)
 
+        #process the starting frequency value 
+        if start_freq is None:
+            start_freq =  900.0e6
+        else:
+            start_freq = start_freq
+        
+        start_freq = self.process_frequency(start_freq)
 
-        return uvw,time_entries
+        #process the dfreq 
+        if dfreq is None:
+            dfreq =  2.0e6
+        else: 
+            dfreq = dfreq
+
+        dfreq = self.process_frequency(dfreq)
+
+        #number of channels
+        if nchan is None:
+            nchan =  10
+        else:
+            nchan = nchan
+
+        total_bandwidth = start_freq + dfreq * nchan
+
+        frequency_entries = np.arange(start_freq,total_bandwidth,dfreq)
+       
+
+        return uvw,time_entries,frequency_entries
 
 
     def baselines(self, antennas=None):
@@ -263,7 +327,9 @@ class Array(object):
 
 
     #stolen from https://github.com/SpheMakh/uvgen/blob/master/uvgen.py
-    def source_info(self,longitude,latitude,date=None):
+    def source_info(self,longitude,latitude,
+                    pointing_direction = None,
+                    date=None):
         
         dm = measures()
         longitude = np.rad2deg(longitude)
@@ -273,15 +339,15 @@ class Array(object):
         obs = ephem.Observer()
         obs.lon, obs.lat = longitude,latitude
 
-        if len(self.pointing_direction) ==3:
-                
-            ra = dm.direction(self.pointing_direction[0],self.pointing_direction[1],self.pointing_direction[2])['m0']['value']
-            dec = dm.direction(self.pointing_direction[0],self.pointing_direction[1],self.pointing_direction[2])['m1']['value']
+        if pointing_direction is None:
+            pointing_direction =  ['J2000','0deg','-30deg']
         else:
-            ra = dm.direction(self.pointing_direction[0],self.pointing_direction[1])['m0']['value']
-            dec = dm.direction(self.pointing_direction[0],self.pointing_direction[1])['m1']['value']
-        
-      
+            pointing_direction = pointing_direction
+
+        ra_dec = dm.direction(*['J2000','0deg','-30deg'])
+        ra = ra_dec['m0']['value']
+        dec = ra_dec['m1']['value']
+
         def sunrise_equation(latitude,dec):
             arg = -np.tan(latitude) * np.tan(dec)
             if arg > 1 or arg< -1:
@@ -340,4 +406,48 @@ class Array(object):
         
         date = obs.date.datetime().ctime()
         return ih0, date, H0, altitude
+
+
+
+    def process_frequency(self,frequency):
+        """
+        Process the frequency value.
+
+        Parameters
+        ---
+        
+        frequency: Union[float,str]
+
+        Returns
+        ---
+        Returns the numeric part of the frequency 
+        """
+        #if given freuquency as a string
+        if isinstance(frequency, str):
+            # extract the numeric part of the frequency.
+            
+            #use regular expression
+            match = re.search(r'(\d+(\.\d*)?)', frequency)
+            if match:
+                numeric_part = match.group(1)
+                
+                return float(numeric_part)*1e6
+            else:
+                # Handle the case when the string doesn't contain a valid numeric part.
+                raise ValueError("Invalid frequency string format")
+            
+        #if frequency given as either a float or integer
+        elif isinstance(frequency,(float,int)):
+             return frequency
+        
+        else:
+            # Handle other data types or unexpected inputs.
+            raise ValueError("Invalid input type")
+
+
+
+obj = Array(observatory='meerkat')
+glo = obj.geodetic2global()
+
+uvw = obj.global2uvw(h0=[-1,1],longitude = -107.0,latitude=34.5)
 
