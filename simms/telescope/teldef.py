@@ -76,14 +76,4 @@ class Observation(SpecBase):
 
 
 
-obj = Observation(name = 'test',
-                  desc = 'testing',
-                  telescope='meerkat',
-                  h0 = [-1,1],
-                    longitude = 21.440810448238672,
-                   latitude = -30.714037075541743,
-                  direction = ['J200','0deg','-30deg'],
-                  start_time=['UTC','2023/10/25 12:0:0'],
-                  dtime = 10,
-                  ntimes = 10 )
-uvw,time,freqs =obj.generate_uvw()
+
