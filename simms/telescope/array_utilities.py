@@ -6,8 +6,8 @@ import re
 import os
 import layouts
 from typing import Union
+from simms import constants
 
-LAYOUTDIR = os.path.join(__path__,"layouts")
 
 
 
@@ -81,12 +81,6 @@ class Array(object):
         ----
         An array of the antennas XYZ positions and an array of the array center in XYZ
         """
-            
-        #Earth's semi major axis.
-        earth_emaj = 6378137. #[m]
-
-        #Earth's first numerical eccentricity
-        esq = 0.00669437999014
         
         self.set_arrayinfo()
 
@@ -96,18 +90,18 @@ class Array(object):
 
         ref_longitude,ref_latitude,ref_altitude = self.centre
 
-        nnp = earth_emaj/np.sqrt(1-esq*np.sin(latitude)**2)
-        nn0 = earth_emaj/np.sqrt(1-esq*np.sin(ref_latitude**2))
+        nnp = constants.earth_emaj/np.sqrt(1-constants.esq*np.sin(latitude)**2)
+        nn0 = constants.earth_emaj/np.sqrt(1-constants.esq*np.sin(ref_latitude**2))
 
         #calculating the global coordinates of the antennas.
         x = (nnp+altitude)*np.cos(latitude)*np.cos(longitude)
         y = (nnp+altitude)*np.cos(latitude)*np.sin(longitude)
-        z = ((1-esq)*nnp+altitude)*np.sin(latitude)
+        z = ((1-constants.esq)*nnp+altitude)*np.sin(latitude)
 
         #calculating the global coordinates of the array center.
         x0 = (nn0+ref_altitude)*np.cos(ref_latitude)*np.cos(ref_longitude)
         y0 = (nn0+ref_altitude)*np.cos(ref_latitude)*np.sin(ref_longitude)
-        z0 = ((1-esq)*nn0+ref_altitude)*np.sin(ref_latitude)
+        z0 = ((1-constants.esq)*nn0+ref_altitude)*np.sin(ref_latitude)
 
         xyz = np.column_stack((x,y,z))
         xyz0 = np.column_stack((x0,y0,z0))
@@ -154,14 +148,10 @@ class Array(object):
 
 
     def global2uvw(self, h0,longitude,latitude,
-                   pointing_direction=None,
-                   date = None,
-                   dtime = None,
-                   ntimes = None,
-                    start_freq = None,
-                     dfreq = None,
-                      nchan = None
-                       ):
+                   pointing_direction,
+                   date,dtime,
+                   ntimes,start_freq,
+                    dfreq,nchan):
 
         """
         Converts the antenna positions from the global frame to the uvw space
@@ -176,20 +166,19 @@ class Array(object):
         latitude: float
                     : latitude of the observer
         pointing_direction: List[str]
-                    : pointing direction. Default is ['J200','0deg','-30deg']
+                    : pointing direction. 
         date: str
-                    : starting time of the observation. Default is 2023/10/25 12:0:0
+                    : starting time of the observation. 
         dtime: int
-                    : integration time. Default is 10
+                    : integration time. 
         ntimes: int
                     : number of times the sky should be snapped.
-                    Default is 10
         start_freq: Union[str,float]
-                    : starting freq of the observation. Defualt is 900MHz
+                    : starting freq of the observation. 
         dfreq: Union[str,float]
-                    : frequency interval. Default is 2MHz
+                    : frequency interval. 
         nchan: int
-                    : number of channels. Default is 10
+                    : number of channels. 
 
         Returns
         ---
@@ -201,34 +190,11 @@ class Array(object):
         #xyz coordinates of the array
         positions_global,_ = self.geodetic2global()
 
-        #handle the pointing direction
-        if pointing_direction is None:
-            pointing_direction =  ['J2000','0deg','-30deg']
-        else:
-            pointing_direction = pointing_direction
 
         #convert the direction using measures
         ra_dec = dm.direction(*pointing_direction)
         ra = ra_dec['m0']['value']
         dec = ra_dec['m1']['value']
-        
-        #handle the date/starting time
-        if date is None:
-            date = ['UTC','2023/10/25 12:0:0']
-        else: 
-            date = date
-        
-        #handle the ntimes
-        if ntimes is None:
-            ntimes = 10
-        else:
-            ntimes = ntimes
-        
-        #handle the dtime
-        if dtime is None:
-            dtime = 10.0
-        else:
-            dtime = dtime
         
         #hour angle 
         ih0,date_read,H0,altitude = self.source_info(longitude,latitude,date[1])
@@ -248,12 +214,15 @@ class Array(object):
         #calculating the baselines
         bl = self.baselines(antennas=positions_global)
 
-        u = np.outer(transform_matrix[0,0],bl[:,0]) + np.outer(transform_matrix[0,1],bl[:,1]) + np.outer(transform_matrix[0,2],bl[:,2])
-        v = np.outer(transform_matrix[1,0],bl[:,0]) + np.outer(transform_matrix[1,1],bl[:,1]) + np.outer(transform_matrix[1,2],bl[:,2])
-        w = np.outer(transform_matrix[2,0],bl[:,0]) + np.outer(transform_matrix[2,1],bl[:,1]) + np.outer(transform_matrix[2,2],bl[:,2])
+        u_coord = np.outer(transform_matrix[0,0],bl[:,0]) + np.outer(transform_matrix[0,1],bl[:,1]) \
+            + np.outer(transform_matrix[0,2],bl[:,2])
+        v_coord = np.outer(transform_matrix[1,0],bl[:,0]) + np.outer(transform_matrix[1,1],bl[:,1]) \
+            + np.outer(transform_matrix[1,2],bl[:,2])
+        w_coord = np.outer(transform_matrix[2,0],bl[:,0]) + np.outer(transform_matrix[2,1],bl[:,1]) \
+            + np.outer(transform_matrix[2,2],bl[:,2])
         
-        u, v, w = [ x.flatten() for x in (u, v, w) ]
-        uvw = np.column_stack((u,v,w))
+        u_coord, v_coord, w_coord = [ x.flatten() for x in (u_coord, v_coord, w_coord) ]
+        uvw = np.column_stack((u_coord,v_coord,w_coord))
 
         #starting time of the observation in seconds(sunce 1970) 
         start_time_rad = dm.epoch(*date)['m0']['value']
@@ -264,28 +233,10 @@ class Array(object):
 
         #the time table
         time_entries = np.arange(start_time_rad,total_time,dtime)
-
-        #process the starting frequency value 
-        if start_freq is None:
-            start_freq =  900.0e6
-        else:
-            start_freq = start_freq
         
-        start_freq = self.process_frequency(start_freq)
-
-        #process the dfreq 
-        if dfreq is None:
-            dfreq =  2.0e6
-        else: 
-            dfreq = dfreq
-
-        dfreq = self.process_frequency(dfreq)
-
-        #number of channels
-        if nchan is None:
-            nchan =  10
-        else:
-            nchan = nchan
+        start_freq = dm.frequency(*start_freq)['m0']['value']
+        dfreq = dm.frequency(*dfreq)['m0']['value']
+        
 
         total_bandwidth = start_freq + dfreq * nchan
 
@@ -365,8 +316,12 @@ class Array(object):
             elif angle < 0:
                 angle += 2*np.pi
             return angle
- 
-        altitude_transit = lambda latitude, dec: np.sign(latitude)*(np.cos(latitude)*np.sin(dec) + np.sin(latitude)*np.cos(dec) )
+        def altitude_transit(latitude,dec):
+            alt_trans = np.sign(latitude)*(np.cos(latitude)*np.sin(dec) + np.sin(latitude)*np.cos(dec))
+
+            return alt_trans
+                                           
+        #altitude_transit = lambda latitude, dec: np.sign(latitude)*(np.cos(latitude)*np.sin(dec) + np.sin(latitude)*np.cos(dec) )
                 
         # First lets find the altitude at transit (hour angle = 0 or LST=RA)
         # If this is negative, then the pointing direction is below the horizon at its peak.
@@ -403,46 +358,4 @@ class Array(object):
         return ih0, date, H0, altitude
 
 
-
-    def process_frequency(self,frequency):
-        """
-        Process the frequency value.
-
-        Parameters
-        ---
-        
-        frequency: Union[float,str]
-
-        Returns
-        ---
-        Returns the numeric part of the frequency 
-        """
-        #if given freuquency as a string
-        if isinstance(frequency, str):
-            # extract the numeric part of the frequency.
-            
-            #use regular expression
-            match = re.search(r'(\d+(\.\d*)?)', frequency)
-            if match:
-                numeric_part = match.group(1)
-                
-                return float(numeric_part)*1e6
-            else:
-                # Handle the case when the string doesn't contain a valid numeric part.
-                raise ValueError("Invalid frequency string format")
-            
-        #if frequency given as either a float or integer
-        elif isinstance(frequency,(float,int)):
-             return frequency
-        
-        else:
-            # Handle other data types or unexpected inputs.
-            raise ValueError("Invalid input type")
-
-
-
-obj = Array(observatory='meerkat')
-glo = obj.geodetic2global()
-
-uvw = obj.global2uvw(h0=[-1,1],longitude = -107.0,latitude=34.5)
 
