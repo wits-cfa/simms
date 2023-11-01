@@ -3,48 +3,46 @@ from casacore.measures import measures
 import ephem
 import utilities
 import re
+import os
+import layouts
+from typing import Union
+
+LAYOUTDIR = os.path.join(__path__,"layouts")
+
+
 
 class Array(object):
     """
     The Array class has functions for converting from one coordinate system to another.
     """
 
-    #observatories that can readily be accessed
-    observatories = {
-        'vla': '/home/mukundi/simms/simms/simms/telescope/layouts/vla.geodetic.yaml',
-        'wsrt': '/home/mukundi/simms/simms/simms/telescope/layouts/WSRT.geodetic.yaml',
-        'meerkat': '/home/mukundi/simms/simms/simms/telescope/layouts/meerkat.geodetic.yaml',
-        'kat-7': '/home/mukundi/simms/simms/simms/telescope/layouts/kat-7.geodetic.yaml'
-    }
-
   
-    def __init__(self, data_file=None, 
-                 observatory=None, 
-                 degrees=True):
+    def __init__(self, layout: Union[str, utilities.File], 
+                 degrees:bool = True):
 
         """
-        
-        data_file: yaml file.
-                    : yaml file containing antenna positions in geodetic frame and
-                    array center.
-        observatory: str
-                    : specify an observatory instead of giving the data_file
+        layout: str|File
+                    : specify an observatory as a str or a file. 
+                        If a string is given, then will attenpt to find 
+                        layout in package database
         degrees: boolean
                     : Specify whether the long-lat is in degrees or not. Default is true.
 
 
         """
         
-        self.datafile = data_file
-        self.observatory = observatory
+        
+        self.layout = layout
         self.degrees = degrees
+        self.observatories = layouts.known()
+
+
 
     def get_arrayinfo(self):
         """
             Extract the array information from the schema
         """
         #check if the provided array is one of the default arrays.
-        if self.observatory is not None:
             if self.observatory in self.observatories:
                 array_layout = self.observatories[self.observatory]
                 array_info = utilities.readyaml(array_layout)
