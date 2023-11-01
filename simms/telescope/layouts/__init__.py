@@ -4,6 +4,7 @@ import os
 
 def get_layout(name):
     """
+    Get the array layout.
     """
     fname = os.path.join(__path__, f"{name}.geodetic.yaml")
     if os.path.exists(fname):
