@@ -22,4 +22,4 @@ centre:
 
 coord_sys: geodetic
 size: 25.0
-mount: ALT-AZ
+mount: equatorial

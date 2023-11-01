@@ -38,51 +38,39 @@ class Array(object):
 
 
 
-    def get_arrayinfo(self):
+    def set_arrayinfo(self):
         """
             Extract the array information from the schema
         """
-        #check if the provided array is one of the default arrays.
-            if self.observatory in self.observatories:
-                array_layout = self.observatories[self.observatory]
-                array_info = utilities.readyaml(array_layout)
-                antlocations = array_info['antlocations']
-            elif self.observatory.startswith('vla-'):
-                array_layout = self.observatories['vla']
-                array_info = utilities.readyaml(array_layout)
-                antlocations = array_info['antlocations'][self.observatory]
-               
-        
-        #if antennas positions file is given as input as a yaml file, read the file
-        elif self.observatory is None and self.data_file is not None:
-            array_info = utilities.readyaml(self.data_file)
-            antlocations = array_info['antlocations']
-                
-        #if both cases fail, raise an error.
+        # check if the provided array is one of the default arrays.
+        fname = None
+        vla = None
+        if isinstance(str, self.layout):
+            if self.layout.startswith("vla-"):
+                fname = self.observatories["vla"]
+                vla = True
+            else:
+                fname = self.observatories[self.layout]
+                vla = False
+
         else:
-            raise ValueError('Either name of the array or antenna positions and center should be provided.')
+            fname = self.layout
 
+        info = utilities.readyaml(fname)
+        if vla:
+            self.antlocations = np.array(info["antlocations"][self.layout])
+        else:
+            self.antlocations = np.array(info["antlocations"])
 
-        #Other attributes
-        #antnames = array_info['antnames']
-        centre = array_info['centre']
-       # mount = array_info['mount']
-        #coord_sys = array_info['coord_sys']
-    
+        self.centre = np.array(info["centre"])
+        self.mount = info["mount"]
+        self.names = info["antnames"]
+        self.coordsys = info["coord_sys"]
 
-        longitude, latitude, altitude = zip(*antlocations)
         
-        ref_longitude = centre[0][0]
-        ref_latitude  = centre[0][1]
-        ref_altitude = centre[0][2]
-
-        if self.degrees:
-            longitude = np.deg2rad(longitude)
-            latitude = np.deg2rad(latitude)
-            ref_longitude = np.deg2rad(ref_longitude)
-            ref_latitude = np.deg2rad(ref_latitude)
-    
-        return longitude, latitude, altitude, [ref_longitude, ref_latitude, ref_altitude]
+        if self.degrees and self.coordsys.lower() == "geodetic":
+            self.antlocations = np.deg2rad(self.antlocations)
+            self.centre = np.deg2rad(self.centre)
 
 
     def geodetic2global(self):
@@ -95,28 +83,31 @@ class Array(object):
         """
             
         #Earth's semi major axis.
-        a = 6378137. #[m]
+        earth_emaj = 6378137. #[m]
 
         #Earth's first numerical eccentricity
         esq = 0.00669437999014
         
-        #flattening of the ellipsoid
-        f = 1 / 298.257223563
-        longitude,latitude,altitude, centre = self.get_arrayinfo()
-        ref_longitude,ref_latitude,ref_altitude = centre
+        self.set_arrayinfo()
 
-        Np = a/np.sqrt(1-esq*np.sin(latitude)**2)
-        N0 = a/np.sqrt(1-esq*np.sin(ref_latitude**2))
+        longitude = self.antlocations[:,0]
+        latitude = self.antlocations[:,1]
+        altitude = self.antlocations[:,2]
+
+        ref_longitude,ref_latitude,ref_altitude = self.centre
+
+        nnp = earth_emaj/np.sqrt(1-esq*np.sin(latitude)**2)
+        nn0 = earth_emaj/np.sqrt(1-esq*np.sin(ref_latitude**2))
 
         #calculating the global coordinates of the antennas.
-        x = (Np+altitude)*np.cos(latitude)*np.cos(longitude)
-        y = (Np+altitude)*np.cos(latitude)*np.sin(longitude)
-        z = ((1-esq)*Np+altitude)*np.sin(latitude)
+        x = (nnp+altitude)*np.cos(latitude)*np.cos(longitude)
+        y = (nnp+altitude)*np.cos(latitude)*np.sin(longitude)
+        z = ((1-esq)*nnp+altitude)*np.sin(latitude)
 
         #calculating the global coordinates of the array center.
-        x0 = (N0+ref_altitude)*np.cos(ref_latitude)*np.cos(ref_longitude)
-        y0 = (N0+ref_altitude)*np.cos(ref_latitude)*np.sin(ref_longitude)
-        z0 = ((1-esq)*N0+ref_altitude)*np.sin(ref_latitude)
+        x0 = (nn0+ref_altitude)*np.cos(ref_latitude)*np.cos(ref_longitude)
+        y0 = (nn0+ref_altitude)*np.cos(ref_latitude)*np.sin(ref_longitude)
+        z0 = ((1-esq)*nn0+ref_altitude)*np.sin(ref_latitude)
 
         xyz = np.column_stack((x,y,z))
         xyz0 = np.column_stack((x0,y0,z0))
@@ -131,8 +122,12 @@ class Array(object):
         Returns
         ---
         An array of the antenna positions in the local frame ENU
-        """  
-        longitude,latitude,_,_ = self.get_arrayinfo()
+        """
+        if not hasattr(self, "antlocations"):
+            self.set_arrayinfo()
+
+        longitude = self.antlocations[:,0]
+        latitude = self.antlocations[:,1]
         
         #we need the positions in xyz
         xyz,xyz0 = self.geodetic2global()
@@ -145,12 +140,14 @@ class Array(object):
         delta_z = z-z0
 
         #local frame components.
-        E = -np.sin(longitude) * delta_x + np.cos(longitude) * delta_y + 0 * delta_z
-        N = -np.sin(latitude)*np.cos(longitude) * delta_x + -np.sin(latitude)*np.sin(longitude) * delta_y + np.cos(latitude) * delta_z
-        U =  np.cos(latitude)*np.cos(longitude) * delta_x + np.cos(latitude)*np.sin(longitude) * delta_y + np.sin(latitude) * delta_z
+        east = -np.sin(longitude) * delta_x + np.cos(longitude) * delta_y + 0 * delta_z
+        north = -np.sin(latitude)*np.cos(longitude) * delta_x - \
+            np.sin(latitude)*np.sin(longitude) * delta_y + np.cos(latitude) * delta_z
+        height =  np.cos(latitude)*np.cos(longitude) * delta_x + \
+            np.cos(latitude)*np.sin(longitude) * delta_y + np.sin(latitude) * delta_z
         
         #arranging the components into an array.
-        enu = np.column_stack((E,N,U))
+        enu = np.column_stack((east,north,height))
 
         return enu
     
