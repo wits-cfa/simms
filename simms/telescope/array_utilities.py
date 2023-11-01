@@ -4,7 +4,7 @@ import ephem
 import utilities
 import re
 import os
-import layouts
+import telescope.layouts
 from typing import Union
 from simms import constants
 
@@ -34,7 +34,7 @@ class Array(object):
         
         self.layout = layout
         self.degrees = degrees
-        self.observatories = layouts.known()
+        self.observatories = telescope.layouts.known()
 
 
 
@@ -212,17 +212,25 @@ class Array(object):
         ])
 
         #calculating the baselines
-        bl = self.baselines(antennas=positions_global)
-
-        u_coord = np.outer(transform_matrix[0,0],bl[:,0]) + np.outer(transform_matrix[0,1],bl[:,1]) \
-            + np.outer(transform_matrix[0,2],bl[:,2])
-        v_coord = np.outer(transform_matrix[1,0],bl[:,0]) + np.outer(transform_matrix[1,1],bl[:,1]) \
-            + np.outer(transform_matrix[1,2],bl[:,2])
-        w_coord = np.outer(transform_matrix[2,0],bl[:,0]) + np.outer(transform_matrix[2,1],bl[:,1]) \
-            + np.outer(transform_matrix[2,2],bl[:,2])
+        antenna1 = []
+        antenna2 = []
+        baselines_info = self.baseline_info(antlocations=positions_global)
+        for base in baselines_info:
+            bl = base['baseline']
+            antenna1 = base['antenna1']
+            antenna2 = base['antenna2']
+            antenna1.append(antenna1)
+            antenna2.append(antenna2)
+       
+            u_coord = np.outer(transform_matrix[0,0],bl[0]) + np.outer(transform_matrix[0,1],bl[1]) \
+                + np.outer(transform_matrix[0,2],bl[2])
+            v_coord = np.outer(transform_matrix[1,0],bl[0]) + np.outer(transform_matrix[1,1],bl[1]) \
+                + np.outer(transform_matrix[1,2],bl[2])
+            w_coord = np.outer(transform_matrix[2,0],bl[0]) + np.outer(transform_matrix[2,1],bl[1]) \
+                + np.outer(transform_matrix[2,2],bl[2])
         
-        u_coord, v_coord, w_coord = [ x.flatten() for x in (u_coord, v_coord, w_coord) ]
-        uvw = np.column_stack((u_coord,v_coord,w_coord))
+            u_coord, v_coord, w_coord = [ x.flatten() for x in (u_coord, v_coord, w_coord) ]
+            uvw = np.column_stack((u_coord,v_coord,w_coord))
 
         #starting time of the observation in seconds(sunce 1970) 
         start_time_rad = dm.epoch(*date)['m0']['value']
@@ -241,56 +249,50 @@ class Array(object):
         total_bandwidth = start_freq + dfreq * nchan
 
         frequency_entries = np.arange(start_freq,total_bandwidth,dfreq)
-       
 
-        return uvw,time_entries,frequency_entries
+        uvcoverage = {
+            'antenna1': antenna1,
+            'antenna2': antenna2,
+            'uvw': uvw,
+            'freqs': frequency_entries,
+            'times': time_entries
+        }
+
+        return uvcoverage
 
 
-    def baselines(self, antennas=None):
+    def baseline_info(self,antlocations):
         """
-        This function calculates the baselines.
-
-        Parameter
-        ---
-        antennas: ndarray
-                : Antenna positions.
-
-        Output
-        ---
-        baselines: ndarray
-
+        This function calculates the baselines and store the 
+        information in a dictionary.
         """
-        if antennas is None:
-            antennas = self.antennas
-
-        baselines = []
-        for i in range(antennas.shape[0]):
-            for j in range(i+1,antennas.shape[0]):
-                baseline = antennas[j] - antennas[i]
-                baselines.append(baseline)
-        return np.array(baselines)
-    
+        baseline_info = []
+        for i in range(antlocations.shape[0]):
+            for j in range(i + 1, antlocations.shape[0]):
+                baseline = antlocations[j] - antlocations[i]
+                baseline_entry = {
+                    'antenna1': i,
+                    'antenna2': j,
+                    'baseline': baseline
+                }
+                baseline_info.append(baseline_entry)
+        return baseline_info
 
 
     #stolen from https://github.com/SpheMakh/uvgen/blob/master/uvgen.py
     def source_info(self,longitude,latitude,
-                    pointing_direction = None,
-                    date=None):
+                    pointing_direction,
+                    date):
         
         dm = measures()
-        longitude = np.rad2deg(longitude)
+        longitude = np.deg2rad(longitude)
         latitude = np.deg2rad(latitude)
        
         # Set up observer        
         obs = ephem.Observer()
         obs.lon, obs.lat = longitude,latitude
 
-        if pointing_direction is None:
-            pointing_direction =  ['J2000','0deg','-30deg']
-        else:
-            pointing_direction = pointing_direction
-
-        ra_dec = dm.direction(*['J2000','0deg','-30deg'])
+        ra_dec = dm.direction(*pointing_direction)
         ra = ra_dec['m0']['value']
         dec = ra_dec['m1']['value']
 
@@ -307,7 +309,7 @@ class Array(object):
             return th_ha
         
 
-        obs.date = date or "2023/10/25 12:0:0"#%(time.localtime()[:3])
+        obs.date = date #%(time.localtime()[:3])
         lst = obs.sidereal_time() 
 
         def change (angle):
@@ -317,7 +319,8 @@ class Array(object):
                 angle += 2*np.pi
             return angle
         def altitude_transit(latitude,dec):
-            alt_trans = np.sign(latitude)*(np.cos(latitude)*np.sin(dec) + np.sin(latitude)*np.cos(dec))
+            alt_trans = np.sign(latitude)*(np.cos(latitude)*np.sin(dec) \
+                                           + np.sin(latitude)*np.cos(dec))
 
             return alt_trans
                                            
@@ -356,6 +359,3 @@ class Array(object):
         
         date = obs.date.datetime().ctime()
         return ih0, date, H0, altitude
-
-
-

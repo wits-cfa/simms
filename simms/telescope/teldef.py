@@ -53,27 +53,4 @@ class Observation(SpecBase):
     schema_section: str = "Observation"
     
     
-    def generate_uvw(self,data_file = None,observatory=None):
-        """
-        Get the uvw baseline positions using the global2uvw function in Array class
-        """
-        pointing_direction = self.direction
-        observatory = self.telescope or observatory
-
-        initialization = array_utilities.Array(
-                                                data_file=data_file,
-                                              observatory=observatory)
-        
-        uvw,times,frequencies = initialization.global2uvw(h0=self.h0,longitude = self.longitude,
-                                                  latitude = self.latitude,
-                                                  date = self.start_time,
-                                                  dtime = self.dtime,
-                                                  ntimes = self.ntimes)
-        
-        return uvw,times,frequencies
-
-  
-
-
-
 
