@@ -6,7 +6,7 @@ import re
 import os
 import telescope.layouts
 from typing import Union
-from simms import constants
+import constants
 
 
 
@@ -45,7 +45,7 @@ class Array(object):
         # check if the provided array is one of the default arrays.
         fname = None
         vla = None
-        if isinstance(str, self.layout):
+        if isinstance(self.layout, str):
             if self.layout.startswith("vla-"):
                 fname = self.observatories["vla"]
                 vla = True
@@ -197,7 +197,10 @@ class Array(object):
         dec = ra_dec['m1']['value']
         
         #hour angle 
-        ih0,date_read,H0,altitude = self.source_info(longitude,latitude,date[1])
+        ih0,date_read,H0,altitude = self.source_info(longitude,
+                                                     latitude,
+                                                     pointing_direction,
+                                                     date[1])
         
         h0 = ih0 + np.linspace(h0[0], h0[1], ntimes)*np.pi/12.
         
@@ -212,15 +215,16 @@ class Array(object):
         ])
 
         #calculating the baselines
-        antenna1 = []
-        antenna2 = []
+        antenna1_list = []
+        antenna2_list = []
+        uvw_list = []
         baselines_info = self.baseline_info(antlocations=positions_global)
         for base in baselines_info:
             bl = base['baseline']
             antenna1 = base['antenna1']
             antenna2 = base['antenna2']
-            antenna1.append(antenna1)
-            antenna2.append(antenna2)
+            antenna1_list.append(antenna1)
+            antenna2_list.append(antenna2)
        
             u_coord = np.outer(transform_matrix[0,0],bl[0]) + np.outer(transform_matrix[0,1],bl[1]) \
                 + np.outer(transform_matrix[0,2],bl[2])
@@ -231,6 +235,7 @@ class Array(object):
         
             u_coord, v_coord, w_coord = [ x.flatten() for x in (u_coord, v_coord, w_coord) ]
             uvw = np.column_stack((u_coord,v_coord,w_coord))
+            uvw_list.append(uvw)
 
         #starting time of the observation in seconds(sunce 1970) 
         start_time_rad = dm.epoch(*date)['m0']['value']
@@ -242,8 +247,8 @@ class Array(object):
         #the time table
         time_entries = np.arange(start_time_rad,total_time,dtime)
         
-        start_freq = dm.frequency(*start_freq)['m0']['value']
-        dfreq = dm.frequency(*dfreq)['m0']['value']
+        start_freq = dm.frequency(v0=start_freq)['m0']['value']
+        dfreq = dm.frequency(v0=dfreq)['m0']['value']
         
 
         total_bandwidth = start_freq + dfreq * nchan
@@ -251,9 +256,9 @@ class Array(object):
         frequency_entries = np.arange(start_freq,total_bandwidth,dfreq)
 
         uvcoverage = {
-            'antenna1': antenna1,
-            'antenna2': antenna2,
-            'uvw': uvw,
+            'antenna1': antenna1_list,
+            'antenna2': antenna2_list,
+            'uvw': np.array(uvw_list),
             'freqs': frequency_entries,
             'times': time_entries
         }
