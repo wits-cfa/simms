@@ -2,15 +2,13 @@ from typing import Dict
 import glob
 import os
 
-__path__ = [os.path.dirname(__file__)][0]
+#workaround the issue stated in
+#  https://github.com/python/mypy/issues/1422
+__path__ = os.path.dirname(__file__)
 
 def get_layout(name):
     """
-<<<<<<< HEAD
     Get the specified layout information.
-=======
-    Get the array layout.
->>>>>>> eb63cb7cc45511cc43854541e62be671093c3319
     """
     fname = os.path.join(__path__, f"{name}.geodetic.yaml")
     if os.path.exists(fname):
