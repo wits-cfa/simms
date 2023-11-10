@@ -3,9 +3,9 @@ from simms.constants import PI, C, FWHM
 
 
 class Source:
-    def __init__(self, source, source_type, spectrum, tempo=None, ra0=None, dec0=None):
+    def __init__(self, source, spectrum, tempo=None, ra0=None, dec0=None):
         self.source = source
-        self.source_type = source_type
+        self.source_type = "POINT" if self.source.ispoint else "GAUSSIAN"
         self.spectrum = spectrum
         self.tempo = tempo
         self.ra0 = ra0
@@ -21,8 +21,7 @@ class Source:
               np.cos(self.source.dec) * np.sin(self.dec0) * np.cos(self.dra)
 
     def get_spectrum(self, nchan):
-        
-        return self.spectrum.spectrum(nchan)
+        return self.spectrum.spectrum(nchan)#This needs to return the actual spectrum
 
     def chan_to_freq(self, chan,f0,df):
         freqs = f0 + chan*df
@@ -31,9 +30,12 @@ class Source:
     def z_to_chan(self, z, nustart, nu0, chanwidth): #want to find the channel of the peak
         nu = nu0/ (1+z) #nu0 is the frequency where the peak is i.e 1420 MHz 
         chan = (nu-nustart)/chanwidth # nustart is the start of the cube i.e. 1304 MHz
-        return round(chan)
-
-def addsky(uvw, lm, source_type, gauss_shape, nchan, f0, df, spectrum, dtype):
+        return round(chan) #move to line class
+class Makems: #takes uvws and makes
+    pass
+    
+    def simsky(uvw, lm, source_type, gauss_shape, nchan, f0, df, spectrum, dtype): 
+    #becomes part of makems
     
     channels = np.arange(nchan)
     frequencies = []
@@ -74,6 +76,7 @@ def addsky(uvw, lm, source_type, gauss_shape, nchan, f0, df, spectrum, dtype):
                     vis[r, f, 0] += re + im*1j
         elif source_type[s] == "GAUSSIAN":
             emaj, emin, angle = gauss_shape[s] 
+            #convert emaj and emin to sigmas
 
             # Convert to l-projection, m-projection, ratio
             el = emaj * np.sin(angle)
@@ -112,10 +115,12 @@ def addsky(uvw, lm, source_type, gauss_shape, nchan, f0, df, spectrum, dtype):
 
     return vis
 
-vischan = np.zeros_like(data)
-for row in range(nrow):
-    vischan[row,:,0] =addsky(uvw, lm, source_type, gauss_shape, nchan, f0, df, spectrum, dtype)
-    vischan[row,:,3] = vischan[row,:,0] 
+
+    def writems (self):
+    vischan = np.zeros_like(data)
+    for row in range(nrow):
+        vischan[row,:,0] =addsky(uvw, lm, source_type, gauss_shape, nchan, f0, df, spectrum, dtype)
+        vischan[row,:,3] = vischan[row,:,0] 
 
 
 

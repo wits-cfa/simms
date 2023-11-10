@@ -4,7 +4,7 @@ from typing import List, Optional, Any
 from simms import SCHEMADIR
 import os
 from simms.utilities import readyaml, ObjDict, File
-from simms.skymodel.source_factory import singlegauss_1d, poly, contspec
+from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
 from .skysims import Source
 
