@@ -4,7 +4,7 @@ from typing import List, Optional, Any
 from simms import SCHEMADIR
 import os
 from simms.utilities import readyaml, ObjDict, File
-from simms.skymodel.source_factory import singlegauss_1d
+from simms.skymodel.source_factory import singlegauss_1d, poly, contspec
 import numpy as np
 from .skysims import Source
 
@@ -21,9 +21,11 @@ class Line(SpecBase):
     #def sigma(self):
         #return self.width / FWHM_E
 
-    def set_linespectrum(self, nchan):
+    def set_linespectrum(self, nchan,f0, df):
         self.chans = np.arange(nchan)
-        self.set_spectrum = singlegauss_1d(self.chans, self.stokes, self.sigma, self.freq_peak)
+        for i in range(len(self.chans)):
+            self.nu = f0 + self.chans[i]*df
+        self.set_spectrum = singlegauss_1d(self.nu, self.stokes, self.sigma, self.freq_peak)
         return self.set_spectrum
 
     
@@ -34,9 +36,12 @@ class Cont(SpecBase):
     schema_section: str = "Cont"
     schemafile: str = os.path.join(SCHEMADIR, "schema_freq.yaml")
 
-    def set_contspectrum(self, nchan):
+
+    def set_contspectrum(self, nchan, f0, df):
         self.chans = np.arange(nchan)
-        self.set_spectrum = singlegauss_1d(self.chans, self.stokes, self.sigma, self.freq_peak)
+        for i in range(len(self.chans)):
+            self.nu = f0 + self.chans[i]*df
+        self.set_spectrum = contspec(self.nu, self.stokes, self.coeffs, self.ref_freq)
         return self.set_spectrum
 
 @dataclass
@@ -169,4 +174,5 @@ class Catalogue(SpecBase):
                     srcdict[key] = src[getattr(self.colname, key)]
                 source = Extendedsource(**srcdict)
                 source_type = "GAUSSIAN"
+                gaussian_shape = [srcdict.get('emaj'), srcdict.get('emin'), srcdict.get('pa')]
             self.sources.append(Source(source=source, spectrum=spectrum))

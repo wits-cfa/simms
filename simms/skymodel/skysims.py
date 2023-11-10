@@ -33,8 +33,14 @@ class Source:
         chan = (nu-nustart)/chanwidth # nustart is the start of the cube i.e. 1304 MHz
         return round(chan)
 
-def addsky(uvw, lm, source_type, gauss_shape, frequency, spectrum, dtype):
+def addsky(uvw, lm, source_type, gauss_shape, nchan, f0, df, spectrum, dtype):
     
+    channels = np.arange(nchan)
+    frequencies = []
+    for i in range(len(channels)):
+        frequency = f0 + channels[i]*df
+        frequencies.append(frequency)
+
     fwhminv = 1.0 / FWHM
     gauss_scale = fwhminv * np.sqrt(2.0) * np.pi / C
 
@@ -43,7 +49,7 @@ def addsky(uvw, lm, source_type, gauss_shape, frequency, spectrum, dtype):
     nsrc = sources.shape[0]
     n1 = lm.dtype.type(1) #make sure that n1 is the same dtype as lm
 
-    scaled_freq = frequency * frequency.dtype.type(gauss_scale) #multiply the frequency by gaussscale
+    scaled_freq = frequencies * frequencies.dtype.type(gauss_scale) #multiply the frequency by gaussscale
 
     vis = np.zeros((nrow, nchan, ncorr), dtype=dtype)
 
@@ -67,7 +73,7 @@ def addsky(uvw, lm, source_type, gauss_shape, frequency, spectrum, dtype):
 
                     vis[r, f, 0] += re + im*1j
         elif source_type[s] == "GAUSSIAN":
-            emaj, emin, angle = gauss_shape[s] #we need to change the gauss_shape in to shape
+            emaj, emin, angle = gauss_shape[s] 
 
             # Convert to l-projection, m-projection, ratio
             el = emaj * np.sin(angle)
@@ -108,7 +114,7 @@ def addsky(uvw, lm, source_type, gauss_shape, frequency, spectrum, dtype):
 
 vischan = np.zeros_like(data)
 for row in range(nrow):
-    vischan[row,:,0] =addsky(uvw, lm, source_type, gauss_shape, frequency, spectrum, dtype)#same as line 69 here
+    vischan[row,:,0] =addsky(uvw, lm, source_type, gauss_shape, nchan, f0, df, spectrum, dtype)
     vischan[row,:,3] = vischan[row,:,0] 
 
 
