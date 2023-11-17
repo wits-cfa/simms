@@ -1,32 +1,76 @@
+import os
+from dataclasses import dataclass
+from typing import List, Union
 from  simms.utilities import ValidationError, ListSpec
-from simms.utilities import BASE_TYPES, readyaml, get_class_attributes
+from simms.utilities import BASE_TYPES, CLASS_TYPES
+from simms.utilities import readyaml, get_class_attributes
 from copy import deepcopy
 from simms import LOG
-import os
 
+
+class DType():
+    def __init__(self, stringspec: List|str):
+        """
+        Convetrs string type specifications to Python objects
+
+        Parameters
+        ------------
+    
+        stringspec: List|str
+            string type speccification, or a list of string specifications
+        """
+
+        self.stringspec = stringspec
+        if not self.islist:
+            self.stringspec = [self.stringspec]
+        
+        self.ntypes = len(self.stringspec)
+
+        self.dtype = None 
+        self.classparam = [False]*self.ntypes
+        self.listparam = [False]*self.ntypes
+
+        
+    @property
+    def islist(self):
+        """
+        Check if dtype is a list
+        """
+        return isinstance(self.stringspec, list)
+    
+    def __call__(self):
+        """
+        Return the types
+        """
+        types = [None]*self.ntypes
+        for i, item in enumerate(self.stringspec):
+            if item in BASE_TYPES:
+                types[i] = BASE_TYPES[item]
+            elif item in CLASS_TYPES:
+                self.classparam[i] = True
+                if item.startswith('List['):
+                    types[i] = CLASS_TYPES['List']
+                    self.listparam[i] = True
+                else:
+                    types[i] = CLASS_TYPES[item]
+            else:
+                raise ValidationError(f"Type {item} is not supported.")
+        self.dtype = Union[tuple(types)] 
 
 class Parameter(object):
     def __init__(self, key, dtype, info, default=None, required=False):
         self.key = key 
-        self.dtype = dtype
+        self.dtype = DType(dtype)
         self.info = info
         # ensure that the default is not overwritten if value is updated
         self.default = deepcopy(default)
         self.value = self.default
         self.required = required
-        self.islist = False
 
-        if isinstance(self.dtype, str):
-            if self.dtype.startswith("List["):
-                self.dtype = ListSpec(self.dtype)
-                self.islist = True
-            elif self.dtype in BASE_TYPES.keys():
-                self.dtype = getattr(BASE_TYPES, self.dtype)
-            else:
-                raise ValidationError(f"Type {self.dtype} is not supported.")
 
         if not isinstance(required, bool):
             raise ValidationError("The required option has to be a boolean")
+
     
     def validate_value(self, value=None):
         """
@@ -45,11 +89,29 @@ class Parameter(object):
         Boolean value indicating whether value is of type dtype.
         """
         value = value or self.value
-        if self.islist:
-            if not isinstance(value, list):
-                LOG.warning(f"List parameter, {self.key}, given as a single value."
+
+        def _validate(dtype, val, isclass, islist):
+            if isclass and not islist:
+                try:
+                    dtype(val)
+                except:
+                    return False
+            elif islist:
+                return all( isinstance(item, dtype) for item in val )
+
+        
+        for i in range(self.dtype.ntypes):
+            dtype = self.dtype.dtypes[i]
+            classparam = self.dtype.classparam[i]
+            listparam = self.dtype.listparam[i]
+
+            if listparam:
+                if not isinstance(value, list):
+                    LOG.warning(f"List parameter, {self.key}, given as a single value."
                             f" Setting it to a single-valued List")
-                value = [value]
+                    value = [value]
+                
+            
             self.dtype.set_dtype()
             return all( isinstance(item, self.dtype.dtype) for item in value )
         else:

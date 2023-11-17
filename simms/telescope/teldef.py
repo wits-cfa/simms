@@ -1,13 +1,10 @@
+import os
 from dataclasses import dataclass
 from typing import List, Any, Union
 from simms import SCHEMADIR
 from simms.utilities import File
-import os
 from simms.config_spec import SpecBase
-from simms.telescope import array_utilities
-from casacore.measures import measures
-import numpy as np
-import ephem
+from .array_utilities import Array
 
 @dataclass
 class Antenna(SpecBase):
@@ -33,24 +30,37 @@ class ArrayTelescope(SpecBase):
     schemafile: str = os.path.join(SCHEMADIR, "schema_observation.yaml")
     schema_section: str = "Array"
 
+    def set_antennas(self):
+        pass
+
+
 @dataclass
 class Observation(SpecBase):
-    name: str
-    desc: str
-    telescope: Any
-    longitude: float
-    latitude: float
-    h0: Union[int,float]
-    start_time: str
-    dtime: float = None
-    ntimes: int = None 
-    start_freq: Union[str,float] = None
+    ms: str
+    antennas: Union[File, str]
+    direction: List[str]
+    dtime: float
+    ntimes: int
+    start_freq: Union[str, float]
+    desc: str = None
+    start_hour_angle: float = None
+    start_time: str = None
     dfreq: Union[str,float] = None
     nchan: int = None
-    direction: List[str] = None
     correlations: List[str] = None
+    longitude: float = None
+    latitude: float = None
     schemafile: str = os.path.join(SCHEMADIR, "schema_observation.yaml")
     schema_section: str = "Observation"
-    
-    
+
+    def set_array(self):
+        """
+        Creates an ArrayTelescope instance
+        """
+
+        antennas = Array(self.antennas, degrees=True)
+        antennas.set_arrayinfo()
+
+        
+
 

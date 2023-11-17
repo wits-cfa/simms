@@ -9,10 +9,12 @@ def get_layout(name):
     fname = os.path.join(__path__, f"{name}.geodetic.yaml")
     if os.path.exists(fname):
         return fname
-    else:
-        raise FileNotFoundError("Layout not part of our known layouts")
+    raise FileNotFoundError("Layout not part of our known layouts")
 
 def known()-> Dict:
+    """
+    Returns a dictionary of known array layouts
+    """
     lays = glob.glob(f"{__path__}/*.geodetic.yaml")
     laysdict = {}
     for layout in lays:
@@ -21,4 +23,3 @@ def known()-> Dict:
         laysdict[lname] = layout
 
     return laysdict
-

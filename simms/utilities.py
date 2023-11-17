@@ -54,12 +54,12 @@ BASE_TYPES = ObjDict({
     'float': (float,int),
     'bool': bool,
     'str': str,
-    'Any': Any,
     })
 
 
+
 class ListSpec (object):
-    def __init__(self, listspec:str, values:Optional[List] = [] )-> None:
+    def __init__(self, listspec:str)-> None:
         """
         Defines how to interpret list parameters defined the 'List[<type>]' syntax
 
@@ -79,12 +79,8 @@ class ListSpec (object):
             raise TypeError("The list specification, listspec, has to be a string.")
 
         self.listspec = listspec
-        self.values = values
 
-    def set_dtype(self, dtype=None):
-        if dtype:
-            self.dtype = dtype
-            return
+    def __call__(self):
         
         _thematch = re.findall("^List*\[([a-zA-Z{1,}].*\w{1,})\]", self.listspec)
         if len(_thematch) != 1:
@@ -100,6 +96,14 @@ class ListSpec (object):
             raise ValidationError(f"Type {thematch} is not supported. Verify the type of your list elements.")
         
         return self.dtype
+    
+CLASS_TYPES = ObjDict({
+    'List': ListSpec,
+    'File': File,
+    'Directory': Directory,
+    
+})
+
     
 def readyaml(yamlfile:str) -> dict:
     with open(yamlfile) as stdr:
