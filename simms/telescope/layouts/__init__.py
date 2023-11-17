@@ -2,9 +2,14 @@ from typing import Dict
 import glob
 import os
 
+#workaround the issue stated in
+#  https://github.com/python/mypy/issues/1422
+__path__ = os.path.dirname(__file__)
+
 def get_layout(name):
     """
-    Get the array layout.
+    Get the specified layout information.
+
     """
     fname = os.path.join(__path__, f"{name}.geodetic.yaml")
     if os.path.exists(fname):
@@ -21,5 +26,5 @@ def known()-> Dict:
         basename = os.path.basename(layout)
         lname = basename.split(".geodetic.yaml")[0]
         laysdict[lname] = layout
-
+    
     return laysdict

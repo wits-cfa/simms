@@ -12,7 +12,7 @@ class Array():
     """
 
     def __init__(self, layout: Union[str, utilities.File],
-                 degrees:bool = True):
+                degrees:bool = True):
         """
         layout: str|File
                     : specify an observatory as a str or a file. 
@@ -37,7 +37,7 @@ class Array():
         # check if the provided array is one of the default arrays.
         fname = None
         vla = None
-        if isinstance(str, self.layout):
+        if isinstance(self.layout, str):
             if self.layout.startswith("vla-"):
                 fname = self.observatories["vla"]
                 vla = True
@@ -140,10 +140,10 @@ class Array():
 
 
     def uvgen(self, longitude, latitude,
-              pointing_direction,
-              dtime, ntimes,
-              start_freq, dfreq, nchan,
-              start_time=None, start_ha=None) -> utilities.ObjDict:
+            pointing_direction,
+            dtime, ntimes,
+            start_freq, dfreq, nchan,
+            start_time=None, start_ha=None) -> utilities.ObjDict:
         """
         Generate uvw coordimates
 
@@ -207,27 +207,31 @@ class Array():
         ])
 
         #calculating the baselines
-        antenna1 = []
-        antenna2 = []
+        antenna1_list = []
+        antenna2_list = []
+        baseline_list = []
         baselines_info = self.baseline_info(antlocations=positions_global)
         for base in baselines_info:
             bl = base['baseline']
             antenna1 = base['antenna1']
             antenna2 = base['antenna2']
-            antenna1.append(antenna1)
-            antenna2.append(antenna2)
-       
-            u_coord = np.outer(transform_matrix[0,0],bl[0]) + np.outer(transform_matrix[0,1],bl[1]) \
-                + np.outer(transform_matrix[0,2],bl[2])
-            v_coord = np.outer(transform_matrix[1,0],bl[0]) + np.outer(transform_matrix[1,1],bl[1]) \
-                + np.outer(transform_matrix[1,2],bl[2])
-            w_coord = np.outer(transform_matrix[2,0],bl[0]) + np.outer(transform_matrix[2,1],bl[1]) \
-                + np.outer(transform_matrix[2,2],bl[2])
-        
-            u_coord, v_coord, w_coord = [ x.flatten() for x in (u_coord, v_coord, w_coord) ]
-            uvw = np.column_stack((u_coord,v_coord,w_coord))
+            baseline_list.append(bl)
+            antenna1_list.append(antenna1)
+            antenna2_list.append(antenna2)
 
-        #starting time of the observation in seconds(sunce 1970)
+        bl_array = np.vstack(baseline_list)
+    
+        u_coord = np.outer(transform_matrix[0,0],bl_array[:,0]) + np.outer(transform_matrix[0,1],bl_array[:,1]) \
+            + np.outer(transform_matrix[0,2],bl_array[:,2])
+        v_coord = np.outer(transform_matrix[1,0],bl_array[:,0]) + np.outer(transform_matrix[1,1],bl_array[:,1]) \
+            + np.outer(transform_matrix[1,2],bl_array[:,2])
+        w_coord = np.outer(transform_matrix[2,0],bl_array[:,0]) + np.outer(transform_matrix[2,1],bl_array[:,1]) \
+            + np.outer(transform_matrix[2,2],bl_array[:,2])
+    
+        u_coord, v_coord, w_coord = [ x.flatten() for x in (u_coord, v_coord, w_coord) ]
+        uvw = np.column_stack((u_coord,v_coord,w_coord))
+        
+        #starting time of the observation in seconds(since 1970) 
         start_time_rad = dm.epoch(*date)['m0']['value']
         start_time_rad = start_time_rad * 24 * 3600
 
@@ -236,18 +240,21 @@ class Array():
 
         #the time table
         time_entries = np.arange(start_time_rad,total_time,dtime)
-        start_freq = dm.frequency(*start_freq)['m0']['value']
-        dfreq = dm.frequency(*dfreq)['m0']['value']
+        
+        start_freq = dm.frequency(v0=start_freq)['m0']['value']
+        dfreq = dm.frequency(v0=dfreq)['m0']['value']
+        
+
         total_bandwidth = start_freq + dfreq * nchan
 
         frequency_entries = np.arange(start_freq,total_bandwidth,dfreq)
 
         uvcoverage = utilities.ObjDict({
-            'antenna1': antenna1,
-            'antenna2': antenna2,
+            'antenna1': antenna1_list,
+            'antenna2': antenna2_list,
             'uvw': uvw,
             'freqs': frequency_entries,
-            'times': time_entries
+            'times': time_entries,
         })
 
         return uvcoverage
@@ -281,7 +288,7 @@ class Array():
 
         longitude = np.deg2rad(longitude)
         latitude = np.deg2rad(latitude)
-       
+
         # Set up observer
         obs = ephem.Observer()
         obs.lon, obs.lat = longitude, latitude
