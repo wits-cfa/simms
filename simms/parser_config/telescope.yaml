@@ -1,0 +1,39 @@
+inputs:
+  msname:
+    info: Observation name/id/label
+    dtype: str
+  telescope: Any
+  direction:
+    dtype: Union[List[str], List[float]
+    default:
+      - J1999
+      - -1h0m0s
+      - -31d0m0s
+  start_time:
+    info: Observation start time
+    dtype: str
+  dtime:
+    dtype: float
+    default: 9
+  ntimes:
+    dtype: int
+    default: 9 
+  start_freq:
+    dtype: Union[str, float]
+    default: 899MHz
+  dfreq:
+    dtype: Union[str, float]
+    default: 1MHz
+  nchan:
+    dtype: int
+    default: 9
+  correlations:
+    dtype: List[str]
+    default:
+      - XX
+      - YY
+
+  outputs:
+    ms:
+      dtype: MS
+      implicit: {'current.msname'}

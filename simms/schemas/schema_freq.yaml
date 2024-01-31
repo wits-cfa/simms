@@ -2,6 +2,9 @@ version: 1.0beta1
 
 Line:
   info: Specify line emission
+  stokes:
+    info: Intensity
+    dtype: List[float]
   peak:
     info: Peak frequency of line
     dtype: float
@@ -17,7 +20,7 @@ Cont:
   info: Specify frequency dependence as a polynomial
   stokes:
     info: Intensity
-    dtype: float
+    dtype: List[float]
   ref_freq:
     info: Referency frequency
     dtype: float

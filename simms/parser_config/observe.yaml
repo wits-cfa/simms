@@ -1,0 +1,11 @@
+makems:
+  _include: makems.yaml
+skymodel:
+  _include: skymodel.yaml
+
+inputs:
+  _use: makems.inputs
+  _use: skymodel.inputs
+outputs:
+  _use: makems.outputs
+

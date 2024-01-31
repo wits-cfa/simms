@@ -14,7 +14,7 @@ include = [{ path = "tests" }]
 packages = [{ include = "simms" }]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.9"
 numpy = "^1.25.0"
 python-casacore = "^3.5.2"
 matplotlib = "*"
