@@ -1,0 +1,48 @@
+sys_noise:
+  _include: (simms.schemas)sys_noise.yaml
+
+Array:
+  centre:
+    info: Longitude and latitude of array
+    dtype: List[float]
+    required: true
+  coord_sys:
+    info: Coordinate system
+    dtype: str
+    default: geodetic
+  mount:
+    info: Telescope mount
+    dtype: str
+    default: ALT-AZ
+  size:
+    info: Apperture size in metres
+    dtype: float
+    default: 1.0
+  antnames:
+    info: Names of antennas listed in antlocations.
+    dtype: List[str]
+  antlocations:
+    info: List of antenna locations in the coordinate system specified by 'coord_sys'. 
+    dtype: List[Any]
+    required: true
+  groups:
+    info: Specify antenna groups. Each group can define its own size, mount, sefd, tsys_over_eta, or tsys_over_eta via a YAML file
+    dtype: List[str]
+
+Antenna:
+  _use: sys_noise.inputs
+  name:
+    info: Name of antenna or a group/type of antennas
+    dtype: str
+    required: true
+  group:
+    info: Antennas (strings or indicices)
+    dtype: List[Union[str,int]]
+  mount:
+    info: Antenna mount
+    dtype: str
+    default: "ALT-AZ"
+  size:
+    info: 
+    dtype: float
+    default: 13.5
