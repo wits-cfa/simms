@@ -1,18 +1,21 @@
-version: 2.0beta1
-
-sys_noise:
-  _include: (simms.schemas).sys_noise.yaml
+libs:
+  _include: lib.yaml
 
 inputs:
-  _use: sys_noise.inputs
+  _use: libs.sys_noise.inputs
   ms:
     info: Measurement set
-    dtype: MS
-    rquired: true
+    dtype: Union[str,MS]
+    required: yes
+    must_exist: no
   die:
     info: Direction independent effects
     dtype: File
+    required: no
   dde:
     info: Direction dependent effects
     dtype: File
+    required: no
+outputs:
+  {}
   

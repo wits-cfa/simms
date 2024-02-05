@@ -1,10 +1,9 @@
 inputs:
-  msname:
-    info: Observation name/id/label
+  telescope:
     dtype: str
-  telescope: Any
+    required: yes
   direction:
-    dtype: Union[List[str], List[float]
+    dtype: Union[List[str], List[float]]
     default:
       - J1999
       - -1h0m0s
@@ -32,8 +31,9 @@ inputs:
     default:
       - XX
       - YY
-
-  outputs:
-    ms:
-      dtype: MS
-      implicit: {'current.msname'}
+outputs:
+  ms:
+    info: Observation name/id/label
+    dtype: Union[str, MS]
+    must_exist: no
+    required: yes
