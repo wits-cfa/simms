@@ -4,8 +4,9 @@ from scabha.schema_utils import clickify_parameters
 import click
 from omegaconf import OmegaConf
 
-command = "telescope"
-config = load(command)
+command = "skysim"
+sources = load_sources(["lib"])
+config = load(command, use_sources=sources)
 
 
 @click.command(command)

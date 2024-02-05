@@ -1,39 +1,52 @@
 inputs:
+  ms:
+    info: Observation name/id/label
+    dtype: MS
+    must_exist: no
+    required: yes
+    policies:
+      positional: true
+      split: " "
   telescope:
+    info: Name of telescope you are simulating
     dtype: str
     required: yes
   direction:
-    dtype: Union[List[str], List[float]]
-    default:
-      - J1999
-      - -1h0m0s
-      - -31d0m0s
-  start_time:
-    info: Observation start time
+    info: Direction of field centre for MS. Example, J2000,0h24m20s,-30d12m33s or J2000,0:24:20,-30:12:33
+    dtype: str
+    metavar: '[EPOCH,]RA,Dec'
+    default: J2000,1h0m0s,-31d0m0s
+  start_time: 
+    info: Observation start time. For example, 'UTC,05/02/2024,06:15:10' 
+    metavar: '[TIME ZONE,][DD/MM/YYYY,],HH:MM:SS'
     dtype: str
   dtime:
+    info: Integration/exposure time in seconds.
     dtype: float
     default: 9
   ntimes:
+    info: Number of times slots for MS.
     dtype: int
-    default: 9 
+    default: 120 
   start_freq:
+    info: Centre of first frequency channel/bin, e.g 0.55GHz. If given without units, Hertz are assumed.
     dtype: Union[str, float]
     default: 899MHz
   dfreq:
+    info: Channel width and units, e.g 2.4MHz. If given without units, Hertz are assumed.
     dtype: Union[str, float]
     default: 1MHz
   nchan:
+    info: Number of frequency channels
     dtype: int
     default: 9
   correlations:
+    info: Space seprated feed correlations for MS, e.g., 'XX YY'
     dtype: List[str]
+    policies:
+      split: " "
     default:
       - XX
       - YY
 outputs:
-  ms:
-    info: Observation name/id/label
-    dtype: Union[str, MS]
-    must_exist: no
-    required: yes
+  {}

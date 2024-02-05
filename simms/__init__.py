@@ -1,5 +1,8 @@
 import os
 import logging
+from importlib import metadata
+
+__version__ = metadata.version(__package__)
 
 SCHEMADIR = os.path.join(__path__[0], "schemas")
 

@@ -1,11 +1,12 @@
 libs:
-  _include: lib.yaml
+  lib:
+    _include: lib.yaml
 
 inputs:
-  _use: libs.sys_noise.inputs
+  _use: libs.lib.sys_noise.inputs
   ms:
     info: Measurement set
-    dtype: Union[str,MS]
+    dtype: MS
     required: yes
     must_exist: no
   die:
