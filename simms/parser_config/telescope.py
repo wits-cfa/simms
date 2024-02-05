@@ -1,5 +1,5 @@
 import simms
-from simms.parser_config.utils import load, load_sources
+from simms.parser_config.utils import load
 from scabha.schema_utils import clickify_parameters
 import click
 from omegaconf import OmegaConf

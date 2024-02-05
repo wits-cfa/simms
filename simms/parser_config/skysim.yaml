@@ -1,9 +1,9 @@
 libs:
-  lib:
-    _include: lib.yaml
+  sys_noise:
+    _include: (simms.parser_config.lib)sys_noise.yaml
 
 inputs:
-  _use: libs.lib.sys_noise.inputs
+  _use: libs.sys_noise.inputs
   ms:
     info: Measurement set
     dtype: MS

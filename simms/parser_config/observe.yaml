@@ -3,7 +3,6 @@ libs:
     _include: telescope.yaml
   skysim: 
     _include: skysim.yaml
-  _include: lib.yaml
 
 inputs:
   _use:

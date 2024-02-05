@@ -29,10 +29,10 @@ def load(name: str, use_sources: List = []) -> Dict:
     parser = os.path.join(thisdir, f'{name}.yaml')
     args_defn = OmegaConf.structured(SchemaSpec)
     struct_args, _ = configuratt.load_nested([parser], structured=args_defn,
-                                             use_sources=use_sources)
-    schema = OmegaConf.create(struct_args)[name]
+                                             use_sources=use_sources, use_cache=False)
+    schema = OmegaConf.create(struct_args)
     
-    return schema
+    return schema[name]
 
 def load_sources(sources: List[str|File]):
     __sources = [None]*len(sources)
@@ -46,7 +46,7 @@ def load_sources(sources: List[str|File]):
                 except FileNotFoundError:
                     raise FileNotFoundError(f"Name {src} does not match a known parameter file.")
                 
-        __sources[i], _ = configuratt.load(sources[i])
+        __sources[i], _ = configuratt.load(sources[i], use_cache=False)
     return __sources[i]
 
                 
