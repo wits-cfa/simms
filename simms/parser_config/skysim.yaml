@@ -1,6 +1,6 @@
 libs:
   sys_noise:
-    _include: (simms.parser_config.lib)sys_noise.yaml
+    _include: (simms.parser_config.library)sys_noise.yaml
 
 inputs:
   _use: libs.sys_noise.inputs

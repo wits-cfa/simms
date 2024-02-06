@@ -5,7 +5,7 @@ import click
 from omegaconf import OmegaConf
 
 command = "skysim"
-sources = load_sources(["lib/sys_noise"])
+sources = load_sources(["library/sys_noise"])
 config = load(command, use_sources=sources)
 
 
