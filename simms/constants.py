@@ -1,3 +1,4 @@
+# Frequently used constants are defined here
 import numpy as np
 
 PI = np.pi
@@ -8,3 +9,5 @@ FWHM_E = np.sqrt(2 * np.log(2))
 earth_emaj = 6378137. #[m]
 #Earth's first numerical eccentricity
 esq = 0.00669437999014
+
+hour_angle = PI/12

@@ -1,25 +1,18 @@
 import numpy as np
 from casacore.measures import measures
 import ephem
-import utilities
-import re
-import os
-import telescope.layouts
+from .layouts import known
 from typing import Union
-import constants
+from simms import constants, utilities
 
 
-
-
-class Array(object):
+class Array():
     """
     The Array class has functions for converting from one coordinate system to another.
     """
 
-  
-    def __init__(self, layout: Union[str, utilities.File], 
-                 degrees:bool = True):
-
+    def __init__(self, layout: Union[str, utilities.File],
+                degrees:bool = True):
         """
         layout: str|File
                     : specify an observatory as a str or a file. 
@@ -30,11 +23,10 @@ class Array(object):
 
 
         """
-        
-        
+
         self.layout = layout
         self.degrees = degrees
-        self.observatories = telescope.layouts.known()
+        self.observatories = known()
 
 
 
@@ -109,7 +101,7 @@ class Array(object):
         return xyz,xyz0
         
 
-    def geodetic2local(self):    
+    def geodetic2local(self):
         """
         Converts the antenna positions from the geodetic frame to the local frame
 
@@ -147,28 +139,23 @@ class Array(object):
     
 
 
-    def global2uvw(self, h0,longitude,latitude,
-                   pointing_direction,
-                   date,dtime,
-                   ntimes,start_freq,
-                    dfreq,nchan):
-
+    def uvgen(self, longitude, latitude,
+            pointing_direction,
+            dtime, ntimes,
+            start_freq, dfreq, nchan,
+            start_time=None, start_ha=None) -> utilities.ObjDict:
         """
-        Converts the antenna positions from the global frame to the uvw space
+        Generate uvw coordimates
 
         Parameters
         ---
 
-        h0: Union[float,int]
-                    : hour angle range
         longitude: float
                     : longitude of the observer
         latitude: float
                     : latitude of the observer
         pointing_direction: List[str]
                     : pointing direction. 
-        date: str
-                    : starting time of the observation. 
         dtime: int
                     : integration time. 
         ntimes: int
@@ -179,6 +166,10 @@ class Array(object):
                     : frequency interval. 
         nchan: int
                     : number of channels. 
+        start_time: str | List
+                    : start hour time
+        start_ha: float
+                    : start hour angle
 
         Returns
         ---
@@ -190,21 +181,22 @@ class Array(object):
         #xyz coordinates of the array
         positions_global,_ = self.geodetic2global()
 
-
         #convert the direction using measures
         ra_dec = dm.direction(*pointing_direction)
         ra = ra_dec['m0']['value']
         dec = ra_dec['m1']['value']
         
-        #hour angle 
-        ih0,date_read,H0,altitude = self.source_info(longitude,
-                                                     latitude,
-                                                     pointing_direction,
-                                                     date[1])
+        tot_ha = ntimes*dtime/3600 * constants.hour_angle
+        # Determine hour angle range start
+        if start_time:
+            ih0 = self.get_start_ha(longitude, latitude, ra, start_time)
+        elif start_ha:
+            ih0 = start_ha
+        else:
+            ih0 = -tot_ha/2
         
-        h0 = ih0 + np.linspace(h0[0], h0[1], ntimes)*np.pi/12.
+        h0 = ih0 + np.linspace(0, tot_ha, ntimes)
         
-
         #the transformation matrix
         transform_matrix = np.array([
             [np.sin(h0), np.cos(h0), 0],
@@ -239,7 +231,6 @@ class Array(object):
         u_coord, v_coord, w_coord = [ x.flatten() for x in (u_coord, v_coord, w_coord) ]
         uvw = np.column_stack((u_coord,v_coord,w_coord))
         
-       
         #starting time of the observation in seconds(since 1970) 
         start_time_rad = dm.epoch(*date)['m0']['value']
         start_time_rad = start_time_rad * 24 * 3600
@@ -258,18 +249,18 @@ class Array(object):
 
         frequency_entries = np.arange(start_freq,total_bandwidth,dfreq)
 
-        uvcoverage = {
+        uvcoverage = utilities.ObjDict({
             'antenna1': antenna1_list,
             'antenna2': antenna2_list,
             'uvw': uvw,
             'freqs': frequency_entries,
-            'times': time_entries
-        }
+            'times': time_entries,
+        })
 
         return uvcoverage
 
 
-    def baseline_info(self,antlocations):
+    def baseline_info(self, antlocations):
         """
         This function calculates the baselines and store the 
         information in a dictionary.
@@ -288,37 +279,22 @@ class Array(object):
 
 
     #stolen from https://github.com/SpheMakh/uvgen/blob/master/uvgen.py
-    def source_info(self,longitude,latitude,
-                    pointing_direction,
+    def get_start_ha(self, longitude, latitude,
+                    ra,
                     date):
-        
-        dm = measures()
+        """
+        TODO(mukundi) add docstring
+        """
+
         longitude = np.deg2rad(longitude)
         latitude = np.deg2rad(latitude)
-       
-        # Set up observer        
+
+        # Set up observer
         obs = ephem.Observer()
-        obs.lon, obs.lat = longitude,latitude
+        obs.lon, obs.lat = longitude, latitude
 
-        ra_dec = dm.direction(*pointing_direction)
-        ra = ra_dec['m0']['value']
-        dec = ra_dec['m1']['value']
-
-        def sunrise_equation(latitude,dec):
-            arg = -np.tan(latitude) * np.tan(dec)
-            if arg > 1 or arg< -1:
-                if latitude*dec < 0:
-                    print("Pointing center is always below the horizon!")
-                    return 0
-                else:
-                    print("Pointing center is always above horizon")
-                    return 0
-            th_ha = np.arccos( arg )
-            return th_ha
-        
-
-        obs.date = date #%(time.localtime()[:3])
-        lst = obs.sidereal_time() 
+        obs.date = date
+        lst = obs.sidereal_time()
 
         def change (angle):
             if angle > 2*np.pi:
@@ -326,25 +302,7 @@ class Array(object):
             elif angle < 0:
                 angle += 2*np.pi
             return angle
-        def altitude_transit(latitude,dec):
-            alt_trans = np.sign(latitude)*(np.cos(latitude)*np.sin(dec) \
-                                           + np.sin(latitude)*np.cos(dec))
-
-            return alt_trans
-                                           
-        #altitude_transit = lambda latitude, dec: np.sign(latitude)*(np.cos(latitude)*np.sin(dec) + np.sin(latitude)*np.cos(dec) )
-                
-        # First lets find the altitude at transit (hour angle = 0 or LST=RA)
-        # If this is negative, then the pointing direction is below the horizon at its peak.
-        #alt_trans = altitude_transit(lat,dec)
-        #if alt_trans < 0 :
-        #    warn(" Altitude at transit is %f deg, i.e."
-        #         " pointing center is always below the horizon!"%(numpy.rad2deg(alt_trans)))
-        #    return 0
-
-        altitude = altitude_transit(latitude,dec)
-        H0 = sunrise_equation(latitude,dec)
-
+        
         # Lets find transit (hour angle = 0, or LST=RA)
         lst,ra = map(change,(lst,ra))
         diff =  (lst - ra )/(2*np.pi)
@@ -353,17 +311,16 @@ class Array(object):
         obs.date = date + diff
         # LST should now be transit
         transit = change(obs.sidereal_time())
-        if ra==0:
+        if ra == 0:
             obs.date = date - lst/(2*np.pi)
         elif transit-ra > .1*np.pi/12:
             obs.date = date - diff
 
         # This is the time at transit
-        ih0 = change((obs.date)/(2*np.pi)%(2*np.pi))
+        ih0 = change((obs.date) / (2*np.pi)%(2*np.pi))
         # Account for the lower hemisphere
         if latitude<0:
             ih0 -= np.pi
             obs.date -= 0.5
-        
-        date = obs.date.datetime().ctime()
-        return ih0, date, H0, altitude
+
+        return ih0
