@@ -1,5 +1,5 @@
-from  simms.utilities import ValidationError, ListSpec
-from simms.utilities import BASE_TYPES, readyaml, get_class_attributes
+from  utilities import ValidationError, ListSpec
+from utilities import BASE_TYPES, readyaml, get_class_attributes
 from copy import deepcopy
 from simms import LOG
 import os
