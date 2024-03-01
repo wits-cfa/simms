@@ -17,8 +17,9 @@ packages = [{ include = "simms" }]
 python = "^3.8"
 numpy = "*"
 click = "^8.1.3"
-python-casacore = "*"
+dask-ms = "^0.2.18"
 pyyaml = "*"
+ephem = "^4.1"
 
 #[tool.poetry.scripts]
 #stimela = "stimela.main:cli"

@@ -3,6 +3,9 @@ from simms.utilities import BASE_TYPES, readyaml, get_class_attributes
 from copy import deepcopy
 from simms import LOG
 import os
+import re
+from dataclasses import dataclass
+from typing import Dict
 
 
 class Parameter(object):
@@ -116,3 +119,7 @@ class SpecBase(object):
                                   f"Mismatched parameters are: {mismatch}")
 
         return True
+    
+@dataclass
+class StringReader(object):
+    pass

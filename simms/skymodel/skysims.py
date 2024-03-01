@@ -15,6 +15,7 @@ class Source:
     @property
     def l(self):
         return np.cos(self.source.dec) * np.sin(self.dra) 
+
     @property
     def m(self):
         return np.sin(self.source.dec) * np.cos(self.dec0) -\
