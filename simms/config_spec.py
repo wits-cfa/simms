@@ -1,7 +1,8 @@
 import os
+import re
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import List, Union
+from typing import Dict, List, Union
 
 from simms import LOG
 from simms.utilities import (
@@ -67,6 +68,8 @@ class Parameter(object):
     def __init__(self, key, dtype, info, default=None, required=False):
         self.key = key
         self.dtype = DType(dtype)
+        self.key = key
+        self.dtype = DType(dtype)
         self.info = info
         # ensure that the default is not overwritten if value is updated
         self.default = deepcopy(default)
@@ -86,6 +89,7 @@ class Parameter(object):
             The value being checked
         dtype:
             The type that value has to be
+
 
 
         Returns
@@ -118,6 +122,7 @@ class Parameter(object):
 
             self.dtype.set_dtype()
             return all(isinstance(item, self.dtype.dtype) for item in value)
+            return all(isinstance(item, self.dtype.dtype) for item in value)
         else:
             return isinstance(value, self.dtype)
 
@@ -145,6 +150,7 @@ def validate(valme, schemafile=None):
         # which does need to be validated
 
         if isinstance(section[key], str):
+            continue
             continue
 
         param = Parameter(key, **section[key])
@@ -187,4 +193,7 @@ class SpecBase(object):
                 f"Mismatched parameters are: {mismatch}"
             )
 
-        return True
+
+@dataclass
+class StringReader(object):
+    pass
