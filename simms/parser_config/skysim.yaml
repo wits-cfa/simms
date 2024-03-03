@@ -6,9 +6,18 @@ inputs:
   _use: libs.sys_noise.inputs
   ms:
     info: Measurement set
-    dtype: MS
+    dtype: File
     required: yes
     must_exist: no
+  source_catalogue:
+    info: Catalogue of sources
+    dtype: File
+    required: yes
+    must_exist: yes
+  source_type:
+    info: Point source or extended sources
+    dtype: str
+    required: yes
   die:
     info: Direction independent effects
     dtype: File

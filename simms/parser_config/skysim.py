@@ -25,13 +25,16 @@ def runit(**kwargs):
     print(opts)
 
     inpms = File(opts.ms)
+    sourcecat = File(opts.source_catalogue)
     die = File(opts.die)
     dde = File(opts.dde) #for these that are not required is this still valid 
     #or should it be:
     if opts.die.EXISTS:
         die = File(opts.die)
+    sourcetype = opts.source_type #will this now just be the string of source type. 
+
     
-    
+
 
     
 runit(
