@@ -1,5 +1,4 @@
 from typing import List, Optional, Any
-from enum import Enum
 import re
 import yaml
 import os
@@ -15,10 +14,9 @@ class File(str):
         self.dirname = os.path.dirname(self.path)
 
         if check:
-            self.isdir = os.path.isdir(self.path)
-            self.isfile = os.path.isdir(self.path)
             if not self.exists:
                 raise FileNotFoundError(f"File {self.path} does not exist.")
+            self.isfile = os.path.isfile(self.path)
 
     
 class Directory(File):

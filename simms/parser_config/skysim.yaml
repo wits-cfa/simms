@@ -1,0 +1,22 @@
+libs:
+  sys_noise:
+    _include: (simms.parser_config.library)sys_noise.yaml
+
+inputs:
+  _use: libs.sys_noise.inputs
+  ms:
+    info: Measurement set
+    dtype: MS
+    required: yes
+    must_exist: no
+  die:
+    info: Direction independent effects
+    dtype: File
+    required: no
+  dde:
+    info: Direction dependent effects
+    dtype: File
+    required: no
+outputs:
+  {}
+  
