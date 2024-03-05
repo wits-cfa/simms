@@ -44,6 +44,6 @@ def singlegauss_2d(x, y, peakflux, x0, y0, a, b, theta):
 def poly(x, coeffs):
     return np.polyval(coeffs, x)
 
-def contspec(nu, flux, coeffs, nu0):
+def contspec(chan, flux, coeffs, nu0):
     alpha = poly(nu, coeffs)
     return flux*(nu/nu0)**alpha

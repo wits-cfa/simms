@@ -1,0 +1,72 @@
+version: 1.0beta1
+
+Observation:
+  ms:
+    info: Measurement set or visibility data path. 
+    dtype:
+     - Directory
+     - str
+  desc:
+    info: Observation description
+    dtype: str
+    default: Simulated observation from simms 2.0 
+  layout:
+    info: Array layout
+    dtype:
+     - File
+     - str
+    required: true
+  direction:
+    dtype:
+      - List[str]
+      - List[float]
+    default:
+      - J2000
+      - 0h0m0s
+      - -30d0m0s
+  start_time:
+    info: Observation UTC start time. Use this format DD/MM/YYYY HH:MM:SS
+    dtype: str
+  start_hour_angle:
+    info: Start hour angle in hours
+    dtype: float
+  dtime:
+    dtype: float
+    default: 10
+  ntimes:
+    dtype: int
+    default: 10 
+  start_freq:
+    dtype:
+      - str
+      - float
+    default: 900MHz
+  dfreq:
+    dtype:
+      - str
+      - float
+    default: 2MHz
+  nchan:
+    dtype: int
+    default: 10
+  correlations:
+    dtype: List[str]
+    default:
+      - XX
+      - YY
+  longitude:
+    info: observers longitude.
+    dtype: float
+  latitude:
+    info:  Observers latitude
+    dtype:
+     - float
+     - str
+  coord_sys:
+    info: Coordinate system
+    dtype: str
+    default: geodetic
+  sensitivity_file: 
+    info: File with antenna spectral sensivity information. Allowed keys (column names) are 'freq, tsys, sefd, tsys_over_eta'
+    dtype: File
+

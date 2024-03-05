@@ -1,14 +1,10 @@
+import os
 from dataclasses import dataclass
 from typing import List, Any, Union
 from simms import SCHEMADIR
 from simms.utilities import File
-import os
 from simms.config_spec import SpecBase
-from simms.telescope import array_utilities
-from casacore.measures import measures
-import numpy as np
-import ephem
-
+from .array_utilities import Array
 
 @dataclass
 class Antenna(SpecBase):
@@ -34,43 +30,37 @@ class ArrayTelescope(SpecBase):
     schemafile: str = os.path.join(SCHEMADIR, "schema_observation.yaml")
     schema_section: str = "Array"
 
+    def set_antennas(self):
+        pass
+
+
 @dataclass
 class Observation(SpecBase):
-    name: str
-    desc: str
-    telescope: Any
+    ms: str
+    antennas: Union[File, str]
     direction: List[str]
-    start_time: str
-    dtime: float = None
-    ntimes: int = None 
-    start_freq: Union[str,float] = None
+    dtime: float
+    ntimes: int
+    start_freq: Union[str, float]
+    desc: str = None
+    start_hour_angle: float = None
+    start_time: str = None
     dfreq: Union[str,float] = None
     nchan: int = None
     correlations: List[str] = None
+    longitude: float = None
+    latitude: float = None
     schemafile: str = os.path.join(SCHEMADIR, "schema_observation.yaml")
     schema_section: str = "Observation"
-    
-    
-    def get_uvw(self,h0,longitude,latitude,pointing_direction,data_file = None,observatory=None):
+
+    def set_array(self):
         """
-        Get the uvw baseline positions using the global2uvw function in Array class
+        Creates an ArrayTelescope instance
         """
-        pointing_direction = pointing_direction or self.direction
-        observatory = self.telescope or observatory
 
-        initialization = array_utilities.Array(pointing_direction=pointing_direction,
-                                              data_file=data_file,
-                                              observatory=observatory)
+        antennas = Array(self.antennas, degrees=True)
+        antennas.set_arrayinfo()
+
         
-        uvw,time = initialization.global2uvw(h0=h0,longitude = longitude,
-                                                  latitude = latitude,
-                                                  date = self.start_time,
-                                                  dtime = self.dtime,
-                                                  ntimes = self.ntimes)
-        
-        return uvw,time
-
-  
-
 
 
