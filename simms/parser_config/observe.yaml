@@ -1,0 +1,12 @@
+libs:
+  telescope:
+    _include: telescope.yaml
+  skysim: 
+    _include: skysim.yaml
+
+inputs:
+  _use:
+   - libs.telescope.inputs
+   - libs.skysim.inputs
+outputs:
+  {}
