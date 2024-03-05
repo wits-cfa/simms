@@ -15,7 +15,11 @@ inputs:
     required: yes
     must_exist: yes
   source_type:
-    info: Point source or extended sources
+    info: Point source or extended sources- should be point/extended
+    dtype: str
+    required: yes
+  spectrum:
+    info: Line or continuum source- should be line/cont
     dtype: str
     required: yes
   die:

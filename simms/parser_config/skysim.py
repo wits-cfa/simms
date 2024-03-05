@@ -32,6 +32,7 @@ def runit(**kwargs):
     if opts.die.EXISTS:
         die = File(opts.die)
     sourcetype = opts.source_type #will this now just be the string of source type. 
+    spectype = opts.spectrum
 
     
 
