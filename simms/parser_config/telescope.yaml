@@ -1,4 +1,9 @@
+libs:
+  sys_noise:
+    _include: (simms.parser_config.library)sys_noise.yaml
+
 inputs:
+  _use: libs.sys_noise
   ms:
     info: Observation name/id/label
     dtype: List[MS]
