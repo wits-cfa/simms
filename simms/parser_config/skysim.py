@@ -7,9 +7,9 @@ from simms import BIN
 
 log = init_logger(BIN.skysim)
 
-command = BIN.im_plane
+command = BIN.skysim
 sources = load_sources(["library/sys_noise"])
-thisdir  = os.path.dirname(__file__)#how does the code know what the __file__ means
+thisdir  = os.path.dirname(__file__)
 
 source_files = glob.glob(f"{thisdir}/library/*.yaml") #this gets all the files in the library that end in yamls
 sources = [File(item) for item in source_files] #converts all yaml files found above to dtype file
@@ -38,4 +38,4 @@ def runit(**kwargs):
 
 
     
-runit(
+runit()
