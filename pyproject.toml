@@ -20,8 +20,8 @@ python-casacore = "^3.5.2"
 matplotlib = "*"
 stimela = {git = "https://github.com/caracal-pipeline/stimela.git", branch="master"}
 
-#[tool.poetry.scripts]
-#simms = "stimela.main:cli"
+[tool.poetry.scripts]
+skysim = "simms.parser_config.skysim:runit"
 
 [build-system]
 requires = ["setuptools", "poetry-core"]
