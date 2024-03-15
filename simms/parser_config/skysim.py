@@ -16,4 +16,3 @@ def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     print(opts)
     
-runit()
