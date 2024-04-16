@@ -1,0 +1,11 @@
+# this text file is probably the cause for the error i am getting 
+# the format or the names of the cooumns and rows
+
+#format:name ra ra i emaj emin pa
+S0 0 0 1 0 0 0
+S1 0 -5 10 30 10 45
+S2 0 3 0.03 0 0 0
+S3 0 -2 10 20 20 0
+S4 0 5 30 10 30 90
+S5 0 1 15 15 10 30
+S6 0 -3 2 0 0 0

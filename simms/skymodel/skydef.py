@@ -6,7 +6,7 @@ import os
 from simms.utilities import readyaml, ObjDict, File
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
-from .skysims import Source
+from simms.skymodel.skysims import Source
 
 
 @dataclass
@@ -66,22 +66,22 @@ class Extendedsource(SpecBase):
     schema_section: str = "Extendedsource"
     schemafile: str = os.path.join(SCHEMADIR, "schema_source.yaml")
 
-    ##### we didnt define set_sourcetype for extended, we might need it
-   def set_sourcetype(self, source_type)
+
+    def set_sourcetype(self, source_type):
        self.source_type = source_type
        return self.source_type
 
 
 class Catalogue(SpecBase):
     def __init__(self, path: Optional[File] = None, sources:Optional[List[Any]] = None,
-                  mapping:Optional[File] = None, delimeter: Optional[str] = " "):
+                  mapping:Optional[File] = None, delimiter: Optional[str] = " "):
         """
         Catalogue definition
         """
         self.path = path
         self.sources = None
         self.mapping = mapping
-        self.delimeter = delimeter
+        self.delimeter = delimiter
 
         if path is None and sources is None:
             raise RuntimeError("Either one of the path or a source list"
