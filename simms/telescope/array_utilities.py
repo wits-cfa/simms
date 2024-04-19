@@ -1,7 +1,7 @@
 import numpy as np
 from casacore.measures import measures
 import ephem
-from .layouts import known
+from layouts import known
 from typing import Union
 from simms import constants, utilities
 
