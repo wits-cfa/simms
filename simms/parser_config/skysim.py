@@ -1,8 +1,9 @@
-import simms
-from simms.parser_config.utils import load, load_sources
-from scabha.schema_utils import clickify_parameters
 import click
 from omegaconf import OmegaConf
+from scabha.schema_utils import clickify_parameters
+
+import simms
+from simms.parser_config.utils import load, load_sources
 
 command = "skysim"
 sources = load_sources(["library/sys_noise"])
@@ -15,5 +16,3 @@ config = load(command, use_sources=sources)
 def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     print(opts)
-    
-runit()
