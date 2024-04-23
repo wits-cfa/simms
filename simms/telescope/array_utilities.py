@@ -8,7 +8,6 @@ from layouts import known
 from typing import Union
 from simms import constants, utilities
 
-from .layouts import known
 
 
 class Array:
@@ -144,15 +143,12 @@ class Array:
 
     def uvgen(
         self,
-        longitude,
-        latitude,
         pointing_direction,
         dtime,
         ntimes,
         start_freq,
         dfreq,
         nchan,
-        date,
         start_time=None,
         start_ha=None,
     ) -> utilities.ObjDict:
@@ -178,8 +174,7 @@ class Array:
                     : frequency interval.
         nchan: int
                     : number of channels.
-        date: str
-                    : starting time of the observation.
+        
         start_time: Union[str, List[str]]
                     : start hour time
         start_ha: float
@@ -194,6 +189,11 @@ class Array:
 
         # xyz coordinates of the array
         positions_global, _ = self.geodetic2global()
+
+        #get the array centre info
+        self.set_arrayinfo()
+        longitude = self.centre[0]
+        latitude = self.centre[1]
 
         # convert the direction using measures
         ra_dec = dm.direction(*pointing_direction)
@@ -211,23 +211,7 @@ class Array:
 
         h0 = ih0 + np.linspace(0, tot_ha, ntimes)
 
-        first = [np.sin(h0), np.cos(h0), np.array([0.0 for _ in range(len(h0))])]
-
-        second = [
-            -np.sin(dec) * np.cos(h0),
-            np.sin(dec) * np.sin(h0),
-            np.array([np.cos(dec) for _ in range(len(h0))]),
-        ]
-
-        third = [
-            np.cos(dec) * np.cos(h0),
-            -np.cos(dec) * np.sin(h0),
-            np.array([np.sin(dec) for _ in range(len(h0))]),
-        ]
-
-        transform_matrix = np.vstack([first, second, third])
-
-        # the transformation matrix
+       #Transformation matrix
         transform_matrix = np.array(
             [
                 [np.sin(h0), np.cos(h0), np.array([0.0 for _ in range(len(h0))])],
@@ -279,21 +263,31 @@ class Array:
         uvw = np.column_stack((u_coord, v_coord, w_coord))
 
         # starting time of the observation in seconds(since 1970)
-        # start_time_rad = dm.epoch(start_time)["m0"]["value"]
-        start_time_rad = dm.epoch(*date)["m0"]["value"]
-        start_time_rad = start_time_rad * 24 * 3600
+        if start_time:
+            start_time_sec = dm.epoch(rf='UTC',v0=start_time)["m0"]["value"]
+            start_time_sec = start_time_sec * 24 * 3600
+
+        #Default starting time of the observation
+        else:
+            start_time_sec = dm.epoch(rf='UTC', v0='2024/4/22 12:0')["m0"]["value"]
+            start_time_sec = start_time_sec * 24 * 3600
 
         # total time of observation
-        total_time = start_time_rad + ntimes * dtime
+        total_time = start_time_sec + ntimes * dtime
 
         # the time table
-        time_entries = np.arange(start_time_rad, total_time, dtime)
+        time_entries = np.arange(start_time_sec, total_time, dtime)
 
+        #starting/center frequency of the observation
         start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
+
+        #channel bandwidth of the observation
         dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
 
+        #total bandwidth
         total_bandwidth = start_freq + dfreq * nchan
 
+        #channel frequencies/ frequency table
         frequency_entries = np.arange(start_freq, total_bandwidth, dfreq)
 
         uvcoverage = utilities.ObjDict(
@@ -334,7 +328,7 @@ class Array:
         obs = ephem.Observer()
         obs.lon, obs.lat = longitude, latitude
 
-        obs.date = date
+        obs.date = date 
         lst = obs.sidereal_time()
 
         def change(angle):
@@ -363,5 +357,6 @@ class Array:
         if latitude < 0:
             ih0 -= np.pi
             obs.date -= 0.5
-
+        
+         
         return ih0
