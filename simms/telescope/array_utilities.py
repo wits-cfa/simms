@@ -3,11 +3,10 @@ from typing import Union
 import ephem
 import numpy as np
 from casacore.measures import measures
-import ephem
-from layouts import known
-from typing import Union
+
 from simms import constants, utilities
 
+from .layouts import known
 
 
 class Array:
@@ -125,16 +124,8 @@ class Array:
 
         # local frame components.
         east = -np.sin(longitude) * delta_x + np.cos(longitude) * delta_y + 0 * delta_z
-        north = (
-            -np.sin(latitude) * np.cos(longitude) * delta_x
-            - np.sin(latitude) * np.sin(longitude) * delta_y
-            + np.cos(latitude) * delta_z
-        )
-        height = (
-            np.cos(latitude) * np.cos(longitude) * delta_x
-            + np.cos(latitude) * np.sin(longitude) * delta_y
-            + np.sin(latitude) * delta_z
-        )
+        north = (-np.sin(latitude) * np.cos(longitude) * delta_x - np.sin(latitude) * np.sin(longitude) * delta_y + np.cos(latitude) * delta_z)
+        height = (np.cos(latitude) * np.cos(longitude) * delta_x + np.cos(latitude) * np.sin(longitude) * delta_y + np.sin(latitude) * delta_z)
 
         # arranging the components into an array.
         enu = np.column_stack((east, north, height))
@@ -158,10 +149,6 @@ class Array:
         Parameters
         ---
 
-        longitude: float
-                    : longitude of the observer
-        latitude: float
-                    : latitude of the observer
         pointing_direction: List[str]
                     : pointing direction.
         dtime: int
@@ -215,16 +202,8 @@ class Array:
         transform_matrix = np.array(
             [
                 [np.sin(h0), np.cos(h0), np.array([0.0 for _ in range(len(h0))])],
-                [
-                    -np.sin(dec) * np.cos(h0),
-                    np.sin(dec) * np.sin(h0),
-                    np.array([np.cos(dec) for _ in range(len(h0))]),
-                ],
-                [
-                    np.cos(dec) * np.cos(h0),
-                    -np.cos(dec) * np.sin(h0),
-                    np.array([np.sin(dec) for _ in range(len(h0))]),
-                ],
+                [-np.sin(dec) * np.cos(h0), np.sin(dec) * np.sin(h0), np.array([np.cos(dec) for _ in range(len(h0))])],
+                [np.cos(dec) * np.cos(h0), -np.cos(dec) * np.sin(h0), np.array([np.sin(dec) for _ in range(len(h0))])],
             ]
         )
 
@@ -243,21 +222,9 @@ class Array:
 
         bl_array = np.vstack(baseline_list)
 
-        u_coord = (
-            np.outer(transform_matrix[0, 0], bl_array[:, 0])
-            + np.outer(transform_matrix[0, 1], bl_array[:, 1])
-            + np.outer(transform_matrix[0, 2], bl_array[:, 2])
-        )
-        v_coord = (
-            np.outer(transform_matrix[1, 0], bl_array[:, 0])
-            + np.outer(transform_matrix[1, 1], bl_array[:, 1])
-            + np.outer(transform_matrix[1, 2], bl_array[:, 2])
-        )
-        w_coord = (
-            np.outer(transform_matrix[2, 0], bl_array[:, 0])
-            + np.outer(transform_matrix[2, 1], bl_array[:, 1])
-            + np.outer(transform_matrix[2, 2], bl_array[:, 2])
-        )
+        u_coord = (np.outer(transform_matrix[0, 0], bl_array[:, 0]) + np.outer(transform_matrix[0, 1], bl_array[:, 1]) + np.outer(transform_matrix[0, 2], bl_array[:, 2]))
+        v_coord = (np.outer(transform_matrix[1, 0], bl_array[:, 0]) + np.outer(transform_matrix[1, 1], bl_array[:, 1]) + np.outer(transform_matrix[1, 2], bl_array[:, 2]))
+        w_coord = (np.outer(transform_matrix[2, 0], bl_array[:, 0]) + np.outer(transform_matrix[2, 1], bl_array[:, 1]) + np.outer(transform_matrix[2, 2], bl_array[:, 2]))
 
         u_coord, v_coord, w_coord = [x.flatten() for x in (u_coord, v_coord, w_coord)]
         uvw = np.column_stack((u_coord, v_coord, w_coord))
@@ -344,6 +311,7 @@ class Array:
 
         date = obs.date
         obs.date = date + diff
+        print(f"Observation date {obs.date}")
         # LST should now be transit
         transit = change(obs.sidereal_time())
         if ra == 0:
@@ -353,6 +321,7 @@ class Array:
 
         # This is the time at transit
         ih0 = change((obs.date) / (2 * np.pi) % (2 * np.pi))
+        print(f"Time at transit {ih0}")
         # Account for the lower hemisphere
         if latitude < 0:
             ih0 -= np.pi
