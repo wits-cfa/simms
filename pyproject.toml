@@ -21,10 +21,11 @@ dask-ms = "^0.2.18"
 pyyaml = "*"
 ephem = "^4.1"
 omegaconf = "^2.1.0" #newly added
+stimela = ">=2.0"
 
 [tool.poetry.scripts]
 skysim = "simms.parser_config.skysim:runit"
-simulate_catalogue = "simms.parser_config.catalogue:simulate_catalogue()"
+
 
 [build-system]
 requires = ["setuptools", "poetry-core"]

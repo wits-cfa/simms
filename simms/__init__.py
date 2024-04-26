@@ -1,5 +1,6 @@
 import os
 import logging
+from importlib import metadata
 
 SCHEMADIR = os.path.join(__path__[0], "schemas")
 
@@ -22,8 +23,6 @@ from omegaconf import OmegaConf
 
 BIN = OmegaConf.create({
     "skysim": "skysimulator",
-    "telsim": "telscopesimulator",
+    "telsim": "telescopesimulator",
     
 })
-
-

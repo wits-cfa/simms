@@ -1,20 +1,23 @@
+import os
 import simms
 from simms.parser_config.utils import load, load_sources
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 import click
 from omegaconf import OmegaConf
-from simms import BIN
+from simms import BIN, get_logger 
+from simms.skymodel import catalogue
 
-log = init_logger(BIN.skysim)
+log = get_logger(BIN.skysim)
 
 command = BIN.skysim
 sources = load_sources(["library/sys_noise"])
 thisdir  = os.path.dirname(__file__)
+config = load(command, use_sources=sources)
 
-source_files = glob.glob(f"{thisdir}/library/*.yaml") #this gets all the files in the library that end in yamls
-sources = [File(item) for item in source_files] #converts all yaml files found above to dtype file
-parserfile = File(f"{thisdir}/{command}.yaml") #finds the paserfile which sould be in this directory (and match commandname)
-config = paramfile_loader(parserfile, sources)[command] #what does this line do?
+source_files = glob.glob(f"{thisdir}/library/*.yaml") 
+sources = [File(item) for item in source_files] 
+parserfile = File(f"{thisdir}/{command}.txt") 
+config = paramfile_loader(parserfile, sources)[command] 
 
 
 @click.command(command)
@@ -26,16 +29,12 @@ def runit(**kwargs):
 
     inpms = File(opts.ms)
     sourcecat = File(opts.source_catalogue)
+    sourcecat = catalogue(sourcecat)
     die = File(opts.die)
-    dde = File(opts.dde) #for these that are not required is this still valid 
-    #or should it be:
+    dde = File(opts.dde) 
     if opts.die.EXISTS:
         die = File(opts.die)
-    sourcetype = opts.source_type #will this now just be the string of source type. 
+    sourcetype = opts.source_type  
     spectype = opts.spectrum
-
-    
-
-
     
 runit()
