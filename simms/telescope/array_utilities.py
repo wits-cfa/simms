@@ -5,6 +5,7 @@ import numpy as np
 from casacore.measures import measures
 
 from simms import constants, utilities
+from datetime import datetime
 
 from .layouts import known
 
@@ -232,12 +233,15 @@ class Array:
         # starting time of the observation in seconds(since 1970)
         if start_time:
             start_time_sec = dm.epoch(rf='UTC',v0=start_time)["m0"]["value"]
-            start_time_sec = start_time_sec * 24 * 3600
+
 
         #Default starting time of the observation
         else:
-            start_time_sec = dm.epoch(rf='UTC', v0='2024/4/22 12:0')["m0"]["value"]
-            start_time_sec = start_time_sec * 24 * 3600
+            date = datetime.now()
+            date = date.strftime("%Y/%m/%d %H:%M:%S")
+            start_time_sec = dm.epoch(rf='UTC', v0=date)["m0"]["value"]
+        
+        start_time_sec = start_time_sec * 24 * 3600
 
         # total time of observation
         total_time = start_time_sec + ntimes * dtime
