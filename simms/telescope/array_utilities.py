@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Union
 
 import ephem
@@ -5,7 +6,6 @@ import numpy as np
 from casacore.measures import measures
 
 from simms import constants, utilities
-from datetime import datetime
 
 from .layouts import known
 
@@ -164,9 +164,10 @@ class Array:
                     : number of channels.
         
         start_time: Union[str, List[str]]
-                    : start hour time
+                    : start time of the observation date and time ("YYYY/MM/DD 12:00:00", ["EPOCH", "YYYY/MM/DD 12:00:00"])
+                        default is the current machine time.
         start_ha: float
-                    : start hour angle
+                    : start hour angle in radians
 
         Returns
         ---
@@ -188,15 +189,19 @@ class Array:
         ra = ra_dec["m0"]["value"]
         dec = ra_dec["m1"]["value"]
 
-        tot_ha = ntimes * dtime / 3600 * constants.hour_angle
-        # Determine hour angle range start
-        if start_time:
-            ih0 = self.get_start_ha(longitude, latitude, ra, start_time)
-        elif start_ha:
-            ih0 = start_ha
+        tot_ha = ((ntimes * dtime) / 3600) * constants.hour_angle
+        if start_ha or start_time:
+            if start_ha:
+                ih0 = start_ha
+            else:
+                if isinstance(start_time, str):
+                    ih0 = self.get_start_ha(longitude, latitude, ra, start_time)
+                else:
+                    split_start_time = start_time[1]
+                    ih0 = self.get_start_ha(longitude, latitude, ra, split_start_time)
         else:
             ih0 = -tot_ha / 2
-
+        
         h0 = ih0 + np.linspace(0, tot_ha, ntimes)
 
        #Transformation matrix
@@ -230,19 +235,16 @@ class Array:
         u_coord, v_coord, w_coord = [x.flatten() for x in (u_coord, v_coord, w_coord)]
         uvw = np.column_stack((u_coord, v_coord, w_coord))
 
-        # starting time of the observation in seconds(since 1970)
-        if start_time:
-            start_time_sec = dm.epoch(rf='UTC',v0=start_time)["m0"]["value"]
-
-
-        #Default starting time of the observation
-        else:
+        if not start_time:
             date = datetime.now()
-            date = date.strftime("%Y/%m/%d %H:%M:%S")
-            start_time_sec = dm.epoch(rf='UTC', v0=date)["m0"]["value"]
-        
-        start_time_sec = start_time_sec * 24 * 3600
-
+            start_time = date.strftime("%Y/%m/%d %H:%M:%S")
+            start_day = dm.epoch(rf='UTC', v0=start_time)["m0"]["value"]
+        else:
+            if isinstance(start_time, str):
+                start_day = dm.epoch(rf='UTC', v0=start_time)["m0"]["value"]
+            else:
+                start_day = dm.epoch(*start_time)["m0"]["value"]
+        start_time_sec = start_day * 24 * 3600
         # total time of observation
         total_time = start_time_sec + ntimes * dtime
 
@@ -299,37 +301,34 @@ class Array:
         obs = ephem.Observer()
         obs.lon, obs.lat = longitude, latitude
 
-        obs.date = date 
+        obs.date = date
         lst = obs.sidereal_time()
 
         def change(angle):
-            if angle > 2 * np.pi:
-                angle -= 2 * np.pi
+            if angle > constants.two_pi:
+                angle -= constants.two_pi
             elif angle < 0:
-                angle += 2 * np.pi
+                angle += constants.two_pi
             return angle
 
         # Lets find transit (hour angle = 0, or LST=RA)
         lst, ra = map(change, (lst, ra))
-        diff = (lst - ra) / (2 * np.pi)
+        diff = (lst - ra) / constants.two_pi
 
         date = obs.date
         obs.date = date + diff
-        print(f"Observation date {obs.date}")
         # LST should now be transit
         transit = change(obs.sidereal_time())
         if ra == 0:
-            obs.date = date - lst / (2 * np.pi)
-        elif transit - ra > 0.1 * np.pi / 12:
+            obs.date = (date - lst) / constants.two_pi
+        elif transit - ra > 0.1 * constants.hour_angle:
             obs.date = date - diff
 
         # This is the time at transit
-        ih0 = change((obs.date) / (2 * np.pi) % (2 * np.pi))
-        print(f"Time at transit {ih0}")
+        ih0 = change(((obs.date) / constants.two_pi) % constants.two_pi)
         # Account for the lower hemisphere
         if latitude < 0:
             ih0 -= np.pi
             obs.date -= 0.5
-        
-         
+
         return ih0

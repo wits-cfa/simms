@@ -12,3 +12,5 @@ earth_emaj = 6378137.0  # [m]
 esq = 0.00669437999014
 
 hour_angle = PI / 12
+
+two_pi = 2 * PI
