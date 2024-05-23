@@ -17,6 +17,16 @@ inputs:
     info: Direction dependent effects
     dtype: File
     required: no
+  catalogue:
+    info: Path to File containing catalogues with source information
+    dtype: File
+    required: yes
+  mapping:
+    info: Path to file containing the mapping of your catalogoue column names to what is 
+          expected. If not given default column names will be be used. 
+            Please check documentation for default mapping yaml.
+    dtype: File
+    required: no
 outputs:
   {}
   
