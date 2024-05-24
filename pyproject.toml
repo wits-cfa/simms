@@ -20,6 +20,7 @@ python-casacore = "^3.5.2"
 matplotlib = "*"
 ephem = "*"
 stimela = {git = "https://github.com/caracal-pipeline/stimela.git", branch="master"}
+dask-ms = "^0.2"
 
 [tool.poetry.scripts]
 skysim = "simms.parser_config.skysim:runit"
@@ -43,3 +44,6 @@ optional = true
 Sphinx = "^5.3.0"
 sphinx-copybutton = "^0.5.0"
 furo = "^2022.9.15"
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.4"
+

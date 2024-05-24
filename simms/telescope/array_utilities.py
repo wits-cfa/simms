@@ -1,9 +1,12 @@
 from datetime import datetime
-from typing import Union
+from typing import Dict, Union
 
+import dask
+import dask.array as da
 import ephem
 import numpy as np
 from casacore.measures import measures
+from daskms import Dataset, xds_to_table
 
 from simms import constants, utilities
 
@@ -81,8 +84,10 @@ class Array:
 
         ref_longitude, ref_latitude, ref_altitude = self.centre
 
-        nnp = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(latitude) ** 2)
-        nn0 = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(ref_latitude**2))
+        nnp = constants.earth_emaj / \
+            np.sqrt(1 - constants.esq * np.sin(latitude) ** 2)
+        nn0 = constants.earth_emaj / \
+            np.sqrt(1 - constants.esq * np.sin(ref_latitude**2))
 
         # calculating the global coordinates of the antennas.
         x = (nnp + altitude) * np.cos(latitude) * np.cos(longitude)
@@ -90,8 +95,10 @@ class Array:
         z = ((1 - constants.esq) * nnp + altitude) * np.sin(latitude)
 
         # calculating the global coordinates of the array center.
-        x0 = (nn0 + ref_altitude) * np.cos(ref_latitude) * np.cos(ref_longitude)
-        y0 = (nn0 + ref_altitude) * np.cos(ref_latitude) * np.sin(ref_longitude)
+        x0 = (nn0 + ref_altitude) * \
+            np.cos(ref_latitude) * np.cos(ref_longitude)
+        y0 = (nn0 + ref_altitude) * \
+            np.cos(ref_latitude) * np.sin(ref_longitude)
         z0 = ((1 - constants.esq) * nn0 + ref_altitude) * np.sin(ref_latitude)
 
         xyz = np.column_stack((x, y, z))
@@ -124,26 +131,20 @@ class Array:
         delta_z = z - z0
 
         # local frame components.
-        east = -np.sin(longitude) * delta_x + np.cos(longitude) * delta_y + 0 * delta_z
-        north = (-np.sin(latitude) * np.cos(longitude) * delta_x - np.sin(latitude) * np.sin(longitude) * delta_y + np.cos(latitude) * delta_z)
-        height = (np.cos(latitude) * np.cos(longitude) * delta_x + np.cos(latitude) * np.sin(longitude) * delta_y + np.sin(latitude) * delta_z)
+        east = -np.sin(longitude) * delta_x + \
+            np.cos(longitude) * delta_y + 0 * delta_z
+        north = (-np.sin(latitude) * np.cos(longitude) * delta_x - np.sin(latitude)
+                 * np.sin(longitude) * delta_y + np.cos(latitude) * delta_z)
+        height = (np.cos(latitude) * np.cos(longitude) * delta_x + np.cos(latitude)
+                  * np.sin(longitude) * delta_y + np.sin(latitude) * delta_z)
 
         # arranging the components into an array.
         enu = np.column_stack((east, north, height))
 
         return enu
 
-    def uvgen(
-        self,
-        pointing_direction,
-        dtime,
-        ntimes,
-        start_freq,
-        dfreq,
-        nchan,
-        start_time=None,
-        start_ha=None,
-    ) -> utilities.ObjDict:
+    def uvgen(self, pointing_direction, dtime, ntimes, start_freq, dfreq,
+              nchan, start_time=None, start_ha=None) -> utilities.ObjDict:
         """
         Generate uvw coordimates
 
@@ -162,7 +163,7 @@ class Array:
                     : frequency interval.
         nchan: int
                     : number of channels.
-        
+
         start_time: Union[str, List[str]]
                     : start time of the observation date and time ("YYYY/MM/DD 12:00:00", ["EPOCH", "YYYY/MM/DD 12:00:00"])
                         default is the current machine time.
@@ -179,7 +180,7 @@ class Array:
         # xyz coordinates of the array
         positions_global, _ = self.geodetic2global()
 
-        #get the array centre info
+        # get the array centre info
         self.set_arrayinfo()
         longitude = self.centre[0]
         latitude = self.centre[1]
@@ -195,21 +196,26 @@ class Array:
                 ih0 = start_ha
             else:
                 if isinstance(start_time, str):
-                    ih0 = self.get_start_ha(longitude, latitude, ra, start_time)
+                    ih0 = self.get_start_ha(
+                        longitude, latitude, ra, start_time)
                 else:
                     split_start_time = start_time[1]
-                    ih0 = self.get_start_ha(longitude, latitude, ra, split_start_time)
+                    ih0 = self.get_start_ha(
+                        longitude, latitude, ra, split_start_time)
         else:
             ih0 = -tot_ha / 2
-        
+
         h0 = ih0 + np.linspace(0, tot_ha, ntimes)
 
-       #Transformation matrix
+       # Transformation matrix
         transform_matrix = np.array(
             [
-                [np.sin(h0), np.cos(h0), np.array([0.0 for _ in range(len(h0))])],
-                [-np.sin(dec) * np.cos(h0), np.sin(dec) * np.sin(h0), np.array([np.cos(dec) for _ in range(len(h0))])],
-                [np.cos(dec) * np.cos(h0), -np.cos(dec) * np.sin(h0), np.array([np.sin(dec) for _ in range(len(h0))])],
+                [np.sin(h0), np.cos(h0), np.array(
+                    [0.0 for _ in range(len(h0))])],
+                [-np.sin(dec) * np.cos(h0), np.sin(dec) * np.sin(h0),
+                 np.array([np.cos(dec) for _ in range(len(h0))])],
+                [np.cos(dec) * np.cos(h0), -np.cos(dec) * np.sin(h0),
+                 np.array([np.sin(dec) for _ in range(len(h0))])],
             ]
         )
 
@@ -228,11 +234,15 @@ class Array:
 
         bl_array = np.vstack(baseline_list)
 
-        u_coord = (np.outer(transform_matrix[0, 0], bl_array[:, 0]) + np.outer(transform_matrix[0, 1], bl_array[:, 1]) + np.outer(transform_matrix[0, 2], bl_array[:, 2]))
-        v_coord = (np.outer(transform_matrix[1, 0], bl_array[:, 0]) + np.outer(transform_matrix[1, 1], bl_array[:, 1]) + np.outer(transform_matrix[1, 2], bl_array[:, 2]))
-        w_coord = (np.outer(transform_matrix[2, 0], bl_array[:, 0]) + np.outer(transform_matrix[2, 1], bl_array[:, 1]) + np.outer(transform_matrix[2, 2], bl_array[:, 2]))
+        u_coord = (np.outer(transform_matrix[0, 0], bl_array[:, 0]) + np.outer(
+            transform_matrix[0, 1], bl_array[:, 1]) + np.outer(transform_matrix[0, 2], bl_array[:, 2]))
+        v_coord = (np.outer(transform_matrix[1, 0], bl_array[:, 0]) + np.outer(
+            transform_matrix[1, 1], bl_array[:, 1]) + np.outer(transform_matrix[1, 2], bl_array[:, 2]))
+        w_coord = (np.outer(transform_matrix[2, 0], bl_array[:, 0]) + np.outer(
+            transform_matrix[2, 1], bl_array[:, 1]) + np.outer(transform_matrix[2, 2], bl_array[:, 2]))
 
-        u_coord, v_coord, w_coord = [x.flatten() for x in (u_coord, v_coord, w_coord)]
+        u_coord, v_coord, w_coord = [x.flatten()
+                                     for x in (u_coord, v_coord, w_coord)]
         uvw = np.column_stack((u_coord, v_coord, w_coord))
 
         if not start_time:
@@ -251,16 +261,22 @@ class Array:
         # the time table
         time_entries = np.arange(start_time_sec, total_time, dtime)
 
-        #starting/center frequency of the observation
+        time_table = []
+        for time_entry in time_entries:
+            baseline_time = [time_entry] * len(baseline_list)
+            time_table.append(baseline_time)
+        time_table = np.array(time_table)
+
+        # starting/center frequency of the observation
         start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
 
-        #channel bandwidth of the observation
+        # channel bandwidth of the observation
         dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
 
-        #total bandwidth
+        # total bandwidth
         total_bandwidth = start_freq + dfreq * nchan
 
-        #channel frequencies/ frequency table
+        # channel frequencies/ frequency table
         frequency_entries = np.arange(start_freq, total_bandwidth, dfreq)
 
         uvcoverage = utilities.ObjDict(
@@ -269,7 +285,7 @@ class Array:
                 "antenna2": antenna2_list,
                 "uvw": uvw,
                 "freqs": frequency_entries,
-                "times": time_entries,
+                "times": time_table,
             }
         )
 
@@ -284,7 +300,8 @@ class Array:
         for i in range(antlocations.shape[0]):
             for j in range(i + 1, antlocations.shape[0]):
                 baseline = antlocations[j] - antlocations[i]
-                baseline_entry = {"antenna1": i, "antenna2": j, "baseline": baseline}
+                baseline_entry = {"antenna1": i,
+                                  "antenna2": j, "baseline": baseline}
                 baseline_info.append(baseline_entry)
         return baseline_info
 
