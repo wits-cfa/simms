@@ -1,6 +1,6 @@
 name: null
 ra: ra_hms
-dec: dec_hms
+dec: dec_dms
 stokes_i: null
 stokes_q: null
 stokes_u: null
@@ -11,8 +11,6 @@ pa: null
 cont_reffreq: null
 cont_coeff_1: null # Spectral index
 cont_coeff_2: null # spectral curvature
-# add as many spi terms as required as cont_coef_x
 line_peak: null
 line_width: null
 line_restfreq: null
-

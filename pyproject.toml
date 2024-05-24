@@ -16,7 +16,6 @@ packages = [{ include = "simms" }]
 [tool.poetry.dependencies]
 python = "^3.9"
 numpy = "^1.25.0"
-python-casacore = "^3.5.2"
 matplotlib = "*"
 stimela = {git = "https://github.com/caracal-pipeline/stimela.git", branch="master"}
 
