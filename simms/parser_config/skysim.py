@@ -2,10 +2,12 @@ import os
 import simms
 from simms.parser_config.utils import load, load_sources
 from scabha.schema_utils import clickify_parameters, paramfile_loader
+from scabha.basetypes import File
 import click
 from omegaconf import OmegaConf
 from simms import BIN, get_logger 
-from simms.skymodel import catalogue
+from simms.skymodel import catalogue, thisdir as skysimdir
+import glob
 
 log = get_logger(BIN.skysim)
 
@@ -16,7 +18,7 @@ config = load(command, use_sources=sources)
 
 source_files = glob.glob(f"{thisdir}/library/*.yaml") 
 sources = [File(item) for item in source_files] 
-parserfile = File(f"{thisdir}/{command}.txt") 
+parserfile = File(f"{thisdir}/{command}.yaml") 
 config = paramfile_loader(parserfile, sources)[command] 
 
 

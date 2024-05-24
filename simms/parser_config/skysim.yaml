@@ -6,28 +6,9 @@ inputs:
   _use: libs.sys_noise.inputs
   ms:
     info: Measurement set
-<<<<<<< HEAD
     dtype: MS
     required: yes
     must_exist: no
-=======
-    dtype: File
-    required: yes
-    must_exist: no
-  source_catalogue:
-    info: Catalogue of sources
-    dtype: File
-    required: yes
-    must_exist: yes
-  source_type:
-    info: Point source or extended sources- should be point/extended
-    dtype: str
-    required: yes
-  spectrum:
-    info: Line or continuum source- should be line/cont
-    dtype: str
-    required: yes
->>>>>>> ffac2b90b46119e00f4606205376a06ac90c8752
   die:
     info: Direction independent effects
     dtype: File
@@ -36,7 +17,6 @@ inputs:
     info: Direction dependent effects
     dtype: File
     required: no
-<<<<<<< HEAD
   catalogue:
     info: Path to File containing catalogues with source information
     dtype: File
@@ -50,7 +30,3 @@ inputs:
 outputs:
   {}
   
-=======
-outputs:
-  {}
->>>>>>> ffac2b90b46119e00f4606205376a06ac90c8752
