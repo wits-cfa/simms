@@ -2,8 +2,6 @@ import os
 import logging
 from importlib import metadata
 
-__version__ = metadata.version(__package__)
-
 SCHEMADIR = os.path.join(__path__[0], "schemas")
 
 def get_logger(name, level="DEBUG"):
@@ -21,4 +19,10 @@ def get_logger(name, level="DEBUG"):
 
 LOG = get_logger("simms")
 
+from omegaconf import OmegaConf
 
+BIN = OmegaConf.create({
+    "skysim": "skysimulator",
+    "telsim": "telescopesimulator",
+    
+})

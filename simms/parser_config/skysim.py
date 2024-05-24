@@ -1,14 +1,23 @@
+import os
 import simms
 from simms.parser_config.utils import load, load_sources
-from simms.skymodel import thisdir as skysimdir
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 import click
 from omegaconf import OmegaConf
-import os
+from simms import BIN, get_logger 
+from simms.skymodel import catalogue
 
-command = "skysim"
+log = get_logger(BIN.skysim)
+
+command = BIN.skysim
 sources = load_sources(["library/sys_noise"])
+thisdir  = os.path.dirname(__file__)
 config = load(command, use_sources=sources)
+
+source_files = glob.glob(f"{thisdir}/library/*.yaml") 
+sources = [File(item) for item in source_files] 
+parserfile = File(f"{thisdir}/{command}.txt") 
+config = paramfile_loader(parserfile, sources)[command] 
 
 
 skyspec = paramfile_loader(os.path.join(skysimdir, "skyspec.yaml"))
