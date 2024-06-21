@@ -1,19 +1,41 @@
-name: null
-ra: null
-dec: null
-stokes_i: null
-stokes_q: null
-stokes_i: null
-stokes_v: null
-emaj: null
-emin: null
-pa: null
-cont_reffreq: null
-cont_coeff_1: null # Spectral index
-cont_coeff_2: null # spectral curvature
-cont_coeff_3: null # spectrum third order term
-# add as many spi terms as required as cont_coef_x
-line_peak: null
-line_width: null
-line_restfreq: null
+libs:
+  {}
 
+inputs: 
+  name:
+    dtype: str
+  ra: 
+    dtype: Union[str,float]
+  dec: 
+    dtype: Union[str,float]
+  stokes_i:
+    dtype: float
+  stokes_q: 
+    dtype: float
+  stokes_u: 
+    dtype: float
+  stokes_v: 
+    dtype: float
+  emaj:
+    dtype: Union[str,float]
+  emin: 
+    dtype: Union[str,float]
+  pa: 
+    dtype: Union[str,float]
+  cont_reffreq: 
+    dtype: Union[str,float]
+  cont_coeff_1: 
+    info: Spectral index
+    dtype: Union[str,float] 
+  cont_coeff_2: 
+    info: Spectral Curvature
+    dtype: Union[str,float] 
+  line_peak: 
+    dtype: Union[str,float]
+  line_width: 
+    dtype: Union[str,float]
+  line_restfreq: 
+    dtype: Union[str,float]
+
+outputs: 
+  {}

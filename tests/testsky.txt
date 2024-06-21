@@ -1,4 +1,4 @@
-#name ra dec stokes_i stokes_q stokes_q stokes_u stokes_v emaj emin pa cont_coeff_1 cont_coeff_2 cont_reffreq line_peak line_width line_restfreq
-A   1h0m0s   -30d0m0s   1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  null    null   null
-B   0h30m0s  -30d0m0s   1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  null    null   null
-C   1h30m0s  -30d0m0s   1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  null    null   null
+#name ra_hms dec_hms stokes_i stokes_q stokes_u stokes_v pa emaj emin cont_coeff_1 cont_coeff_2 cont_reffreq line_peak line_width line_restfreq
+A   1h0m0s   -30d0m0s   1 0 0 0 45d 2as 3as  0.7     0   1.2GHz  1.4GHz    null   null
+B   0h30m0s  -30d0m0s   1 0 0 0 45d 2as 3as  0.7     0   1.2GHz  1.4GHz    null   null
+C   1h30m0s  -30d0m0s   1 0 0 0 45d 2as 3as  0.7     0   1.2kHz  1.4GHz    null   null
