@@ -1,0 +1,11 @@
+# this text file is probably the cause for the error i am getting 
+# the format or the names of the cooumns and rows
+
+source ra dec stokes_i emaj emin pa cont_reffreq
+S0 1 -1 1 0 0 20 544
+S1 2 -5 10 30 10 45 600
+S2 3 -3 0.03 0 0 35 715
+S3 4 -2 10 20 20 75 810
+S4 5 -5 30 10 30 90 900
+S5 1 -1.5 15 15 10 60 630
+S6 6 -3 2 110 0 500
