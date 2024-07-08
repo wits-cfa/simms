@@ -24,6 +24,11 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
 
     #Obtain the array information using the specified array name or file.
     telescope_array = autils.Array(telescope_name)
+    telescope_array.set_arrayinfo()
+    size = telescope_array.size
+    mount = telescope_array.mount
+    antlocation,_ = telescope_array.geodetic2global()
+    print(mount)
 
     #Generate the uv coverage of the observation along with the TIME and CHAN_FREQ columns.
     uvcoverage_data = telescope_array.uvgen(pointing_direction, dtime, ntimes,
@@ -35,6 +40,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     #Defines number of chunks to divide the data into, larger number of
     #chunks improves the computation speed. Should find a way to specifiy it better
     num_row_chunks = num_rows // 4
+
 
     #Number of frequency channels 
     num_chans = len(uvcoverage_data.freqs)
@@ -59,12 +65,14 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     sigma = da.full((num_rows,num_corr),1.)
     sigma = da.rechunk(sigma,chunks=(num_row_chunks,num_corr))
 
+
     freqs = da.from_array(uvcoverage_data.freqs,chunks=num_chans)
     ref_freq = dm.frequency(v0=start_freq)["m0"]["value"]
     ref_freq = da.from_array(ref_freq, chunks=1).compute()
     # ref_freq = da.asarray(ref_freq).compute()
     chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
     chan_width = da.from_array(np.asarray(chan_width), chunks=1).compute()
+    n_chans = da.from_array(num_chans)
 
     main_table = xr.Dataset(
     {
@@ -84,25 +92,32 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         "SIGMA_SPECTRUM":(("row","corr"),sigma),
         "WEIGHT_SPECTRUM":(("row","corr"),sigma),
     },
-    coords={"row": da.arange(num_rows)}
+    coords={"row": np.arange(num_rows)}
     )
 
+    antlocation = da.from_array(antlocation)
+    antenna_table = xr.Dataset({
+        "POSITION":(antlocation.shape,antlocation)
+    })
+
+    spectral_window_table = xr.Dataset(
+    {   
+        "CHAN_FREQ": ("chan",freqs),
+        "REF_FREQUENCY": (ref_freq.shape,ref_freq),
+        "CHAN_WIDTH":(chan_width.shape,chan_width),
+        "RESOLUTION":(chan_width.shape,chan_width),
+        "EFFECTIVE_BW":(chan_width.shape,chan_width),
+        "NUM_CHAN":(n_chans.shape,n_chans)
+    },
+    coords={"chan": np.arange(num_chans)}
+    )
+
+
     
-
-    # spectral_window_table = xr.Dataset(
-    # {   
-    #     "CHAN_FREQ": (("chan"), freqs),
-    #     # "REF_FREQUENCY": (("chan"), ref_freq),
-    #     # "CHAN_WIDTH":(("chan"),chan_width),
-    #     # "RESOLUTION":(("chan"),chan_width),
-    #     # "EFFECTIVE_BW":(("chan"),chan_width),
-    # },
-    # coords={"chan": da.arange(num_chans)}
-    # )
-
-
+    # write_antenna = xds_to_table([antenna_table],f"{ms_name}.ms::ANTENNA")
     write_main = xds_to_table([main_table], f"{ms_name}.ms")
     # write_spw = xds_to_table([spectral_window_table],f"{ms_name}.ms::SPECTRAL_WINDOW")
     dask.compute(write_main)
+    # dask.compute(write_antenna)
     # dask.compute(write_spw)
 
