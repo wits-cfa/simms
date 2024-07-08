@@ -265,7 +265,7 @@ class Array:
         for time_entry in time_entries:
             baseline_time = [time_entry] * len(baseline_list)
             time_table.append(baseline_time)
-        time_table = np.array(time_table)
+        time_table = np.array(time_table).flatten()
 
         # starting/center frequency of the observation
         start_freq = dm.frequency(v0=start_freq)["m0"]["value"]

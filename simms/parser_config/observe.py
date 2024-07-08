@@ -6,7 +6,7 @@ import simms
 from simms.parser_config.utils import load, load_sources
 
 command = "observe"
-sources = load_sources(["skysim", "telescope"])
+sources = load_sources(["skysim", "telsim"])
 config = load(command, use_sources=sources)
 
 
