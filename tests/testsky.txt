@@ -1,4 +1,7 @@
-#name ra dec stokes_i stokes_q stokes_u stokes_v emaj emin pa cont_coeff_1 cont_coeff_2 cont_reffreq line_peak line_width line_restfreq
-A   1h0m0s   -30d0m0s   1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  null    null   null
-B   0h30m0s  -30d0m0s   1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  null    null   null
-C   1h30m0s  -30d0m0s   1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  null    null   null
+#format: ra_deg dec_deg name stokes_i stokes_q stokes_u stokes_v emaj emin pa cont_coeff_1 cont_coeff_2 cont_reffreq line_peak line_width line_restfreq
+# point sources
+1h0m0s   -30d0m0s A  1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  null    null   null
+0h30m0s  -30d0m0s B  1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  null    null   null
+1h30m0s  -30d0m0s C  1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  null    null   null
+# gaussian sources
+1h0m0s   -30d0m0s D   1 0 0 0 2as 3as 45d 0.7     0   1.4GHz  6    6   null 

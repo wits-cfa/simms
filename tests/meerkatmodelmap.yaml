@@ -1,0 +1,18 @@
+name: Source_id
+ra: RA
+dec: DEC
+stokes_i: Total_flux
+stokes_q: null
+stokes_u: null
+stokes_v: null
+emaj: E_Maj
+emin: E_Min
+pa: PA
+cont_reffreq: null
+cont_coeff_1: null # Spectral index
+cont_coeff_2: null # spectral curvature
+cont_coeff_3: null # spectrum third order term
+# add as many spi terms as required as cont_coef_x
+line_peak: null
+line_width: null
+line_restfreq: null
