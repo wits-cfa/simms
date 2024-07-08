@@ -7,25 +7,21 @@ from simms.utilities import readyaml, ObjDict, File
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
 from .skysims import Source
+import scabha
 
 
 @dataclass
-class Line(SpecBase):
+class Line():#parameter
     peak: float
     width: int
     restfreq: float
-    schemafile: str = os.path.join(SCHEMADIR, "schema_freq.yaml")
-    schema_section: str = "Line"
-
-    #@property think this should be part of the function
-    #def sigma(self):
-        #return self.width / FWHM_E
+    stokes: List[float]
 
     def set_linespectrum(self, nchan,f0, df):
         self.chans = np.arange(nchan)
         for i in range(len(self.chans)):
             self.nu = f0 + self.chans[i]*df
-        self.set_spectrum = singlegauss_1d(self.nu, self.stokes, self.sigma, self.freq_peak)
+        self.set_spectrum = singlegauss_1d(self.nu, self.stokes, self.sigma, self.peak)
         return self.set_spectrum
 
     
@@ -67,9 +63,9 @@ class Extendedsource(SpecBase):
     schemafile: str = os.path.join(SCHEMADIR, "schema_source.yaml")
 
     ##### we didnt define set_sourcetype for extended, we might need it
-   def set_sourcetype(self, source_type)
-       self.source_type = source_type
-       return self.source_type
+    def set_sourcetype(self, source_type):
+        self.source_type = source_type
+        return self.source_type
 
 
 class Catalogue(SpecBase):

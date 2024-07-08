@@ -44,8 +44,8 @@ Extendedsource:
 Catalogue:
   info: Catalogue of sources
   cat:
-    info: Catalogue
-    dtype: str
+    info: Catalogue name
+    dtype: File
     required: true
   racol:
     info: Column corresponding to right ascension
