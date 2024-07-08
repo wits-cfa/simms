@@ -1,3 +1,7 @@
+libs:
+  sys_noise:
+    _include: (simms.parser_config.library)sys_noise.yaml
+
 inputs:
   ms:
     info: Observation name/id/label
@@ -48,5 +52,7 @@ inputs:
     default:
       - XX
       - YY
+  _use:
+    libs.sys_noise.inputs
 outputs:
   {}

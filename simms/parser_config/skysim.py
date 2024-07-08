@@ -1,4 +1,5 @@
 import os
+import os
 import simms
 from simms.parser_config.utils import load, load_sources, thisdir as skysimdir
 from scabha.schema_utils import clickify_parameters, paramfile_loader
@@ -13,7 +14,9 @@ from simms.utilities import CatalogueError
 log = get_logger(BIN.skysim)
 
 command = BIN.skysim
+command = BIN.skysim
 sources = load_sources(["library/sys_noise"])
+thisdir  = os.path.dirname(__file__)
 thisdir  = os.path.dirname(__file__)
 config = load(command, use_sources=sources)
 

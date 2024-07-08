@@ -70,14 +70,14 @@ class Extendedsource(SpecBase):
 
 class Catalogue(SpecBase):
     def __init__(self, path: Optional[File] = None, sources:Optional[List[Any]] = None,
-                  mapping:Optional[File] = None, delimeter: Optional[str] = " "):
+                  mapping:Optional[File] = None, delimiter: Optional[str] = " "):
         """
         Catalogue definition
         """
         self.path = path
         self.sources = None
         self.mapping = mapping
-        self.delimeter = delimeter
+        self.delimeter = delimiter
 
         if path is None and sources is None:
             raise RuntimeError("Either one of the path or a source list"
