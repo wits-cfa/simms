@@ -107,5 +107,3 @@ def readyaml(yamlfile:str) -> dict:
     with open(yamlfile) as stdr:
         return yaml.load(stdr, Loader=yaml.FullLoader)
 
-class CatalogueError(Exception):
-    pass

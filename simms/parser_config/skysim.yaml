@@ -1,6 +1,8 @@
 libs:
   sys_noise:
     _include: (simms.parser_config.library)sys_noise.yaml
+  spectrum:
+    _include: (simms.parser_config.library)spectrum.yaml
 
 inputs:
   _use: libs.sys_noise.inputs
@@ -9,6 +11,15 @@ inputs:
     dtype: MS
     required: yes
     must_exist: no
+  catalogue: 
+    info: Catalogue file containing sources
+    dtype: File
+    required: yes
+  cat-delim: 
+    info: Delimeter that is used in the catalogue
+    dtype: str
+    required: no
+
   die:
     info: Direction independent effects
     dtype: File
@@ -17,14 +28,8 @@ inputs:
     info: Direction dependent effects
     dtype: File
     required: no
-  catalogue:
-    info: Path to File containing catalogues with source information
-    dtype: File
-    required: yes
   mapping:
-    info: Path to file containing the mapping of your catalogoue column names to what is 
-          expected. If not given default column names will be be used. 
-            Please check documentation for default mapping yaml.
+    info: File that specifies the names of columns that are expected vs the the names of the columns given in the catalogue
     dtype: File
     required: no
 outputs:
