@@ -39,4 +39,4 @@ def runit(**kwargs):
     nchan = opts.nchan
     correlations = opts.correlations
     generate_ms.create_ms(msname, telescope, direction,
-                          dtime, ntimes, startfreq, dfreq, nchan, starttime)
+                          dtime, ntimes, startfreq, dfreq, nchan, correlations, starttime)

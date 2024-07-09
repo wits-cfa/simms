@@ -31,11 +31,11 @@ inputs:
   ntimes:
     info: Number of times slots for MS.
     dtype: int
-    default: 120 
+    default: 10
   startfreq:
     info: Centre of first frequency channel/bin, e.g 0.55GHz. If given without units, Hertz are assumed.
     dtype: Union[str, float]
-    default: 899MHz
+    default: 1420MHz
   dfreq:
     info: Channel width and units, e.g 2.4MHz. If given without units, Hertz are assumed.
     dtype: Union[str, float]
@@ -45,7 +45,7 @@ inputs:
     dtype: int
     default: 9
   correlations:
-    info: Space seprated feed correlations for MS, e.g., 'XX YY'
+    info: Feed correlations for MS, e.g., 'XX, YY'
     dtype: List[str]
     policies:
       split: " "
