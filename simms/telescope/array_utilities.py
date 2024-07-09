@@ -62,6 +62,7 @@ class Array:
         self.mount = info["mount"]
         self.names = info["antnames"]
         self.coordsys = info["coord_sys"]
+        self.size = info["size"]
 
         if self.degrees and self.coordsys.lower() == "geodetic":
             self.antlocations = np.deg2rad(self.antlocations)

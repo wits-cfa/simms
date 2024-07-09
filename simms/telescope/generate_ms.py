@@ -26,7 +26,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     # Obtain the array information using the specified array name or file.
     telescope_array = autils.Array(telescope_name)
     telescope_array.set_arrayinfo()
-    # size = telescope_array.size
+    size = telescope_array.size
     mount = telescope_array.mount
     antlocation, _ = telescope_array.geodetic2global()
 
@@ -49,6 +49,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
 
     # Indices of the pair of antennas forming a baseline. These baselines
     # are used ntimes during the observation
+    num_ants = antlocation.shape[0]
     ant1 = uvcoverage_data.antenna1 * ntimes
     ant2 = uvcoverage_data.antenna2 * ntimes
     num_spws = 1.
@@ -64,14 +65,8 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     interval = da.rechunk(interval, chunks=num_row_chunks)
     sigma = da.full((num_rows, num_corr), 1.)
     sigma = da.rechunk(sigma, chunks=(num_row_chunks, num_corr))
-
-    freqs = da.from_array([uvcoverage_data.freqs], chunks=(1, num_chans))
-    ref_freq = dm.frequency(v0=start_freq)["m0"]["value"]
-    ref_freq = da.from_array(ref_freq, chunks=1).compute()
-    # ref_freq = da.asarray(ref_freq).compute()
-    chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
-    chan_width = da.from_array(np.asarray(chan_width), chunks=1).compute()
-    n_chans = da.from_array(num_chans)
+    flag = da.zeros((num_rows, num_chans, num_corr), 
+                    dtype=bool, chunks=(num_row_chunks, num_chans, num_corr))
 
     main_table = xr.Dataset(
         {
@@ -90,16 +85,75 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
             "WEIGHT": (("row", "corr"), sigma),
             "SIGMA_SPECTRUM": (("row", "corr"), sigma),
             "WEIGHT_SPECTRUM": (("row", "corr"), sigma),
+            "FLAG":(("row","chan","corr"),flag)
         },
         coords={"ROWID": ("row", da.arange(num_rows))}
     )
 
     write_main = xds_to_table([main_table], f"{ms_name}.ms")
-
     dask.compute(write_main)
+    
+    #SPECTRAL_WINDOW table
+    freqs = uvcoverage_data.freqs
+    freqs = freqs.reshape(1,freqs.shape[0])
+    ref_freq = dm.frequency(v0=start_freq)["m0"]["value"]
+    chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
+    channel_widths = np.full(freqs.shape,chan_width)
+    total_bandwidth = nchan * chan_width
+   
+    spw_tab = table(f"{ms_name}.ms::SPECTRAL_WINDOW", readonly=False, lockoptions='user')
+    
+    try:
+        spw_tab.lock(write=True)
+        spw_tab.addrows(1)
+        spw_tab.putcol("CHAN_FREQ", freqs)
+        spw_tab.putcol("CHAN_WIDTH",channel_widths)
+        spw_tab.putcol("EFFECTIVE_BW",channel_widths)
+        spw_tab.putcol("RESOLUTION",channel_widths)
+        spw_tab.putcol("REF_FREQUENCY",ref_freq)
+        spw_tab.putcol("MEAS_FREQ_REF",ref_freq)
+        spw_tab.putcol("TOTAL_BANDWIDTH",total_bandwidth)
+        spw_tab.putcol("NUM_CHAN",nchan)
+        spw_tab.putcol("NAME","00")
+        spw_tab.putcol("NET_SIDEBAND",[1])
+    finally:
+        spw_tab.unlock()
+        spw_tab.close()
 
-    # spw_tab = table(f"{ms_name}.ms::SPECTRAL_WINDOW",
-    #                 readonly=False, lockoptions='auto')
-    # # spw_tab.addrows(1)
-    # spw_tab.putcol("CHAN_FREQ", np.array([freqs]), startrow=0, nrow=-1)
-    # # spw_tab.close()
+
+    #ANTENNA table
+    dish_diameter = [size] * num_ants
+    ant_mount = [mount] * num_ants
+    teltype = ["GROUND_BASED"] * num_ants
+
+    ant_table = table(f"{ms_name}.ms::ANTENNA", readonly=False, lockoptions='user')
+    try:
+        ant_table.lock(write=True)
+        ant_table.addrows(num_ants)
+        ant_table.putcol("DISH_DIAMETER",dish_diameter)
+        ant_table.putcol("MOUNT",ant_mount)
+        ant_table.putcol("POSITION",antlocation)
+        ant_table.putcol("TYPE",teltype)
+    
+    finally:
+        ant_table.unlock()
+        ant_table.close()
+
+
+    dd_tab =  table(f"{ms_name}.ms::DATA_DESCRIPTION", readonly=False, lockoptions='user')
+    try:
+        dd_tab.lock(write=True)
+        dd_tab.addrows(1)
+    finally:
+        dd_tab.unlock()
+        dd_tab.close()
+
+    #POLARIZATION table
+    pol_tab =  table(f"{ms_name}.ms::POLARIZATION", readonly=False, lockoptions='user')
+    try:
+        pol_tab.lock(write=True)
+        pol_tab.addrows(1)
+        pol_tab.putcol("NUM_CORR",num_corr)
+    finally:
+        pol_tab.unlock()
+        pol_tab.close()
