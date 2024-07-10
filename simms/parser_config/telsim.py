@@ -7,9 +7,13 @@ from scabha.basetypes import File
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 
 import simms
+from simms import BIN, get_logger
 from simms.parser_config.utils import load
+from simms.telescope import generate_ms
 
-command = "telescope"
+log = get_logger(BIN.telsim)
+
+command = BIN.telsim
 config = load(command)
 
 thisdir = os.path.dirname(__file__)
@@ -24,4 +28,16 @@ config = paramfile_loader(parserfile, telescope_files)[command]
 @clickify_parameters(config)
 def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
-    print(opts)
+    msname = opts.ms
+    telescope = opts.telescope
+    direction = opts.direction
+    starttime = opts.starttime
+    dtime = opts.dtime
+    ntimes = opts.ntimes
+    startfreq = opts.startfreq
+    dfreq = opts.dfreq
+    nchan = opts.nchan
+    correlations = opts.correlations
+    rowchunks = opts.rowchunks
+    generate_ms.create_ms(msname, telescope, direction,
+                          dtime, ntimes, startfreq, dfreq, nchan, correlations, rowchunks, starttime)

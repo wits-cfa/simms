@@ -5,7 +5,7 @@ libs:
 inputs:
   ms:
     info: Observation name/id/label
-    dtype: List[MS]
+    dtype: MS
     must_exist: no
     required: yes
     policies:
@@ -17,10 +17,10 @@ inputs:
     required: yes
   direction:
     info: Direction of field centre for MS. Example, J2000,0h24m20s,-30d12m33s or J2000,0:24:20,-30:12:33
-    dtype: str
+    dtype: List[str]
     metavar: '[EPOCH,]RA,Dec'
-    default: J2000,1h0m0s,-31d0m0s
-  start_time: 
+    default: 'J2000,1h0m0s,-31d0m0s'
+  starttime: 
     info: Observation start time. For example, 'UTC,05/02/2024,06:15:10' 
     metavar: '[TIME ZONE,][DD/MM/YYYY,],HH:MM:SS'
     dtype: str
@@ -31,11 +31,11 @@ inputs:
   ntimes:
     info: Number of times slots for MS.
     dtype: int
-    default: 120 
-  start_freq:
+    default: 10
+  startfreq:
     info: Centre of first frequency channel/bin, e.g 0.55GHz. If given without units, Hertz are assumed.
     dtype: Union[str, float]
-    default: 899MHz
+    default: 1420MHz
   dfreq:
     info: Channel width and units, e.g 2.4MHz. If given without units, Hertz are assumed.
     dtype: Union[str, float]
@@ -45,13 +45,17 @@ inputs:
     dtype: int
     default: 9
   correlations:
-    info: Space seprated feed correlations for MS, e.g., 'XX YY'
+    info: Feed correlations for MS, e.g., 'XX, YY'
     dtype: List[str]
     policies:
       split: " "
     default:
       - XX
       - YY
+  rowchunks:
+    info: Number of chunks to divide the data into, larger number of chunks improves the computation speed
+    dtype: int
+    default: 50000
   _use:
     libs.sys_noise.inputs
 outputs:

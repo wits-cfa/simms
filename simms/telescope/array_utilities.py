@@ -38,7 +38,6 @@ class Array:
         """
         Extract the array information from the schema
         """
-        # check if the provided array is one of the default arrays.
         fname = None
         vla = None
         if isinstance(self.layout, str):
@@ -62,6 +61,7 @@ class Array:
         self.mount = info["mount"]
         self.names = info["antnames"]
         self.coordsys = info["coord_sys"]
+        self.size = info["size"]
 
         if self.degrees and self.coordsys.lower() == "geodetic":
             self.antlocations = np.deg2rad(self.antlocations)
@@ -174,7 +174,6 @@ class Array:
         ---
         An array of the uvw time dependent positions, the time array and the frequency array
         """
-        # casacore direction and epoch measures
         dm = measures()
 
         # xyz coordinates of the array
@@ -185,7 +184,6 @@ class Array:
         longitude = self.centre[0]
         latitude = self.centre[1]
 
-        # convert the direction using measures
         ra_dec = dm.direction(*pointing_direction)
         ra = ra_dec["m0"]["value"]
         dec = ra_dec["m1"]["value"]
@@ -255,28 +253,20 @@ class Array:
             else:
                 start_day = dm.epoch(*start_time)["m0"]["value"]
         start_time_sec = start_day * 24 * 3600
-        # total time of observation
         total_time = start_time_sec + ntimes * dtime
 
-        # the time table
         time_entries = np.arange(start_time_sec, total_time, dtime)
 
         time_table = []
         for time_entry in time_entries:
             baseline_time = [time_entry] * len(baseline_list)
             time_table.append(baseline_time)
-        time_table = np.array(time_table)
 
-        # starting/center frequency of the observation
+        time_table = np.array(time_table).flatten()
+
         start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
-
-        # channel bandwidth of the observation
         dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
-
-        # total bandwidth
         total_bandwidth = start_freq + dfreq * nchan
-
-        # channel frequencies/ frequency table
         frequency_entries = np.arange(start_freq, total_bandwidth, dfreq)
 
         uvcoverage = utilities.ObjDict(
@@ -305,16 +295,14 @@ class Array:
                 baseline_info.append(baseline_entry)
         return baseline_info
 
-    # stolen from https://github.com/SpheMakh/uvgen/blob/master/uvgen.py
     def get_start_ha(self, longitude, latitude, ra, date):
         """
-        TODO(mukundi) add docstring
+        TODO(mukundi and galefang) add docstring
         """
 
         longitude = np.deg2rad(longitude)
         latitude = np.deg2rad(latitude)
 
-        # Set up observer
         obs = ephem.Observer()
         obs.lon, obs.lat = longitude, latitude
 
@@ -328,22 +316,19 @@ class Array:
                 angle += constants.two_pi
             return angle
 
-        # Lets find transit (hour angle = 0, or LST=RA)
         lst, ra = map(change, (lst, ra))
         diff = (lst - ra) / constants.two_pi
 
         date = obs.date
         obs.date = date + diff
-        # LST should now be transit
+
         transit = change(obs.sidereal_time())
         if ra == 0:
             obs.date = (date - lst) / constants.two_pi
         elif transit - ra > 0.1 * constants.hour_angle:
             obs.date = date - diff
 
-        # This is the time at transit
         ih0 = change(((obs.date) / constants.two_pi) % constants.two_pi)
-        # Account for the lower hemisphere
         if latitude < 0:
             ih0 -= np.pi
             obs.date -= 0.5
