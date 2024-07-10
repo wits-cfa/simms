@@ -38,5 +38,6 @@ def runit(**kwargs):
     dfreq = opts.dfreq
     nchan = opts.nchan
     correlations = opts.correlations
+    rowchunks = opts.rowchunks
     generate_ms.create_ms(msname, telescope, direction,
-                          dtime, ntimes, startfreq, dfreq, nchan, correlations, starttime)
+                          dtime, ntimes, startfreq, dfreq, nchan, correlations, rowchunks, starttime)

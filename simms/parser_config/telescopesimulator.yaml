@@ -52,6 +52,10 @@ inputs:
     default:
       - XX
       - YY
+  rowchunks:
+    info: Number of chunks to divide the data into, larger number of chunks improves the computation speed
+    dtype: int
+    default: 50000
   _use:
     libs.sys_noise.inputs
 outputs:
