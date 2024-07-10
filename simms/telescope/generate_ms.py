@@ -9,7 +9,7 @@ import numpy as np
 import xarray as xr
 from casacore.measures import measures
 from casacore.tables import table
-from daskms import Dataset, xds_to_table
+from daskms import Dataset, xds_from_table, xds_to_table
 from scabha.basetypes import File
 
 from simms.telescope import array_utilities as autils
@@ -108,21 +108,11 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     if addnoise:
         dummy_data = np.random.randn(num_rows, num_chans, num_corr) + \
             1j*np.random.randn(num_rows, num_chans, num_corr)
-        # main_table.DATA.data = da.array(data)
-        # print("Before", main_table.DATA.data.compute())
         noisy_data = dummy_data * noise
-        # main_table.DATA.data = da.array(noisy_data)
-        # print("After", main_table.DATA.data.compute())
-        # print(column_name)
-        if column == 'DATA':
-            main_table.DATA.data = da.array(noisy_data)
-            print(main_table.DATA.data.compute())
-        elif column == 'MODEL_DATA':
-            print("Before", main_table.MODEL_DATA.data.compute())
-            main_table.MODEL_DATA.data = da.array(noisy_data)
-            print("After", main_table.MODEL_DATA.data.compute())
-        else:
-            main_table.CORRECTED_DATA.data = da.array(noisy_data)
+
+        print("Before", main_table[column].data.compute())
+        main_table[column] = (("row", "chan", "corr"), da.array(noisy_data))
+        print("After", main_table[column].data.compute())
     else:
         pass
     dask.compute(write_main)
@@ -184,5 +174,23 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         pol_tab.unlock()
         pol_tab.close()
 
-# def get_vis_noise(ms_name, sefd):
-#     main_table = xds_from_table()
+
+def get_vis_noise(ms_name, column, sefd, chan_width, dtime):
+
+    table = xds_from_table(f"{ms_name}.ms")[0]
+
+    noise = sefd / np.sqrt(abs(2*chan_width*dtime))
+
+    data_shape = table.DATA.shape
+
+    num_rows, num_chans, num_corr = data_shape
+    print(num_rows, num_chans, num_corr)
+
+    dummy_data = np.random.randn(num_rows, num_chans, num_corr
+                                 ) + 1j*np.random.randn(num_rows, num_chans, num_corr)
+
+    noisy_data = dummy_data * noise
+    print(noisy_data)
+
+    table[column] = (("row", "chan", "corr"), da.array(noisy_data))
+    print(table.MODEL_DATA.data)
