@@ -4,8 +4,8 @@ import numpy as np
 
 PI = np.pi
 C = 2.99792458e8
-# fwhm constant
-FWHM_E = np.sqrt(2 * np.log(2))
+# fwhm scale factor
+FWHM_scale_fact = 2*np.sqrt(2 * np.log(2))
 # Earth's semi major axis.
 earth_emaj = 6378137.0  # [m]
 # Earth's first numerical eccentricity
