@@ -23,7 +23,7 @@ def remove_ms(ms_name: str):
     if os.path.exists(name):
         shutil.rmtree(name, ignore_errors=True)
         print(
-            f"The existing MS file ({name}) was successfully deleted. It is now being recreated...")
+            f"The existing MS file {name} was successfully deleted. It is now being recreated...")
     else:
         print(
             f"MS file {name} does not exist. A new file will be created.")
@@ -68,6 +68,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     data = da.zeros((num_rows, num_chans, num_corr),
                     chunks=(num_row_chunks, num_chans, num_corr))
     times = da.from_array(uvcoverage_data.times, chunks=num_row_chunks)
+    time_range = np.array([[uvcoverage_data.times[0],uvcoverage_data.times[-1]]])
     uvw = da.from_array(uvcoverage_data.uvw, chunks=(num_row_chunks, 3))
     antenna1 = da.from_array(ant1, chunks=num_row_chunks)
     antenna2 = da.from_array(ant2, chunks=num_row_chunks)
@@ -84,7 +85,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
     channel_widths = np.full(freqs.shape, chan_width)
     total_bandwidth = nchan * chan_width
-
+    
     noise = sefd / np.sqrt(abs(2*chan_width*dtime))
 
     main_table = xr.Dataset(
@@ -115,9 +116,9 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
             1j*np.random.randn(num_rows, num_chans, num_corr)
         noisy_data = dummy_data * noise
 
-        print("Before", main_table[column].data.compute())
+        # print("Before", main_table[column].data.compute())
         main_table[column] = (("row", "chan", "corr"), da.array(noisy_data))
-        print("After", main_table[column].data.compute())
+        # print("After", main_table[column].data.compute())
     else:
         pass
     dask.compute(write_main)
@@ -159,6 +160,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     finally:
         ant_table.unlock()
         ant_table.close()
+
     
     fld_tab = table(f"{ms_name}.ms::FIELD",
                    readonly=False, lockoptions='user', ack=False)
@@ -173,6 +175,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         fld_tab.unlock()
         fld_tab.close()
 
+
     dd_tab = table(f"{ms_name}.ms::DATA_DESCRIPTION",
                    readonly=False, lockoptions='user', ack=False)
     try:
@@ -181,6 +184,30 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     finally:
         dd_tab.unlock()
         dd_tab.close()
+
+
+    obs_tab = table(f"{ms_name}.ms::OBSERVATION",
+                   readonly=False, lockoptions='user', ack=False)
+    try:
+        obs_tab.lock(write=True)
+        obs_tab.addrows(1)
+        obs_tab.putcol("TIME_RANGE",time_range)
+        obs_tab.putcol("OBSERVER",'simms simulator')
+        obs_tab.putcol("TELESCOPE_NAME",telescope_name)
+    finally:
+        obs_tab.unlock()
+        obs_tab.close()
+        
+
+    pntng_tab = table(f"{ms_name}.ms::POINTING",
+                   readonly=False, lockoptions='user', ack=False)
+    try:
+        pntng_tab.lock(write=True)
+        pntng_tab.addrows(1)
+    finally:
+        pntng_tab.unlock()
+        pntng_tab.close()
+
 
     pol_tab = table(f"{ms_name}.ms::POLARIZATION",
                     readonly=False, lockoptions='user', ack=False)
@@ -191,6 +218,15 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     finally:
         pol_tab.unlock()
         pol_tab.close()
+    
+    feed_tab = table(f"{ms_name}.ms::FEED",
+                   readonly=False, lockoptions='user', ack=False)
+    try:
+        feed_tab.lock(write=True)
+        feed_tab.addrows(num_ants)
+    finally:
+        feed_tab.unlock()
+        feed_tab.close()
 
 
 def get_vis_noise(ms_name, column, sefd, chan_width, dtime):
