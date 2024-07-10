@@ -59,6 +59,11 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     ant1 = uvcoverage_data.antenna1 * ntimes
     ant2 = uvcoverage_data.antenna2 * ntimes
 
+    ra_dec = dm.direction(*pointing_direction)
+    ra = ra_dec["m0"]["value"]
+    dec = ra_dec["m1"]["value"]
+    phase_dir = np.array([[[ra,dec]]])
+
     ddid = da.zeros(num_rows, chunks=num_row_chunks)
     data = da.zeros((num_rows, num_chans, num_corr),
                     chunks=(num_row_chunks, num_chans, num_corr))
@@ -154,6 +159,19 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     finally:
         ant_table.unlock()
         ant_table.close()
+    
+    fld_tab = table(f"{ms_name}.ms::FIELD",
+                   readonly=False, lockoptions='user', ack=False)
+    
+    try:
+        fld_tab.lock(write=True)
+        fld_tab.addrows(1)
+        fld_tab.putcol("PHASE_DIR",phase_dir)
+        fld_tab.putcol("DELAY_DIR",phase_dir)
+        fld_tab.putcol("REFERENCE_DIR",phase_dir)
+    finally:
+        fld_tab.unlock()
+        fld_tab.close()
 
     dd_tab = table(f"{ms_name}.ms::DATA_DESCRIPTION",
                    readonly=False, lockoptions='user', ack=False)
