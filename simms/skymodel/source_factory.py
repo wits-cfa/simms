@@ -1,17 +1,17 @@
 import numpy as np
-from simms.constants import FWHM_E
+from simms.constants import FWHM_scale_fact
 
-def singlegauss_1d(nu,flux,width,nu0):
+def singlegauss_1d(freqs, flux, width, nu0):
     """
     Function for a single gaussian line spectrum
 
     nu: spectral axis
     flux: peak flux
-    width: width of peak (no. of channels)
+    width: width of peak in frequency units
     n0: frequency at which peak appears
     """
-    sigma = width/ 2*FWHM_E
-    return flux*np.exp(-(nu-nu0)**2/(2*sigma**2))
+    sigma = width/ FWHM_scale_fact
+    return flux*np.exp(-(freqs-nu0)**2/(2*sigma**2))
 
 def singlegauss_2d(x, y, peakflux, x0, y0, a, b, theta):
     """
@@ -23,7 +23,7 @@ def singlegauss_2d(x, y, peakflux, x0, y0, a, b, theta):
     x0, y0: central coordinates of the source in degrees
     a: major axis of ellipse
     b: minor axis of ellipse
-    theta: postion agnle of the source (measured anticlockwise from the x-axis)
+    theta: postion angle of the source (measured anticlockwise from the x-axis)
     """
     theta = -np.deg2rad(theta)#added this negative so we an have postive meaning anticlockwise
                                 #can also be achieved by switching around a and b by the user 
@@ -44,6 +44,11 @@ def singlegauss_2d(x, y, peakflux, x0, y0, a, b, theta):
 def poly(x, coeffs):
     return np.polyval(coeffs, x)
 
-def contspec(chan, flux, coeffs, nu0):
-    alpha = poly(nu, coeffs)
-    return flux*(nu/nu0)**alpha
+#def contspec(chan, flux, coeffs, nu0):
+#    alpha = poly(nu, coeffs)
+#    return flux*(nu/nu0)**alpha
+
+def contspec(freqs,flux, coeff,nu_ref):
+    return flux*(freqs/nu_ref)**(coeff)
+
+
