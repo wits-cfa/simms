@@ -10,7 +10,7 @@ import glob
 from simms.utilities import CatalogueError
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from astropy.coordinates import Angle
 from simms.skymodel.converters import *
 from casacore.tables import table
@@ -89,6 +89,7 @@ def runit(**kwargs):
     freqs = spw_tab.getcol("CHAN_FREQ")[0]
     print(freqs)
     nrows, nchan, ncorr = data.shape
+    print(data.shape)
     print (nrows) 
 
     class Source:
@@ -131,16 +132,13 @@ def runit(**kwargs):
                 self.line_width = convert2Hz(line_width)
                 self.line_restfreq = convert2Hz(line_restfreq)
                 self.cont_reffreq = convert2Hz(cont_reffreq)
-                self.cont_coeff_1 = convert2float(cont_coeff_1)
-                self.cont_coeff_2 = convert2float(cont_coeff_2)
-                self.cont_coeff_3 = convert2float(cont_coeff_3)
+                self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
+                self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
+                self.cont_coeff_3 = convert2float(cont_coeff_3, null_value=0)
+                print(cont_coeff_1)
 # we need to add a spectra for a polarized light too. 
             def set_spectrum(self,freqs):
-                if self.line_width is not None and self.line_width != 'null' and self.cont_coeff_1 is not None and self.cont_coeff_1 != 'null':
-                    self.spectrum = (singlegauss_1d(freqs, self.stokes_i, self.line_width, self.line_peak) + 
-                                    contspec(freqs, self.stokes_i, self.cont_coeff_1, self.cont_reffreq))
-                    
-                if self.line_width is not None and self.line_width != 'null':
+                if self.line_width:
                     self.spectrum = singlegauss_1d(freqs, self.stokes_i, self.line_width, self.line_peak)
                 elif self.cont_coeff_1 is not None and self.cont_coeff_1 != 'null':
                     self.spectrum = contspec(freqs, self.stokes_i, self.cont_coeff_1, self.cont_reffreq)
@@ -188,8 +186,16 @@ def runit(**kwargs):
         return sources
 
     sources = makesources(mapcols,freqs)
-
-
+    for source in sources:
+        #print(f"Source: {source.spectrum}")
+        plt.figure()
+        plt.plot(freqs, source.spectrum)
+        plt.xlabel('Channel')
+        plt.ylabel('Spectrum')
+        plt.title(f'Spectrum of Source {source.name}')
+        plt.grid(True)
+        plt.savefig(f'spectrum{source.name}_plot.png')  
+        plt.close()  
 
     #for source in sources:
         #print(f"Source: {source.ra}, {source.dec}, {source.l}, {source.m}  ")#, Spectrum: {source.spectrum}")
@@ -213,14 +219,6 @@ def runit(**kwargs):
             n_term = np.sqrt(1 - l*l - m*m) - 1
             arg = uvw_scaled[0] * l + uvw_scaled[1] * m + uvw_scaled[2] * n_term
             vis += source.spectrum * np.exp(2 * np.pi * 1j * arg)
-            
-
-        #plt.figure()
-        #plt.plot(abs(vischan[1,:,0]))
-        #plt.title(f'visibilities')
-        #plt.grid(True)
-        #plt.savefig(f'visibilites')  
-        #plt.close() 
         
         return vis
     
@@ -228,11 +226,19 @@ def runit(**kwargs):
     
     with tqdm(total=nrow, desc='computing visibilities', unit='rows') as pbar:
         print(f'computing visibilities for {nrows} rows ')
+        vischan = np.zeros_like(data)
         for row in range(nrows):
-            vischan = np.zeros_like(data)
             vischan[row,:,0] = computevis(sources, uvw[row], nchan)  #adding the visibilites to the first diagonal
             vischan[row,:,3] = vischan[row,:,0] #adding the visibilities to the fourth diagonal
             pbar.update(1)
+
+
+    plt.figure()
+    plt.plot(abs(vischan[2,:,0]))
+    plt.title(f'visibilities')
+    plt.grid(True)
+    plt.savefig(f'visibilites')  
+    plt.close() 
 
     nrow = tab.nrows()
     with tqdm(total=nrow, desc='simulating', unit='rows') as pbar2:
@@ -242,11 +248,10 @@ def runit(**kwargs):
             pbar2.update(1)
         tab.close()
 
-    #np.save('test.npy')
-    #plt.figure()
-    #plt.plot(abs(vischan[1,:,0]))
-    #plt.title(f'visibilities')
-    #plt.grid(True)
-    #plt.savefig(f'visibilites')  
-    #plt.close()  
+    plt.figure()
+    plt.plot(abs(vischan[1,:,0]))
+    plt.title(f'visibilities')
+    plt.grid(True)
+    plt.savefig(f'visibilites')  
+    plt.close()  
 

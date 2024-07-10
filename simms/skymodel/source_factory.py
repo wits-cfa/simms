@@ -49,6 +49,6 @@ def poly(x, coeffs):
 #    return flux*(nu/nu0)**alpha
 
 def contspec(freqs,flux, coeff,nu_ref):
-    return flux*(freqs/nu_ref)**coeff
+    return flux*(freqs/nu_ref)**(coeff)
 
 
