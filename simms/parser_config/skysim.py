@@ -15,6 +15,7 @@ from simms.skymodel import thisdir as skysimdir
 log = get_logger(BIN.skysim)
 
 command = BIN.skysim
+command = BIN.skysim
 sources = load_sources(["library/sys_noise"])
 thisdir = os.path.dirname(__file__)
 config = load(command, use_sources=sources)
@@ -38,7 +39,7 @@ def runit(**kwargs):
     ms = opts.ms
     map_path = opts.mapping
     mapdata = OmegaConf.load(map_path)
-    catcols = []
+    mapcols = OmegaConf.create({})
     cattypes = []
     for key in mapdata:
         value = mapdata.get(key)
