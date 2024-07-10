@@ -34,7 +34,8 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
               start_freq: Union[str, float], dfreq: Union[str, float],
               nchan: int, correlations: List[str], row_chunks: int,
               start_time: Union[str, List[str]] = None, start_ha: float = None,
-              horizon_limit: Union[float, str] = None):
+              horizon_limit: Union[float, str] = None, addnoise: bool = True,
+              sefd: float = 551.0, column: str = 'MODEL_DATA'):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
     remove_ms(ms_name)
@@ -72,6 +73,15 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     flag = da.zeros((num_rows, num_chans, num_corr),
                     dtype=bool, chunks=(num_row_chunks, num_chans, num_corr))
 
+    freqs = uvcoverage_data.freqs
+    freqs = freqs.reshape(1, freqs.shape[0])
+    ref_freq = dm.frequency(v0=start_freq)["m0"]["value"]
+    chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
+    channel_widths = np.full(freqs.shape, chan_width)
+    total_bandwidth = nchan * chan_width
+
+    noise = sefd / np.sqrt(abs(2*chan_width*dtime))
+
     main_table = xr.Dataset(
         {
             'DATA_DESC_ID': (("row",), ddid),
@@ -95,14 +105,27 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     )
 
     write_main = xds_to_table([main_table], f"{ms_name}.ms")
+    if addnoise:
+        dummy_data = np.random.randn(num_rows, num_chans, num_corr) + \
+            1j*np.random.randn(num_rows, num_chans, num_corr)
+        # main_table.DATA.data = da.array(data)
+        # print("Before", main_table.DATA.data.compute())
+        noisy_data = dummy_data * noise
+        # main_table.DATA.data = da.array(noisy_data)
+        # print("After", main_table.DATA.data.compute())
+        # print(column_name)
+        if column == 'DATA':
+            main_table.DATA.data = da.array(noisy_data)
+            print(main_table.DATA.data.compute())
+        elif column == 'MODEL_DATA':
+            print("Before", main_table.MODEL_DATA.data.compute())
+            main_table.MODEL_DATA.data = da.array(noisy_data)
+            print("After", main_table.MODEL_DATA.data.compute())
+        else:
+            main_table.CORRECTED_DATA.data = da.array(noisy_data)
+    else:
+        pass
     dask.compute(write_main)
-
-    freqs = uvcoverage_data.freqs
-    freqs = freqs.reshape(1, freqs.shape[0])
-    ref_freq = dm.frequency(v0=start_freq)["m0"]["value"]
-    chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
-    channel_widths = np.full(freqs.shape, chan_width)
-    total_bandwidth = nchan * chan_width
 
     spw_tab = table(f"{ms_name}.ms::SPECTRAL_WINDOW",
                     readonly=False, lockoptions='user', ack=False)
@@ -160,3 +183,6 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     finally:
         pol_tab.unlock()
         pol_tab.close()
+
+# def get_vis_noise(ms_name, sefd):
+#     main_table = xds_from_table()
