@@ -48,6 +48,7 @@ cabs:
 
   telsim:
     info: Create empty MS using simms
+    command: telsim
     inputs:
       ms:
         info: Observation name/id/label
@@ -62,7 +63,7 @@ cabs:
         required: yes
       direction:
         info: Direction of field centre for MS. Example, J2000,0h24m20s,-30d12m33s or J2000,0:24:20,-30:12:33
-        dtype: List[str]
+        dtype: str
         metavar: '[EPOCH,]RA,Dec'
         default: 'J2000,1h0m0s,-31d0m0s'
       starttime: 
