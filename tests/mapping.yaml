@@ -1,6 +1,7 @@
 name: null
 ra:
-    name: ra_hms
+    name: RA
+    unit: 
 dec:
     name: dec_dms
 stokes_i: null

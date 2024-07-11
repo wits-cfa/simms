@@ -20,6 +20,17 @@ cabs:
         info: Data column for simulation
         dtype: str
         default: MODEL_DATA
+
+      cat-species:
+        info: type of catalogue e.g. PyBDSF
+        dtype: str
+        required: no
+        choices: ['bdsf_gaul', 'aegean']
+      mode:
+        info: Simulation mode. To create a new column use "sim"; to add to column use "add"; to subtract from column use "subtract".
+        dtype: str
+        default: sim
+        choices: ['sim', 'add', 'subtract']
       die:
         info: Direction independent effects
         dtype: File

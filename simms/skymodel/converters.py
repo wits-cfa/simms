@@ -1,4 +1,5 @@
 from casacore.quanta import quantity as qa
+from casacore.measures import measures
 
 def convert2rad(string):
     if string is not None and string != 'null':
@@ -11,6 +12,32 @@ def convert2rad(string):
             angle = qa(string)
             angle_rad = angle.canonical().get_value()
         return angle_rad
+    
+def convertra2rad(string):
+    dm = measures()
+    if string not in [None, "null"]:
+        try:
+            float(string)
+            string += 'deg'
+        except ValueError:
+            pass
+        finally:
+            ra_rad = dm.direction(v0=f"{string}")["m0"]["value"]
+        return ra_rad
+
+
+def convertdec2rad(string):
+    dm = measures()
+    if string not in [None, "null"]:
+        try:
+            float(string)
+            string += 'deg'
+        except ValueError:
+            pass
+        finally:
+            dec_rad = dm.direction(v1=f"{string}")["m1"]["value"]
+        return dec_rad
+
 
 def convert2Jy(string, null_value=None):
     if string not in [None, "null"]:

@@ -121,3 +121,6 @@ def isnummber(string):
 
 class CatalogueError(Exception):
     pass
+
+class ParameterError(Exception):
+    pass

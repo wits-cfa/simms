@@ -1,12 +1,13 @@
-name: null
+name: 
+  name: Source_id
 ra:             # right ascension; default units [deg]
-  name: null
-  units: null
+  name: RA
+  units: deg
 dec:            # declination; default units [deg]
-  name: null
-  units: null
+  name: DEC
+  units: deg
 stokes_i:       # Stokes I; default units [Jy]
-  name: null
+  name: Total_flux
   units: null
 stokes_q:       # Stokes Q; default units [Jy]
   name: null
@@ -18,13 +19,13 @@ stokes_v:       # Stokes V; default units [Jy]
   name: null
   units: null
 emaj:           # major axis; default units [deg]
-  name: null
+  name: DC_Maj
   units: null
 emin:           # minor axis; default units [deg]
-  name: null
+  name: DC_Min
   units: null
 pa:             # position angle; default units [deg]
-  name: null
+  name: DC_PA
   units: null
 cont_reffreq:   # continuum reference frequency; default units [Hz]
   name: null

@@ -1,2 +1,0 @@
-stokes_i peak restfreq width
-0.1 0.1 0.1 0.1
