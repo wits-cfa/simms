@@ -7,7 +7,7 @@ import click
 from omegaconf import OmegaConf
 from simms import BIN, get_logger 
 import glob
-from simms.utilities import CatalogueError
+from simms.utilities import CatalogueError, isnummber
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
 import matplotlib.pyplot as plt;
@@ -38,15 +38,15 @@ def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     cat = opts.catalogue
     ms = opts.ms
-    print(ms)
     map_path = opts.mapping
     mapdata = OmegaConf.load(map_path)
     mapcols = OmegaConf.create({})
 
 
     for key in mapdata:
-        catkey = mapdata.get(key) or key
-        mapcols[key] = (catkey, [])
+        keymap = mapdata.get(key)
+        if keymap:   
+            mapcols[key] = (keymap.name or key, [], keymap.get("unit", None))
 
     with open(cat) as stdr:
         header = stdr.readline().strip()
@@ -63,16 +63,21 @@ def runit(**kwargs):
             rowdata = line.strip().split()
             if len(rowdata) != len(header): #raise cat error
                 raise CatalogueError("The number of elements in one or more rows does not equal the\
-                                     number of expected elements based on the number of elements in the\
-                                     header")
+                                    number of expected elements based on the number of elements in the\
+                                    header")
             for key in mapcols:
                 catkey = mapcols[key][0]
                 if catkey not in header:
                     continue
                 
                 index = header.index(catkey)
-                mapcols[key][1].append(rowdata[index])
-
+                value = rowdata[index]
+                
+                if isnummber(value) and mapcols[key][2]:
+                    value += mapcols[key][2]
+                
+                mapcols[key][1].append(value)
+                
     tab = table(ms, readonly=False) 
     data = tab.getcol("DATA")
     uvw = tab.getcol("UVW")
@@ -80,14 +85,10 @@ def runit(**kwargs):
     radec0 = fldtab.getcol("PHASE_DIR")
     ra0= radec0[0,0][0] 
     dec0= radec0[0,0][1]
-    print(ra0,dec0)
     nrow = tab.nrows()
     spw_tab = table(f"{ms}::SPECTRAL_WINDOW")
     freqs = spw_tab.getcol("CHAN_FREQ")[0]
-    print(freqs)
     nrows, nchan, ncorr = data.shape
-    print(data.shape)
-    print (nrows) 
 
     class Source:
         def __init__(self, name, ra, dec):

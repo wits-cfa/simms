@@ -8,7 +8,9 @@ stokes_v: null
 emaj: null
 emin: null
 pa: null
-cont_reffreq: null
+cont_reffreq:
+    name: refreq
+    unit: GHz
 cont_coeff_1: null # Spectral index
 cont_coeff_2: null # spectral curvature
 line_peak: null
