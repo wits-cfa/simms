@@ -1,4 +1,4 @@
-#format: ra_deg dec_deg name stokes_i line_peak line_width reffreq cont_coeff_1
+#format: ra_hms dec_dms name stokes_i line_peak line_width reffreq cont_coeff_1
 # point sources
 53.1267deg   -28.1325deg A  1 null null 1346MHz -0.7
 53.2267deg  -28.325deg B  1 null null 1.347 -0.7
