@@ -117,3 +117,6 @@ def readyaml(yamlfile: str) -> dict:
 
 class CatalogueError(Exception):
     pass
+
+class ParameterError(Exception):
+    pass

@@ -7,7 +7,7 @@ import click
 from omegaconf import OmegaConf
 from simms import BIN, get_logger 
 import glob
-from simms.utilities import CatalogueError
+from simms.utilities import CatalogueError, ParameterError
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
 import matplotlib.pyplot as plt;
@@ -39,10 +39,18 @@ def runit(**kwargs):
     cat = opts.catalogue
     ms = opts.ms
     print(ms)
-    map_path = opts.mapping
+   
+    if opts.mapping and opts.cat_species:
+        raise ParameterError("Cannot use custom map and built-in map simultaneously")
+    elif opts.mapping:
+        map_path = opts.mapping
+    elif opts.cat_species in ['bdsf-gaul', 'bdsf-srl', 'wsclean', 'tigger-lsm', 'aegean']:
+        map_path = f'./library/{opts.cat_species}.yaml'
+    else:
+        raise ParameterError("Unsupported catalogue type")
+        
     mapdata = OmegaConf.load(map_path)
     mapcols = OmegaConf.create({})
-
 
     for key in mapdata:
         catkey = mapdata.get(key) or key

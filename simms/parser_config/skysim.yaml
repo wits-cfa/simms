@@ -19,6 +19,11 @@ inputs:
     info: Delimeter that is used in the catalogue
     dtype: str
     required: no
+  cat-species:
+    info: type of catalogue e.g. PyBDSF
+    dtype: str
+    required: no
+    choices: ['bdsf-gaul', 'bdsf-srl', 'wsclean', 'tigger-lsm', 'aegean']
 
   die:
     info: Direction independent effects
