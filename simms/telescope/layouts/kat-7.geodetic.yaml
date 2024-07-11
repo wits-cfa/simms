@@ -10,5 +10,6 @@ antlocations:
 antnames: [ANT-0, ANT-1, ANT-2, ANT-3, ANT-4, ANT-5, ANT-6]
 
 centre: [21.443899999999996, -30.713199999999997, 1038.0]
+coord_sys: geodetic
 size: 12.0
 mount: ALT-AZ
