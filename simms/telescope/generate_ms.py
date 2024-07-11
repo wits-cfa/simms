@@ -33,10 +33,10 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
               pointing_direction: List[str], dtime: int, ntimes: int,
               start_freq: Union[str, float], dfreq: Union[str, float],
               nchan: int, correlations: List[str], row_chunks: int,
-              addnoise: bool,sefd: float,column: str,
-              start_time: Union[str, List[str]] = None, start_ha: float = None,
-              horizon_limit: Union[float, str] = None, 
-                ):
+              addnoise: bool, sefd: float, column: str,
+              start_time: Union[str, List[str]] = None,
+              start_ha: float = None, horizon_limit: Union[float, str] = None,
+              ):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
     remove_ms(ms_name)
@@ -63,13 +63,14 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     ra_dec = dm.direction(*pointing_direction)
     ra = ra_dec["m0"]["value"]
     dec = ra_dec["m1"]["value"]
-    phase_dir = np.array([[[ra,dec]]])
+    phase_dir = np.array([[[ra, dec]]])
 
     ddid = da.zeros(num_rows, chunks=num_row_chunks)
     data = da.zeros((num_rows, num_chans, num_corr),
                     chunks=(num_row_chunks, num_chans, num_corr))
     times = da.from_array(uvcoverage_data.times, chunks=num_row_chunks)
-    time_range = np.array([[uvcoverage_data.times[0],uvcoverage_data.times[-1]]])
+    time_range = np.array(
+        [[uvcoverage_data.times[0], uvcoverage_data.times[-1]]])
     uvw = da.from_array(uvcoverage_data.uvw, chunks=(num_row_chunks, 3))
     antenna1 = da.from_array(ant1, chunks=num_row_chunks)
     antenna2 = da.from_array(ant2, chunks=num_row_chunks)
@@ -86,36 +87,36 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
     channel_widths = np.full(freqs.shape, chan_width)
     total_bandwidth = nchan * chan_width
-    
+
     noise = sefd / np.sqrt(abs(2*chan_width*dtime))
     dummy_data = np.random.randn(num_rows, num_chans, num_corr) + \
-            1j*np.random.randn(num_rows, num_chans, num_corr)
+        1j*np.random.randn(num_rows, num_chans, num_corr)
     noisy_data = da.array(dummy_data * noise)
 
     ds = {
-            'DATA_DESC_ID': (("row",), ddid),
-            'DATA': (("row", "chan", "corr"), data),
-            'CORRECTED_DATA': (("row", "chan", "corr"), data),
-            'MODEL_DATA': (("row", "chan", "corr"), data),
-            "UVW": (("row", "uvw_dim"), uvw),
-            "TIME": (("row"), times),
-            "TIME_CENTROID": (("row"), times),
-            "INTERVAL": (("row"), interval),
-            "EXPOSURE": (("row"), interval),
-            "ANTENNA1": (("row"), antenna1),
-            "ANTENNA2": (("row"), antenna2),
-            "SIGMA": (("row", "corr"), sigma),
-            "WEIGHT": (("row", "corr"), sigma),
-            "SIGMA_SPECTRUM": (("row", "corr"), sigma),
-            "WEIGHT_SPECTRUM": (("row", "corr"), sigma),
-            "FLAG": (("row", "chan", "corr"), flag)
-        }
-        
-    
+        'DATA_DESC_ID': (("row",), ddid),
+        'DATA': (("row", "chan", "corr"), data),
+        'CORRECTED_DATA': (("row", "chan", "corr"), data),
+        'MODEL_DATA': (("row", "chan", "corr"), data),
+        "UVW": (("row", "uvw_dim"), uvw),
+        "TIME": (("row"), times),
+        "TIME_CENTROID": (("row"), times),
+        "INTERVAL": (("row"), interval),
+        "EXPOSURE": (("row"), interval),
+        "ANTENNA1": (("row"), antenna1),
+        "ANTENNA2": (("row"), antenna2),
+        "SIGMA": (("row", "corr"), sigma),
+        "WEIGHT": (("row", "corr"), sigma),
+        "SIGMA_SPECTRUM": (("row", "corr"), sigma),
+        "WEIGHT_SPECTRUM": (("row", "corr"), sigma),
+        "FLAG": (("row", "chan", "corr"), flag)
+    }
+
     if addnoise:
         ds[column] = (("row", "chan", "corr"), noisy_data)
 
-    main_table = daskms.Dataset(ds,coords={"ROWID": ("row", da.arange(num_rows))})
+    main_table = daskms.Dataset(
+        ds, coords={"ROWID": ("row", da.arange(num_rows))})
 
     write_main = xds_to_table(main_table, f"{ms_name}.ms")
     dask.compute(write_main)
@@ -158,20 +159,18 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         ant_table.unlock()
         ant_table.close()
 
-    
     fld_tab = table(f"{ms_name}.ms::FIELD",
-                   readonly=False, lockoptions='user', ack=False)
-    
+                    readonly=False, lockoptions='user', ack=False)
+
     try:
         fld_tab.lock(write=True)
         fld_tab.addrows(1)
-        fld_tab.putcol("PHASE_DIR",phase_dir)
-        fld_tab.putcol("DELAY_DIR",phase_dir)
-        fld_tab.putcol("REFERENCE_DIR",phase_dir)
+        fld_tab.putcol("PHASE_DIR", phase_dir)
+        fld_tab.putcol("DELAY_DIR", phase_dir)
+        fld_tab.putcol("REFERENCE_DIR", phase_dir)
     finally:
         fld_tab.unlock()
         fld_tab.close()
-
 
     dd_tab = table(f"{ms_name}.ms::DATA_DESCRIPTION",
                    readonly=False, lockoptions='user', ack=False)
@@ -182,29 +181,26 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         dd_tab.unlock()
         dd_tab.close()
 
-
     obs_tab = table(f"{ms_name}.ms::OBSERVATION",
-                   readonly=False, lockoptions='user', ack=False)
+                    readonly=False, lockoptions='user', ack=False)
     try:
         obs_tab.lock(write=True)
         obs_tab.addrows(1)
-        obs_tab.putcol("TIME_RANGE",time_range)
-        obs_tab.putcol("OBSERVER",'simms simulator')
-        obs_tab.putcol("TELESCOPE_NAME",telescope_name)
+        obs_tab.putcol("TIME_RANGE", time_range)
+        obs_tab.putcol("OBSERVER", 'simms simulator')
+        obs_tab.putcol("TELESCOPE_NAME", telescope_name)
     finally:
         obs_tab.unlock()
         obs_tab.close()
-        
 
     pntng_tab = table(f"{ms_name}.ms::POINTING",
-                   readonly=False, lockoptions='user', ack=False)
+                      readonly=False, lockoptions='user', ack=False)
     try:
         pntng_tab.lock(write=True)
         pntng_tab.addrows(1)
     finally:
         pntng_tab.unlock()
         pntng_tab.close()
-
 
     pol_tab = table(f"{ms_name}.ms::POLARIZATION",
                     readonly=False, lockoptions='user', ack=False)
@@ -215,33 +211,12 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     finally:
         pol_tab.unlock()
         pol_tab.close()
-    
+
     feed_tab = table(f"{ms_name}.ms::FEED",
-                   readonly=False, lockoptions='user', ack=False)
+                     readonly=False, lockoptions='user', ack=False)
     try:
         feed_tab.lock(write=True)
         feed_tab.addrows(num_ants)
     finally:
         feed_tab.unlock()
         feed_tab.close()
-
-
-# def get_vis_noise(ms_name, column, sefd, chan_width, dtime):
-
-#     table = xds_from_table(f"{ms_name}.ms")[0]
-
-#     noise = sefd / np.sqrt(abs(2*chan_width*dtime))
-
-#     data_shape = table.DATA.shape
-
-#     num_rows, num_chans, num_corr = data_shape
-#     print(num_rows, num_chans, num_corr)
-
-#     dummy_data = np.random.randn(num_rows, num_chans, num_corr
-#                                  ) + 1j*np.random.randn(num_rows, num_chans, num_corr)
-
-#     noisy_data = dummy_data * noise
-#     print(noisy_data)
-
-#     table[column] = (("row", "chan", "corr"), da.array(noisy_data))
-#     print(table.MODEL_DATA.data)
