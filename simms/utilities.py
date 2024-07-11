@@ -110,9 +110,13 @@ CLASS_TYPES = ObjDict({
 })
 
 
-def readyaml(yamlfile: str) -> dict:
-    with open(yamlfile) as stdr:
-        return yaml.load(stdr, Loader=yaml.FullLoader)
+def isnummber(string):
+    try:
+        float(string)
+        return True
+    except ValueError:
+        return False
+    
 
 
 class CatalogueError(Exception):

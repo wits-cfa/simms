@@ -1,8 +1,6 @@
 libs:
   sys_noise:
     _include: (simms.parser_config.library)sys_noise.yaml
-  spectrum:
-    _include: (simms.parser_config.library)spectrum.yaml
 
 inputs:
   _use: libs.sys_noise.inputs
@@ -18,6 +16,10 @@ inputs:
   cat-delim: 
     info: Delimeter that is used in the catalogue
     dtype: str
+  column:
+    info: Data column for simulation
+    dtype: str
+    default: MODEL_DATA
     required: no
   cat-species:
     info: type of catalogue e.g. PyBDSF
