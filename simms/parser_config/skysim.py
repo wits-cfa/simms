@@ -38,16 +38,14 @@ def runit(**kwargs):
     cat = opts.catalogue
     ms = opts.ms
     map_path = opts.mapping
-    print(ms)
    
     if opts.mapping and opts.cat_species:
         raise ParameterError("Cannot use custom map and built-in map simultaneously")
     elif opts.mapping:
         map_path = opts.mapping
-    elif opts.cat_species in ['bdsf-gaul', 'bdsf-srl', 'wsclean', 'tigger-lsm', 'aegean']:
-        map_path = f'./library/{opts.cat_species}.yaml'
     else:
-        raise ParameterError("Unsupported catalogue type")
+        map_path = f'{thisdir}/library/{opts.cat_species}.yaml'
+
         
     mapdata = OmegaConf.load(map_path)
     mapcols = OmegaConf.create({})
@@ -106,8 +104,8 @@ def runit(**kwargs):
     class Source:
         def __init__(self, name, ra, dec):
             self.name = name
-            self.ra = convert2rad(ra)
-            self.dec = convert2rad(dec)
+            self.ra = convertra2rad(ra)
+            self.dec = convertdec2rad(dec)
             self.spectrum = None
             self.shape = None
             
@@ -147,12 +145,12 @@ def runit(**kwargs):
                 self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
 # we need to add a spectra for a polarized light too. 
             def set_spectrum(self,freqs):
-                if self.line_width:
+                if self.line_width not in [None, "null"]:
                     self.spectrum = singlegauss_1d(freqs, self.stokes_i, self.line_width, self.line_peak)
-                elif self.cont_coeff_1 is not None and self.cont_coeff_1 != 'null':
+                elif self.cont_reffreq not in [None, "null"]:
                     self.spectrum = contspec(freqs, self.stokes_i, self.cont_coeff_1, self.cont_reffreq)
                 else:
-                    self.spectrum = None
+                    self.spectrum = self.stokes_i
                 return self.spectrum
 
     def makesources(data,freqs):
@@ -168,23 +166,23 @@ def runit(**kwargs):
             )
             #source.set_spectrum(freqs)
             spectrum = Spectrum(
-                stokes_i=data['stokes_i'][1][i],
-                stokes_q=data['stokes_q'][1][i] if i < len(data['stokes_q'][1]) else None,
-                stokes_u=data['stokes_u'][1][i] if i < len(data['stokes_u'][1]) else None,
-                stokes_v=data['stokes_v'][1][i] if i < len(data['stokes_v'][1]) else None,
-                cont_reffreq=data['cont_reffreq'][1][i] if i < len(data['cont_reffreq'][1]) else None,
-                line_peak=data['line_peak'][1][i] if i < len(data['line_peak'][1]) else None,
-                line_width=data['line_width'][1][i] if i < len(data['line_width'][1]) else None,
-                line_restfreq=data['line_restfreq'][1][i] if i < len(data['line_restfreq'][1]) else None,
-                cont_coeff_1=(data['cont_coeff_1'][1][i]) if i < len(data['cont_coeff_1'][1]) else None,
-                cont_coeff_2=data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None,
+                stokes_i = data['stokes_i'][1][i],
+                stokes_q = data['stokes_q'][1][i] if i < len(data['stokes_q'][1]) else None,
+                stokes_u = data['stokes_u'][1][i] if i < len(data['stokes_u'][1]) else None,
+                stokes_v = data['stokes_v'][1][i] if i < len(data['stokes_v'][1]) else None,
+                cont_reffreq = data['cont_reffreq'][1][i] if i < len(data['cont_reffreq'][1]) else None,
+                line_peak = data['line_peak'][1][i] if i < len(data['line_peak'][1]) else None,
+                line_width = data['line_width'][1][i] if i < len(data['line_width'][1]) else None,
+                line_restfreq = data['line_restfreq'][1][i] if i < len(data['line_restfreq'][1]) else None,
+                cont_coeff_1 = (data['cont_coeff_1'][1][i]) if i < len(data['cont_coeff_1'][1]) else None,
+                cont_coeff_2 = data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None,
                 
             )
 
             shape = Shape(
-                emaj=data['emaj'][1][i] if i < len(data['emaj'][1]) else None,
-                emin=data['emin'][1][i] if i < len(data['emin'][1]) else None,
-                pa=data['pa'][1][i] if i < len(data['pa'][1]) else None
+                emaj = data['emaj'][1][i] if i < len(data['emaj'][1]) else None,
+                emin = data['emin'][1][i] if i < len(data['emin'][1]) else None,
+                pa = data['pa'][1][i] if i < len(data['pa'][1]) else None
                 
             )
             source.l, source.m = source.radec2lm(ra0,dec0)
@@ -220,6 +218,13 @@ def runit(**kwargs):
     with tqdm(total=nrow, desc='simulating', unit='rows') as pbar2:
         print("Starting to add rows to ms file")
         for i in range(nrow):
-            tab.putcell("DATA", i, vischan[i])
+            if opts.mode == "add":
+                datai = tab.getcell(column, i) + vischan[i]
+            elif opts.mode == "subtract":
+                datai = tab.getcell(column, i) + vischan[i]
+            else:
+                datai = vischan[i]
+
+            tab.putcell(column, i, datai)
             pbar2.update(1)
         tab.close()

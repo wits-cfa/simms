@@ -1,24 +1,46 @@
 name: source
-ra: ra
-dec: dec
-stokes_i: int_flux
-stokes_q: null
-stokes_u: null
-stokes_v: null
-emaj:
+ra:             # right ascension; default units [deg]
+  name: null
+  units: null
+dec:            # declination; default units [deg]
+  name: null
+  units: null
+stokes_i:       # Stokes I; default units [Jy]
+  name: int_flux
+  units: null
+stokes_q:       # Stokes Q; default units [Jy]
+  name: null
+  units: null
+stokes_u:       # Stokes U; default units [Jy]
+  name: null
+  units: null
+stokes_v:       # Stokes V; default units [Jy]
+  name: null
+  units: null
+emaj:           # major axis; default units [deg]
   name: a
-  units: arcsec               #in arcsec
-emin:
+  units: as
+emin:           # minor axis; default units [deg]
   name: b
-  units: arcsec
-pa: pa
-cont_reffreq: null
-cont_coeff_1: null # Spectral index
-cont_coeff_2: null # spectral curvature
-cont_coeff_3: null # spectrum third order term
-# add as many spi terms as required as cont_coef_x
-line_peak: null
-line_width: null
-line_restfreq: null
-
-# don't allow tex and html
+  units: as
+pa:             # position angle; default units [deg]
+  name: pa
+  units: null
+cont_reffreq:   # continuum reference frequency; default units [Hz]
+  name: null
+  units: null
+cont_coeff_1:   # spectral index
+  name: null
+  units: null
+cont_coeff_2:   # spectral curvature
+  name: null
+  units: null
+line_peak:      # line source peak frequency; default units [Hz]
+  name: null
+  units: null
+line_width:     # line width; default units [Hz]
+  name: null
+  units: null
+line_restfreq:  # line rest frequency; default units [Hz]
+  name: null
+  units: null
