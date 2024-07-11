@@ -87,9 +87,11 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     total_bandwidth = nchan * chan_width
     
     noise = sefd / np.sqrt(abs(2*chan_width*dtime))
+    dummy_data = np.random.randn(num_rows, num_chans, num_corr) + \
+            1j*np.random.randn(num_rows, num_chans, num_corr)
+    noisy_data = da.array(dummy_data * noise)
 
-    main_table = xr.Dataset(
-        {
+    ds = {
             'DATA_DESC_ID': (("row",), ddid),
             'DATA': (("row", "chan", "corr"), data),
             'CORRECTED_DATA': (("row", "chan", "corr"), data),
@@ -106,21 +108,15 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
             "SIGMA_SPECTRUM": (("row", "corr"), sigma),
             "WEIGHT_SPECTRUM": (("row", "corr"), sigma),
             "FLAG": (("row", "chan", "corr"), flag)
-        },
-        coords={"ROWID": ("row", da.arange(num_rows))}
-    )
-
-    write_main = xds_to_table([main_table], f"{ms_name}.ms")
+        }
+        
+    
     if addnoise:
-        dummy_data = np.random.randn(num_rows, num_chans, num_corr) + \
-            1j*np.random.randn(num_rows, num_chans, num_corr)
-        noisy_data = dummy_data * noise
+        ds[column] = (("row", "chan", "corr"), noisy_data)
 
-        # print("Before", main_table[column].data.compute())
-        main_table[column] = (("row", "chan", "corr"), da.array(noisy_data))
-        # print("After", main_table[column].data.compute())
-    else:
-        pass
+    main_table = daskms.Dataset(ds,coords={"ROWID": ("row", da.arange(num_rows))})
+
+    write_main = xds_to_table(main_table, f"{ms_name}.ms")
     dask.compute(write_main)
 
     spw_tab = table(f"{ms_name}.ms::SPECTRAL_WINDOW",
@@ -229,22 +225,22 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         feed_tab.close()
 
 
-def get_vis_noise(ms_name, column, sefd, chan_width, dtime):
+# def get_vis_noise(ms_name, column, sefd, chan_width, dtime):
 
-    table = xds_from_table(f"{ms_name}.ms")[0]
+#     table = xds_from_table(f"{ms_name}.ms")[0]
 
-    noise = sefd / np.sqrt(abs(2*chan_width*dtime))
+#     noise = sefd / np.sqrt(abs(2*chan_width*dtime))
 
-    data_shape = table.DATA.shape
+#     data_shape = table.DATA.shape
 
-    num_rows, num_chans, num_corr = data_shape
-    print(num_rows, num_chans, num_corr)
+#     num_rows, num_chans, num_corr = data_shape
+#     print(num_rows, num_chans, num_corr)
 
-    dummy_data = np.random.randn(num_rows, num_chans, num_corr
-                                 ) + 1j*np.random.randn(num_rows, num_chans, num_corr)
+#     dummy_data = np.random.randn(num_rows, num_chans, num_corr
+#                                  ) + 1j*np.random.randn(num_rows, num_chans, num_corr)
 
-    noisy_data = dummy_data * noise
-    print(noisy_data)
+#     noisy_data = dummy_data * noise
+#     print(noisy_data)
 
-    table[column] = (("row", "chan", "corr"), da.array(noisy_data))
-    print(table.MODEL_DATA.data)
+#     table[column] = (("row", "chan", "corr"), da.array(noisy_data))
+#     print(table.MODEL_DATA.data)
