@@ -1,0 +1,24 @@
+name: source
+ra: ra
+dec: dec
+stokes_i: int_flux
+stokes_q: null
+stokes_u: null
+stokes_v: null
+emaj:
+  name: a
+  units: arcsec               #in arcsec
+emin:
+  name: b
+  units: arcsec
+pa: pa
+cont_reffreq: null
+cont_coeff_1: null # Spectral index
+cont_coeff_2: null # spectral curvature
+cont_coeff_3: null # spectrum third order term
+# add as many spi terms as required as cont_coef_x
+line_peak: null
+line_width: null
+line_restfreq: null
+
+# don't allow tex and html
