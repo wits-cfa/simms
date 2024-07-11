@@ -1,6 +1,8 @@
 name: null
-ra: ra_hms
-dec: dec_dms
+ra:
+    name: ra_hms
+dec:
+    name: dec_dms
 stokes_i: null
 stokes_q: null
 stokes_u: null
@@ -8,7 +10,9 @@ stokes_v: null
 emaj: null
 emin: null
 pa: null
-cont_reffreq: null
+cont_reffreq:
+    name: reffreq
+    unit: GHz
 cont_coeff_1: null # Spectral index
 cont_coeff_2: null # spectral curvature
 line_peak: null

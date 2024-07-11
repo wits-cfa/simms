@@ -7,10 +7,9 @@ import click
 from omegaconf import OmegaConf
 from simms import BIN, get_logger 
 import glob
-from simms.utilities import CatalogueError
+from simms.utilities import CatalogueError, isnummber
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
-import matplotlib.pyplot as plt;
 from astropy.coordinates import Angle
 from simms.skymodel.converters import *
 from casacore.tables import table
@@ -38,15 +37,19 @@ def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     cat = opts.catalogue
     ms = opts.ms
-    print(ms)
     map_path = opts.mapping
     mapdata = OmegaConf.load(map_path)
     mapcols = OmegaConf.create({})
+    column = opts.column
+    delimiter = opts.cat_delim
 
 
     for key in mapdata:
-        catkey = mapdata.get(key) or key
-        mapcols[key] = (catkey, [])
+        keymap = mapdata.get(key)
+        if keymap:   
+            mapcols[key] = (keymap.name, [], keymap.get("unit"))
+        else:
+            mapcols[key] = (key, [], None)
 
     with open(cat) as stdr:
         header = stdr.readline().strip()
@@ -55,39 +58,39 @@ def runit(**kwargs):
             raise CatalogueError("Catalogue needs to have a header starting with the string #format:")
         
         header = header.strip().replace("#format:", "").strip()
-        header = header.split()
+        header = header.split(delimiter)
 
         for line in stdr.readlines():
             if line.startswith("#"):
                 continue
-            rowdata = line.strip().split()
+            rowdata = line.strip().split(delimiter)
             if len(rowdata) != len(header): #raise cat error
                 raise CatalogueError("The number of elements in one or more rows does not equal the\
-                                     number of expected elements based on the number of elements in the\
-                                     header")
+                                    number of expected elements based on the number of elements in the\
+                                    header")
             for key in mapcols:
                 catkey = mapcols[key][0]
                 if catkey not in header:
                     continue
                 
                 index = header.index(catkey)
-                mapcols[key][1].append(rowdata[index])
-
+                value = rowdata[index]
+                if isnummber(value) and mapcols[key][2]:
+                    value += mapcols[key][2]
+                
+                mapcols[key][1].append(value)
+                
     tab = table(ms, readonly=False) 
-    data = tab.getcol("DATA")
+    data = tab.getcol(column)
     uvw = tab.getcol("UVW")
     fldtab = table(f"{ms}::FIELD") 
     radec0 = fldtab.getcol("PHASE_DIR")
     ra0= radec0[0,0][0] 
     dec0= radec0[0,0][1]
-    print(ra0,dec0)
     nrow = tab.nrows()
     spw_tab = table(f"{ms}::SPECTRAL_WINDOW")
     freqs = spw_tab.getcol("CHAN_FREQ")[0]
-    print(freqs)
     nrows, nchan, ncorr = data.shape
-    print(data.shape)
-    print (nrows) 
 
     class Source:
         def __init__(self, name, ra, dec):
@@ -120,7 +123,7 @@ def runit(**kwargs):
 
                 
     class Spectrum: 
-            def __init__(self, stokes_i, stokes_q, stokes_u, stokes_v, line_peak, line_width, line_restfreq, cont_reffreq, cont_coeff_1, cont_coeff_2, cont_coeff_3):
+            def __init__(self, stokes_i, stokes_q, stokes_u, stokes_v, line_peak, line_width, line_restfreq, cont_reffreq, cont_coeff_1, cont_coeff_2):
                 self.stokes_i = convert2Jy(stokes_i)
                 self.stokes_q = convert2Jy(stokes_q)
                 self.stokes_u = convert2Jy(stokes_u)
@@ -131,8 +134,6 @@ def runit(**kwargs):
                 self.cont_reffreq = convert2Hz(cont_reffreq)
                 self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
                 self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
-                self.cont_coeff_3 = convert2float(cont_coeff_3, null_value=0)
-                print(cont_coeff_1)
 # we need to add a spectra for a polarized light too. 
             def set_spectrum(self,freqs):
                 if self.line_width:
@@ -149,9 +150,9 @@ def runit(**kwargs):
         sources = []
         for i in range(num_sources):
             source = Source(
-                name=data['name'][1][i],
-                ra=data['ra'][1][i],
-                dec=data['dec'][1][i],
+                name = data['name'][1][i],
+                ra = data['ra'][1][i],
+                dec = data['dec'][1][i],
                 
             )
             #source.set_spectrum(freqs)
@@ -166,7 +167,6 @@ def runit(**kwargs):
                 line_restfreq=data['line_restfreq'][1][i] if i < len(data['line_restfreq'][1]) else None,
                 cont_coeff_1=(data['cont_coeff_1'][1][i]) if i < len(data['cont_coeff_1'][1]) else None,
                 cont_coeff_2=data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None,
-                cont_coeff_3=data['cont_coeff_3'][1][i] if i < len(data['cont_coeff_3'][1]) else None
                 
             )
 
@@ -183,16 +183,6 @@ def runit(**kwargs):
         return sources
 
     sources = makesources(mapcols,freqs)
-    for source in sources:
-        plt.figure()
-        plt.plot(freqs, source.spectrum)
-        plt.xlabel('Channel')
-        plt.ylabel('Spectrum')
-        plt.title(f'Spectrum of Source {source.name}')
-        plt.grid(True)
-        plt.savefig(f'spectrum{source.name}_plot.png')  
-        plt.close()  
- 
     
     def computevis(srcs, uvw, nchan):
         wavs = 2.99e8 / freqs[:nchan]
@@ -215,7 +205,6 @@ def runit(**kwargs):
             vischan[row,:,3] = vischan[row,:,0] #adding the visibilities to the fourth diagonal
             pbar.update(1)
 
-
     nrow = tab.nrows()
     with tqdm(total=nrow, desc='simulating', unit='rows') as pbar2:
         print("Starting to add rows to ms file")
@@ -223,11 +212,3 @@ def runit(**kwargs):
             tab.putcell("DATA", i, vischan[i])
             pbar2.update(1)
         tab.close()
-
-    plt.figure()
-    plt.plot(abs(vischan[1,:,0]))
-    plt.title(f'visibilities')
-    plt.grid(True)
-    plt.savefig(f'visibilites')  
-    plt.close()  
-

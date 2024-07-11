@@ -1,13 +1,15 @@
 [tool.poetry]
 name = "simms"
-version = "2.0beta1"
-description = "Simms 2.0. Tool for end-to-end simulations of radio inteferometer observations"
+version = "3.0beta1"
+description = "Simms 3.0. Tool for end-to-end simulations of radio inteferometer observations"
 authors = [
     "Sphesihle Makhathini <sphemakh@gmail.com>",
-    "Mika Naidoo",
-    "Mukundi Ramanyimi",
-    "Shibre Semane",
+    "Mika Naidoo <mika.naidoo25@gmail.com>",
+    "Mukundi Ramanyimi <ramayimimukundi6@gmail.com>",
+    "Shibre Semane <sshibre0@gmail.com>",
+    "Galefang Mapunda <allymap@gmail.com>",
     ]
+
 readme = "README.md"
 license = "GNU GPL v2"
 include = [{ path = "tests" }]
@@ -17,13 +19,9 @@ packages = [{ include = "simms" }]
 python = "^3.8"
 numpy = "*"
 tdqm = "*"
-astropy = "*"
 click = "^8.1.3"
 dask-ms = "^0.2.18"
-xarray = "*"
-pyyaml = "*"
 ephem = "^4.1"
-omegaconf = "^2.1.0" #newly added
 stimela = ">=2.0"
 
 [tool.poetry.scripts]
@@ -53,4 +51,6 @@ sphinx-copybutton = "^0.5.0"
 furo = "^2022.9.15"
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.4"
+astropy = "*"
+matplotlib = "*"
 
