@@ -2,6 +2,7 @@ inputs:
   sefd:
     info: Antenna SEFD (one value for all frequencies)
     dtype: float
+    default: 551
   tsys_over_eta:
     info: Antenna system temperature over aperture efficiency (one value for all frequecies) 
     dtype: float
