@@ -1,0 +1,44 @@
+#!/usr/bin/env -S stimela run 
+
+_include: (simms.parser_config)simms-cabs.yaml
+
+observe:
+  info: creating an observation
+  inputs:
+    _use:
+    - cabs.telsim.inputs
+    - cabs.skysim.inputs
+  steps:
+    empty_ms:
+      info: 'creating empty measurement set'
+      cab: telsim
+      params:
+        ms: =recipe.ms
+        telescope: =recipe.telescope
+        direction: =recipe.direction
+        starttime: =recipe.starttime
+        dtime: =recipe.dtime
+        ntimes: =recipe.ntimes
+        startfreq: =recipe.startfreq
+        dfreq: =recipe.dfreq
+        nchan: =recipe.nchan
+        correlations: =recipe.correlations
+        rowchunks: =recipe.rowchunks
+        addnoise: =recipe.addnoise
+        column: =recipe.column
+    create_sky:
+        info: 'simulating the sky'
+        cab: skysim
+        params:
+          ms: =recipe.ms
+          catalogue: =recipe.catalogue
+          cat-delim: =recipe.cat-delim
+          column: =recipe.column
+          die: =recipe.die
+          dde: =recipe.dde
+          mapping: =recipe.mapping
+
+
+
+
+
