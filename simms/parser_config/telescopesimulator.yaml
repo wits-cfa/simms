@@ -56,6 +56,14 @@ inputs:
     info: Number of chunks to divide the data into, larger number of chunks improves the computation speed
     dtype: int
     default: 50000
+  addnoise:
+    info: A tag to determine if noise should be added to the visibilities
+    dtype: bool
+    default: False
+  column:
+    info: The column in which to corrupt the visibilities with noise.
+    dtype: str
+    default: 'MODEL_DATA'
   _use:
     libs.sys_noise.inputs
 outputs:
