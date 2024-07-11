@@ -40,6 +40,7 @@ def runit(**kwargs):
     correlations = opts.correlations
     rowchunks = opts.rowchunks
     addnoise = opts.addnoise
+    sefd = opts.sefd
     column = opts.column
     generate_ms.create_ms(msname, telescope, direction,
-                          dtime, ntimes, startfreq, dfreq, nchan, correlations, rowchunks, starttime, addnoise, column)
+                          dtime, ntimes, startfreq, dfreq, nchan, correlations, rowchunks, addnoise,sefd, column,starttime)

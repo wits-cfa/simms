@@ -33,9 +33,10 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
               pointing_direction: List[str], dtime: int, ntimes: int,
               start_freq: Union[str, float], dfreq: Union[str, float],
               nchan: int, correlations: List[str], row_chunks: int,
+              addnoise: bool,sefd: float,column: str,
               start_time: Union[str, List[str]] = None, start_ha: float = None,
-              horizon_limit: Union[float, str] = None, addnoise: bool = True,
-              sefd: float = 551.0, column: str = 'MODEL_DATA'):
+              horizon_limit: Union[float, str] = None, 
+                ):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
     remove_ms(ms_name)
