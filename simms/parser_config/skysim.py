@@ -19,13 +19,14 @@ log = get_logger(BIN.skysim)
 
 command = BIN.skysim
 command = BIN.skysim
-sources = load_sources(["library/sys_noise"])
+
+
 thisdir = os.path.dirname(__file__)
-config = load(command, use_sources=sources)
 
 source_files = glob.glob(f"{thisdir}/library/*.yaml")
 sources = [File(item) for item in source_files]
 parserfile = File(f"{thisdir}/{command}.yaml")
+
 config = paramfile_loader(parserfile, sources)[command]
 
 
