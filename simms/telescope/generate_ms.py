@@ -6,7 +6,6 @@ import dask
 import dask.array as da
 import daskms
 import numpy as np
-import xarray as xr
 from casacore.measures import measures
 from casacore.tables import table
 from daskms import Dataset, xds_from_table, xds_to_table
@@ -30,13 +29,13 @@ def remove_ms(ms_name: str):
 
 
 def create_ms(ms_name: str, telescope_name: Union[str, File],
-              pointing_direction: List[str], dtime: int, ntimes: int,
-              start_freq: Union[str, float], dfreq: Union[str, float],
-              nchan: int, correlations: List[str], row_chunks: int,
-              addnoise: bool, sefd: float, column: str,
-              start_time: Union[str, List[str]] = None,
-              start_ha: float = None, horizon_limit: Union[float, str] = None,
-              ):
+            pointing_direction: List[str], dtime: int, ntimes: int,
+            start_freq: Union[str, float], dfreq: Union[str, float],
+            nchan: int, correlations: List[str], row_chunks: int,
+            addnoise: bool, sefd: float, column: str,
+            start_time: Union[str, List[str]] = None,
+            start_ha: float = None, horizon_limit: Union[float, str] = None,
+            ):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
     remove_ms(ms_name)

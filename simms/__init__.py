@@ -26,6 +26,6 @@ def get_logger(name, level="DEBUG"):
 LOG = get_logger("simms")
 
 BIN = OmegaConf.create({"skysim": "skysim",
-                        "telsim": "telescopesimulator",
+                        "telsim": "telsim",
 
                         })

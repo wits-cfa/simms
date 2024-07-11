@@ -7,9 +7,8 @@ import ephem
 import numpy as np
 from casacore.measures import measures
 from daskms import Dataset, xds_to_table
-
+from omegaconf import OmegaConf
 from simms import constants, utilities
-
 from .layouts import known
 
 
@@ -51,7 +50,7 @@ class Array:
         else:
             fname = self.layout
 
-        info = utilities.readyaml(fname)
+        info = OmegaConf.load(fname)
         if vla:
             self.antlocations = np.array(info["antlocations"][self.layout])
         else:
