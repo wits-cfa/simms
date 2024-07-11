@@ -12,7 +12,7 @@ inputs:
     required: yes
     must_exist: no
   catalogue: 
-    info: Catalogue file containing sources
+    info: Catalogue file containing sources. A full description of accepted units can be found in the documentation.
     dtype: File
     required: yes
   cat-delim: 
