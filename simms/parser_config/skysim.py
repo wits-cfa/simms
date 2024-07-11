@@ -10,7 +10,7 @@ import glob
 from simms.utilities import CatalogueError
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt;
 from astropy.coordinates import Angle
 from simms.skymodel.converters import *
 from casacore.tables import table
@@ -30,9 +30,6 @@ parserfile = File(f"{thisdir}/{command}.yaml")
 config = paramfile_loader(parserfile, sources)[command]
 
 
-skyspec = paramfile_loader(os.path.join(skysimdir, "skyspec.yaml"))
-print(skyspec)
-
 
 @click.command(command)
 @click.version_option(str(simms.__version__))
@@ -45,6 +42,7 @@ def runit(**kwargs):
     map_path = opts.mapping
     mapdata = OmegaConf.load(map_path)
     mapcols = OmegaConf.create({})
+
 
     for key in mapdata:
         catkey = mapdata.get(key) or key
@@ -186,7 +184,6 @@ def runit(**kwargs):
 
     sources = makesources(mapcols,freqs)
     for source in sources:
-        #print(f"Source: {source.spectrum}")
         plt.figure()
         plt.plot(freqs, source.spectrum)
         plt.xlabel('Channel')
@@ -195,18 +192,6 @@ def runit(**kwargs):
         plt.grid(True)
         plt.savefig(f'spectrum{source.name}_plot.png')  
         plt.close()  
-
-    #for source in sources:
-        #print(f"Source: {source.ra}, {source.dec}, {source.l}, {source.m}  ")#, Spectrum: {source.spectrum}")
-        #plt.figure()
-        #plt.plot(freqs, source.spectrum)
-        #plt.xlabel('Channel')
-        #plt.ylabel('Spectrum')
-        #plt.title(f'Spectrum of Source {source.name}')
-        #plt.grid(True)
-        #plt.savefig(f'spectrum{source.name}_plot.png')  
-        #plt.close()  
-
  
     
     def computevis(srcs, uvw, nchan):
@@ -222,7 +207,6 @@ def runit(**kwargs):
         return vis
     
 
-    
     with tqdm(total=nrow, desc='computing visibilities', unit='rows') as pbar:
         print(f'computing visibilities for {nrows} rows ')
         vischan = np.zeros_like(data)
@@ -231,13 +215,6 @@ def runit(**kwargs):
             vischan[row,:,3] = vischan[row,:,0] #adding the visibilities to the fourth diagonal
             pbar.update(1)
 
-
-    plt.figure()
-    plt.plot(abs(vischan[2,:,0]))
-    plt.title(f'visibilities')
-    plt.grid(True)
-    plt.savefig(f'visibilites')  
-    plt.close() 
 
     nrow = tab.nrows()
     with tqdm(total=nrow, desc='simulating', unit='rows') as pbar2:
