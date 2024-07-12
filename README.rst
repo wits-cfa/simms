@@ -11,8 +11,8 @@ Tools for:
 2. Simulating sky models into them. 
 
 
-#`Documentation Page <https://simms.readthedocs.io/>`_  
-#=========================================================================================
+.. `Documentation Page <https://simms.readthedocs.io/>`_  
+.. =========================================================================================
 
 
 
