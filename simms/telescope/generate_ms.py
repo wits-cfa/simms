@@ -10,9 +10,11 @@ from casacore.measures import measures
 from casacore.tables import table
 from daskms import xds_to_table
 from scabha.basetypes import File
-
 from simms.telescope import array_utilities as autils
+from omegaconf import OmegaConf
+import simms
 
+CORR_TYPES = OmegaConf.load(f"{simms.PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
 dm = measures()
 
 
@@ -31,7 +33,7 @@ def remove_ms(ms_name: str):
 def create_ms(ms_name: str, telescope_name: Union[str, File],
             pointing_direction: str, dtime: int, ntimes: int,
             start_freq: Union[str, float], dfreq: Union[str, float],
-            nchan: int, correlations: List[str], row_chunks: int,
+            nchan: int, correlations: str, row_chunks: int,
             addnoise: bool, sefd: float, column: str,
             start_time: Union[str, List[str]] = None,
             start_ha: float = None, horizon_limit: Union[float, str] = None,
@@ -54,6 +56,12 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
 
     num_chans = len(uvcoverage_data.freqs)
     num_corr = len(correlations)
+    corr_types = np.array([[CORR_TYPES[x] for x in correlations]])
+    # TODO(sphe) use casacore to determine this
+    if num_corr == 2: 
+        corr_products = np.array([([0,0],[1,1])])
+    else:
+        corr_products = np.array([([0,0], [0,1], [1,0], [1,1])])
 
     num_ants = antlocation.shape[0]
     ant1 = uvcoverage_data.antenna1 * ntimes
@@ -147,11 +155,14 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     ant_table = table(f"{ms_name}.ms::ANTENNA",
                       readonly=False, lockoptions='user', ack=False)
     try:
+        names = [f"ANT-{x}" for x in range(num_ants)]
         ant_table.lock(write=True)
         ant_table.addrows(num_ants)
         ant_table.putcol("DISH_DIAMETER", dish_diameter)
         ant_table.putcol("MOUNT", ant_mount)
         ant_table.putcol("POSITION", antlocation)
+        ant_table.putcol("NAME", names)
+        ant_table.putcol("STATION", names)
         ant_table.putcol("TYPE", teltype)
 
     finally:
@@ -167,6 +178,9 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         fld_tab.putcol("PHASE_DIR", phase_dir)
         fld_tab.putcol("DELAY_DIR", phase_dir)
         fld_tab.putcol("REFERENCE_DIR", phase_dir)
+        fld_tab.putcol("TIME", 0.0)
+        fld_tab.putcol("SOURCE_ID", 0)
+        
     finally:
         fld_tab.unlock()
         fld_tab.close()
@@ -207,6 +221,8 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         pol_tab.lock(write=True)
         pol_tab.addrows(1)
         pol_tab.putcol("NUM_CORR", num_corr)
+        pol_tab.putcol("CORR_TYPE", corr_types)
+        pol_tab.putcol("CORR_PRODUCT", corr_products)
     finally:
         pol_tab.unlock()
         pol_tab.close()

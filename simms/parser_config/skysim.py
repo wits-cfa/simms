@@ -97,9 +97,9 @@ def runit(**kwargs):
     if ncorr == 2:
         xx,yy = 0,1
     elif ncorr == 4:
-        xx,yy = 0,4
+        xx,yy = 0,3
     else:
-        raise RuntimeError("The input MS must have 2 or 4 correlations")
+        raise RuntimeError(f"The input MS must have 2 or 4 correlations. NUM_CORR = {ncorr}")
 
     sources = makesources(mapcols,freqs, ra0, dec0) 
 
