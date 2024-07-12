@@ -8,13 +8,11 @@ from scabha.schema_utils import clickify_parameters, paramfile_loader
 
 import simms
 from simms import BIN, get_logger
-from simms.parser_config.utils import load
 from simms.telescope import generate_ms
 
 log = get_logger(BIN.telsim)
 
 command = BIN.telsim
-config = load(command)
 
 thisdir = os.path.dirname(__file__)
 telescope_params = glob.glob(f"{thisdir}/library/*.yaml")
@@ -30,7 +28,7 @@ def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     msname = opts.ms
     telescope = opts.telescope
-    direction = opts.direction
+    direction = opts.direction.split(",")
     starttime = opts.starttime
     dtime = opts.dtime
     ntimes = opts.ntimes

@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import Dict, List, Union
+from typing import List, Union
 
 import dask
 import dask.array as da
@@ -8,7 +8,7 @@ import daskms
 import numpy as np
 from casacore.measures import measures
 from casacore.tables import table
-from daskms import Dataset, xds_from_table, xds_to_table
+from daskms import xds_to_table
 from scabha.basetypes import File
 
 from simms.telescope import array_utilities as autils
@@ -29,7 +29,7 @@ def remove_ms(ms_name: str):
 
 
 def create_ms(ms_name: str, telescope_name: Union[str, File],
-            pointing_direction: List[str], dtime: int, ntimes: int,
+            pointing_direction: str, dtime: int, ntimes: int,
             start_freq: Union[str, float], dfreq: Union[str, float],
             nchan: int, correlations: List[str], row_chunks: int,
             addnoise: bool, sefd: float, column: str,

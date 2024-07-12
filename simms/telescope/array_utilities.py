@@ -1,15 +1,13 @@
 from datetime import datetime
-from typing import Dict, Union
-
-import dask
-import dask.array as da
+from typing import Union
 import ephem
 import numpy as np
 from casacore.measures import measures
-from daskms import Dataset, xds_to_table
 from omegaconf import OmegaConf
-from simms import constants, utilities
+from simms import constants
 from .layouts import known
+from scabha.basetypes import File
+from simms.utilities import ObjDict
 
 
 class Array:
@@ -17,7 +15,7 @@ class Array:
     The Array class has functions for converting from one coordinate system to another.
     """
 
-    def __init__(self, layout: Union[str, utilities.File], degrees: bool = True):
+    def __init__(self, layout: Union[str, File], degrees: bool = True):
         """
         layout: str|File
                     : specify an observatory as a str or a file.
@@ -143,7 +141,7 @@ class Array:
         return enu
 
     def uvgen(self, pointing_direction, dtime, ntimes, start_freq, dfreq,
-              nchan, start_time=None, start_ha=None) -> utilities.ObjDict:
+              nchan, start_time=None, start_ha=None) -> ObjDict:
         """
         Generate uvw coordimates
 
@@ -204,7 +202,7 @@ class Array:
 
         h0 = ih0 + np.linspace(0, tot_ha, ntimes)
 
-       # Transformation matrix
+        # Transformation matrix
         transform_matrix = np.array(
             [
                 [np.sin(h0), np.cos(h0), np.array(
@@ -268,7 +266,7 @@ class Array:
         total_bandwidth = start_freq + dfreq * nchan
         frequency_entries = np.arange(start_freq, total_bandwidth, dfreq)
 
-        uvcoverage = utilities.ObjDict(
+        uvcoverage = ObjDict(
             {
                 "antenna1": antenna1_list,
                 "antenna2": antenna2_list,
