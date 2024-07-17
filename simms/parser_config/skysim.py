@@ -38,8 +38,10 @@ def runit(**kwargs):
         raise ParameterError("Cannot use custom map and built-in map simultaneously")
     elif opts.mapping:
         map_path = opts.mapping
+    elif opts.cat_species:
+        map_path = f"{thisdir}/library/{opts.cat_species}.yaml"
     else:
-        map_path = f'{thisdir}/library/{opts.cat_species}.yaml'
+        map_path = f"{thisdir}/library/catalogue_template.yaml"
 
     mapdata = OmegaConf.load(map_path)
     mapcols = OmegaConf.create({})
@@ -49,10 +51,10 @@ def runit(**kwargs):
     for key in mapdata:
         keymap = mapdata.get(key)
         if keymap:   
-            mapcols[key] = (keymap.name, [], keymap.get("unit"))
+            mapcols[key] = (keymap.name or key, [], keymap.get("unit"))
         else:
             mapcols[key] = (key, [], None)
-
+            
     with open(cat) as stdr:
         header = stdr.readline().strip()
 

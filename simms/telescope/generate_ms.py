@@ -17,20 +17,20 @@ import simms
 CORR_TYPES = OmegaConf.load(f"{simms.PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
 dm = measures()
 
+log = simms.get_logger(name="telsim")
 
-def remove_ms(ms_name: str):
-    path = os.path.abspath(f"{ms_name}.ms")
-    name = os.path.basename(path)
-    if os.path.exists(name):
-        shutil.rmtree(name, ignore_errors=True)
-        print(
-            f"The existing MS file {name} was successfully deleted. It is now being recreated...")
+def remove_ms(ms: Union[File,str]):
+    
+    if os.path.exists(ms):
+        shutil.rmtree(ms, ignore_errors=True)
+        log.debug(
+            f"The existing MS file {ms} was successfully deleted. It is now being recreated...")
     else:
-        print(
-            f"MS file {name} does not exist. A new file will be created.")
+        log.debug(
+            f"MS file {ms} does not exist. A new file will be created.")
 
 
-def create_ms(ms_name: str, telescope_name: Union[str, File],
+def create_ms(ms: str, telescope_name: Union[str, File],
             pointing_direction: str, dtime: int, ntimes: int,
             start_freq: Union[str, float], dfreq: Union[str, float],
             nchan: int, correlations: str, row_chunks: int,
@@ -40,7 +40,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
             ):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
-    remove_ms(ms_name)
+    remove_ms(ms)
     telescope_array = autils.Array(telescope_name)
     telescope_array.set_arrayinfo()
     size = telescope_array.size
@@ -133,12 +133,12 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     main_table = daskms.Dataset(
         ds, coords={"ROWID": ("row", da.arange(num_rows))})
 
-    write_main = xds_to_table(main_table, f"{ms_name}.ms")
+    write_main = xds_to_table(main_table, ms)
     dask.compute(write_main)
     
 
 
-    spw_tab = table(f"{ms_name}.ms::SPECTRAL_WINDOW",
+    spw_tab = table(f"{ms}::SPECTRAL_WINDOW",
                     readonly=False, lockoptions='user', ack=False)
 
     try:
@@ -164,8 +164,8 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
     ant_mount = [mount] * num_ants
     teltype = ["GROUND_BASED"] * num_ants
 
-    ant_table = table(f"{ms_name}.ms::ANTENNA",
-                      readonly=False, lockoptions='user', ack=False)
+    ant_table = table(f"{ms}::ANTENNA",
+                    readonly=False, lockoptions='user', ack=False)
     try:
         names = [f"ANT-{x}" for x in range(num_ants)]
         ant_table.lock(write=True)
@@ -181,7 +181,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         ant_table.unlock()
         ant_table.close()
 
-    fld_tab = table(f"{ms_name}.ms::FIELD",
+    fld_tab = table(f"{ms}::FIELD",
                     readonly=False, lockoptions='user', ack=False)
 
     try:
@@ -197,8 +197,8 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         fld_tab.unlock()
         fld_tab.close()
 
-    dd_tab = table(f"{ms_name}.ms::DATA_DESCRIPTION",
-                   readonly=False, lockoptions='user', ack=False)
+    dd_tab = table(f"{ms}::DATA_DESCRIPTION",
+                    readonly=False, lockoptions='user', ack=False)
     try:
         dd_tab.lock(write=True)
         dd_tab.addrows(1)
@@ -206,7 +206,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         dd_tab.unlock()
         dd_tab.close()
 
-    obs_tab = table(f"{ms_name}.ms::OBSERVATION",
+    obs_tab = table(f"{ms}::OBSERVATION",
                     readonly=False, lockoptions='user', ack=False)
     try:
         obs_tab.lock(write=True)
@@ -219,8 +219,8 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         obs_tab.unlock()
         obs_tab.close()
 
-    pntng_tab = table(f"{ms_name}.ms::POINTING",
-                      readonly=False, lockoptions='user', ack=False)
+    pntng_tab = table(f"{ms}::POINTING",
+                    readonly=False, lockoptions='user', ack=False)
     try:
         pntng_tab.lock(write=True)
         pntng_tab.addrows(num_rows)
@@ -235,7 +235,7 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         pntng_tab.unlock()
         pntng_tab.close()
 
-    pol_tab = table(f"{ms_name}.ms::POLARIZATION",
+    pol_tab = table(f"{ms}::POLARIZATION",
                     readonly=False, lockoptions='user', ack=False)
     try:
         pol_tab.lock(write=True)
@@ -247,8 +247,8 @@ def create_ms(ms_name: str, telescope_name: Union[str, File],
         pol_tab.unlock()
         pol_tab.close()
 
-    feed_tab = table(f"{ms_name}.ms::FEED",
-                     readonly=False, lockoptions='user', ack=False)
+    feed_tab = table(f"{ms}::FEED",
+                    readonly=False, lockoptions='user', ack=False)
     try:
         pol_response = np.array([[[1.+0.j, 0.+0.j],
         [0.+0.j, 1.+0.j]]])
