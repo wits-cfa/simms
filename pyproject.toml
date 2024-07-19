@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "simms"
-version = "3.0beta1"
+version = "3.0beta2"
 description = "Simms 3.0. Tool for end-to-end simulations of radio inteferometer observations"
 authors = [
     "Sphesihle Makhathini <sphemakh@gmail.com>",

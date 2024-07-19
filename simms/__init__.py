@@ -6,6 +6,8 @@ from omegaconf import OmegaConf
 
 __version__ = metadata.version(__package__)
 
+PCKGDIR = os.path.dirname(os.path.abspath(__file__))
+
 SCHEMADIR = os.path.join(__path__[0], "schemas")
 
 

@@ -35,7 +35,7 @@ def runit(**kwargs):
     startfreq = opts.startfreq
     dfreq = opts.dfreq
     nchan = opts.nchan
-    correlations = opts.correlations
+    correlations = opts.correlations.split(",")
     rowchunks = opts.rowchunks
     addnoise = opts.addnoise
     sefd = opts.sefd
