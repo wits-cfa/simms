@@ -20,7 +20,12 @@ cabs:
         info: Data column for simulation
         dtype: str
         default: MODEL_DATA
-
+      spwid:
+        info: Spectral Window ID
+        dtype: int
+      sefd:
+        info: Add noise using the this SEFD value
+        dtype: float
       cat-species:
         info: type of catalogue e.g. PyBDSF
         dtype: str

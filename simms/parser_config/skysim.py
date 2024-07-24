@@ -38,8 +38,10 @@ def runit(**kwargs):
         raise ParameterError("Cannot use custom map and built-in map simultaneously")
     elif opts.mapping:
         map_path = opts.mapping
+    elif opts.cat_species:
+        map_path = f"{thisdir}/library/{opts.cat_species}.yaml"
     else:
-        map_path = f'{thisdir}/library/{opts.cat_species}.yaml'
+        map_path = f"{thisdir}/library/catalogue_template.yaml"
 
     mapdata = OmegaConf.load(map_path)
     mapcols = OmegaConf.create({})
@@ -91,8 +93,12 @@ def runit(**kwargs):
     dec0 = radec0[0,0][1]
     nrow = tab.nrows()
     spw_tab = table(f"{ms}::SPECTRAL_WINDOW", ack=False)
-    freqs = spw_tab.getcol("CHAN_FREQ")[0]
+    freqs = spw_tab.getcol("CHAN_FREQ")[opts.spwid]
     nrows, nchan, ncorr = data.shape
+    if opts.sefd:
+        df = spwtab.getcol("CHAN_WIDTH")[opts.spwid, 0]
+        dt = tab.getcol("EXPOSURE", 0, 1)[0]
+        noise = opts.sefd / np.sqrt(2*dt*df)
     
     if ncorr == 2:
         xx,yy = 0,1
@@ -123,6 +129,10 @@ def runit(**kwargs):
                 datai = tab.getcell(column, i) + vischan[i]
             else:
                 datai = vischan[i]
+            
+            if opts.sefd:
+                visnoise = noise * ( np.random.randn(*datai.shape) + 1j*np.random.randn(*datai.shape) )
+                datai += visnoise
 
             tab.putcell(column, i, datai)
             pbar2.update(1)
