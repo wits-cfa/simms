@@ -51,10 +51,10 @@ def runit(**kwargs):
     for key in mapdata:
         keymap = mapdata.get(key)
         if keymap:   
-            mapcols[key] = (keymap.name, [], keymap.get("unit"))
+            mapcols[key] = (keymap.name or key, [], keymap.get("unit"))
         else:
             mapcols[key] = (key, [], None)
-
+            
     with open(cat) as stdr:
         header = stdr.readline().strip()
 
@@ -103,9 +103,9 @@ def runit(**kwargs):
     if ncorr == 2:
         xx,yy = 0,1
     elif ncorr == 4:
-        xx,yy = 0,4
+        xx,yy = 0,3
     else:
-        raise RuntimeError("The input MS must have 2 or 4 correlations")
+        raise RuntimeError(f"The input MS must have 2 or 4 correlations. NUM_CORR = {ncorr}")
 
     sources = makesources(mapcols,freqs, ra0, dec0) 
 

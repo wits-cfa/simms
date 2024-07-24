@@ -96,13 +96,9 @@ cabs:
         dtype: int
         default: 9
       correlations:
-        info: Feed correlations for MS, e.g., 'XX, YY'
-        dtype: List[str]
-        policies:
-          split: " "
-        default:
-          - XX
-          - YY
+        info: Feed correlations for MS, e.g., 'XX,YY'
+        dtype: str
+        default: XX,YY
       rowchunks:
         info: Number of chunks to divide the data into, larger number of chunks improves the computation speed
         dtype: int

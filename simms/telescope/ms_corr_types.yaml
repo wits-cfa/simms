@@ -1,0 +1,35 @@
+CORR_TYPES: 
+  Undefined: 0  
+  I: 1 
+  Q: 2 
+  U: 3 
+  V: 4 
+  RR: 5 
+  RL: 6 
+  LR: 7 
+  LL: 8 
+  XX: 9 
+  XY: 10
+  YX: 11
+  YY: 12
+  RX: 13
+  RY: 14
+  LX: 15
+  LY: 16
+  XR: 17
+  XL: 18
+  YR: 19
+  YL: 20
+  PP: 21
+  PQ: 22
+  QP: 23
+  QQ: 24
+  RCircular: 25
+  LCircular: 26
+  Linear: 27
+  Ptotal: 28
+  Plinear: 29
+  PFtotal: 30
+  PFlinear: 31
+  Pangle: 32
+
