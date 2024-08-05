@@ -96,7 +96,7 @@ def runit(**kwargs):
     freqs = spw_tab.getcol("CHAN_FREQ")[opts.spwid]
     nrows, nchan, ncorr = data.shape
     if opts.sefd:
-        df = spwtab.getcol("CHAN_WIDTH")[opts.spwid, 0]
+        df = spw_tab.getcol("CHAN_WIDTH")[opts.spwid, 0]
         dt = tab.getcol("EXPOSURE", 0, 1)[0]
         noise = opts.sefd / np.sqrt(2*dt*df)
     

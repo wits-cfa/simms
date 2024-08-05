@@ -23,6 +23,7 @@ cabs:
       spwid:
         info: Spectral Window ID
         dtype: int
+        default: 0
       sefd:
         info: Add noise using the this SEFD value
         dtype: float
