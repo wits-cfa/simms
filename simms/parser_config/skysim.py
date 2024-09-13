@@ -10,7 +10,7 @@ from simms.utilities import CatalogueError, isnummber, ParameterError
 from simms.skymodel.skymods import makesources, computevis
 import numpy as np
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from tqdm import tqdm
+from tqdm.dask import TqdmCallback
 import dask.array as da
 
 log = get_logger(BIN.skysim)
@@ -136,5 +136,6 @@ def runit(**kwargs):
         })
     
         writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
-    
-    da.compute(writes)
+        
+    with TqdmCallback(desc="compute"):
+        da.compute(writes)
