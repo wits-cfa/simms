@@ -20,6 +20,10 @@ cabs:
         info: Data column for simulation
         dtype: str
         default: MODEL_DATA
+      field-id:
+        info: Field ID
+        dtype: int
+        default: 0
       spwid:
         info: Spectral Window ID
         dtype: int
@@ -32,6 +36,9 @@ cabs:
         dtype: str
         required: no
         choices: ['bdsf_gaul', 'aegean']
+      input-column:
+        info: Input column (see option --mode)
+        dtype: str
       mode:
         info: Simulation mode. To create a new column use "sim"; to add to column use "add"; to subtract from column use "subtract".
         dtype: str

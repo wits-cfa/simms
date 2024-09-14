@@ -9,8 +9,9 @@ import glob
 from simms.utilities import CatalogueError, isnummber, ParameterError
 from simms.skymodel.skymods import makesources, computevis
 import numpy as np
-from casacore.tables import table
-from tqdm import tqdm
+from daskms import xds_from_ms, xds_from_table, xds_to_table
+from tqdm.dask import TqdmCallback
+import dask.array as da
 
 log = get_logger(BIN.skysim)
 
@@ -84,56 +85,57 @@ def runit(**kwargs):
                 
                 mapcols[key][1].append(value)
                 
-    tab = table(ms, readonly=False, ack=False) 
-    data = tab.getcol(column)
-    uvw = tab.getcol("UVW")
-    fldtab = table(f"{ms}::FIELD", ack=False) 
-    radec0 = fldtab.getcol("PHASE_DIR")
-    ra0 = radec0[0,0][0] 
-    dec0 = radec0[0,0][1]
-    nrow = tab.nrows()
-    spw_tab = table(f"{ms}::SPECTRAL_WINDOW", ack=False)
-    freqs = spw_tab.getcol("CHAN_FREQ")[opts.spwid]
-    nrows, nchan, ncorr = data.shape
+                
+    ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks={"row":10000})               
+    spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
+    field_ds  = xds_from_table(f"{ms}::FIELD")[0]
+    ms_ds0 = ms_dsl[0]
+    
+    radec0 = field_ds.PHASE_DIR.data[opts.field_id].compute()
+    ra0 = radec0[0][0] 
+    dec0 = radec0[0][1]
+    nrows, nchan, ncorr = ms_ds0.DATA.data.shape
+    freqs = spw_ds.CHAN_FREQ.data[opts.spwid].compute()
     if opts.sefd:
-        df = spw_tab.getcol("CHAN_WIDTH")[opts.spwid, 0]
-        dt = tab.getcol("EXPOSURE", 0, 1)[0]
+        df = spw_ds.CHAN_WIDTH.data[opts.spwid][0].compute()
+        dt = ms_ds0.EXPOSURE.data[0].compute() 
         noise = opts.sefd / np.sqrt(2*dt*df)
     
-    if ncorr == 2:
-        xx,yy = 0,1
-    elif ncorr == 4:
-        xx,yy = 0,3
+    sources = makesources(mapcols,freqs, ra0, dec0)
+    
+    allvis = []
+    
+    if isinstance(opts.input_column, str):
+        incol = getattr(ms_ds0, opts.input_column).data
+        incol_dims = ("row", "chan", "corr")
     else:
-        raise RuntimeError(f"The input MS must have 2 or 4 correlations. NUM_CORR = {ncorr}")
+        incol = None
+        incol_dims = None
 
-    sources = makesources(mapcols,freqs, ra0, dec0) 
-
-    with tqdm(total=nrow, desc='computing visibilities', unit='rows') as pbar:
-        print(f'computing visibilities for {nrows} rows ')
-        vischan = np.zeros_like(data)
-        for row in range(nrows):
-            # adding the visibilites to the first diagonal
-            vischan[row,:,xx] = computevis(sources, uvw[row], nchan, freqs)  
-            # adding the visibilities to the fourth diagonal
-            vischan[row,:,yy] = vischan[row,:,0] 
-            pbar.update(1)
-
-    nrow = tab.nrows()
-    with tqdm(total=nrow, desc='simulating', unit='rows') as pbar2:
-        print("Starting to add rows to ms file")
-        for i in range(nrow):
-            if opts.mode == "add":
-                datai = tab.getcell(column, i) + vischan[i]
-            elif opts.mode == "subtract":
-                datai = tab.getcell(column, i) + vischan[i]
-            else:
-                datai = vischan[i]
-            
-            if opts.sefd:
-                visnoise = noise * ( np.random.randn(*datai.shape) + 1j*np.random.randn(*datai.shape) )
-                datai += visnoise
-
-            tab.putcell(column, i, datai)
-            pbar2.update(1)
-        tab.close()
+    for ds in ms_dsl:
+        simvis = da.blockwise(computevis, ("row", "chan", "corr"),
+                            sources, ("source",),
+                            ds.UVW.data, ("row", "uvw"),
+                            freqs, ("chan",),
+                            ncorr, None,
+                            incol, None,
+                            noise, None,
+                            opts.mode == "subtract", None,
+                            new_axes={"corr": ncorr},
+                            dtype=ds.DATA.data.dtype,
+                            concatenate=True,
+                            )
+        
+        allvis.append(simvis)
+        
+    writes = []
+    for i, ds in enumerate(ms_dsl):
+        ms_dsl[i] = ds.assign(**{
+                opts.column: ( ("row", "chan", "corr"), 
+                    allvis[i]),
+        })
+    
+        writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
+        
+    with TqdmCallback(desc="compute"):
+        da.compute(writes)

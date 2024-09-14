@@ -72,7 +72,7 @@ def makesources(data,freqs, ra0, dec0):
             dec = data['dec'][1][i],
             
         )
-        #source.set_spectrum(freqs)
+        
         spectrum = Spectrum(
             stokes_i = data['stokes_i'][1][i],
             stokes_q = data['stokes_q'][1][i] if i < len(data['stokes_q'][1]) else None,
@@ -93,20 +93,35 @@ def makesources(data,freqs, ra0, dec0):
             pa = data['pa'][1][i] if i < len(data['pa'][1]) else None
             
         )
+        
         source.l, source.m = source.radec2lm(ra0,dec0)
         source.spectrum = spectrum.set_spectrum(freqs)
         source.shape = shape.set_shape()
         sources.append(source)
+        
     return sources
 
-def computevis(srcs, uvw, nchan, freqs):
-    wavs = 2.99e8 / freqs[:nchan]
-    uvw_scaled = uvw[:, None] / wavs 
+def computevis(srcs, uvw, freqs, ncorr, mod_data=None, noise=None, subtract=False):
+    wavs = 2.99e8 / freqs
+    uvw_scaled = uvw.T[...,np.newaxis] / wavs 
     vis = 0j
     for source in srcs:
         l, m = source.l, source.m
         n_term = np.sqrt(1 - l*l - m*m) - 1
         arg = uvw_scaled[0] * l + uvw_scaled[1] * m + uvw_scaled[2] * n_term
         vis += source.spectrum * np.exp(2 * np.pi * 1j * arg)
+    if ncorr == 2:
+        vis = np.stack([vis, vis], axis=2)
+    elif ncorr == 4:
+        vis = np.stack([vis, np.empty_like(vis), np.empty_like(vis), vis], axis=2)
+    else:
+        raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
     
+    if noise:
+        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
+    
+    if isinstance(mod_data, np.ndarray):
+        vis = vis - mod_data if subtract else vis + mod_data
+        
     return vis
+
