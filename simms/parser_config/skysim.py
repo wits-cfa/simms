@@ -106,7 +106,7 @@ def runit(**kwargs):
     allvis = []
     
     if isinstance(opts.input_column, str):
-        incol = getattr(ds, opts.input_column).data
+        incol = getattr(ms_ds0, opts.input_column).data
         incol_dims = ("row", "chan", "corr")
     else:
         incol = None
