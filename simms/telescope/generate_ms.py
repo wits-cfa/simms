@@ -96,7 +96,7 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     freqs = freqs.reshape(1, freqs.shape[0])
     ref_freq = dm.frequency(v0=start_freq)["m0"]["value"]
     chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
-    channel_widths = np.full(freqs.shape, chan_width)
+    channel_widths = da.full(freqs.shape, chan_width)
     total_bandwidth = nchan * chan_width
 
 
@@ -108,8 +108,6 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     ds = {
         'DATA_DESC_ID': (("row",), ddid),
         'DATA': (("row", "chan", "corr"), data),
-        'CORRECTED_DATA': (("row", "chan", "corr"), data),
-        'MODEL_DATA': (("row", "chan", "corr"), data),
         "UVW": (("row", "uvw_dim"), uvw),
         "TIME": (("row"), times),
         "TIME_CENTROID": (("row"), times),
@@ -138,131 +136,173 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     
 
 
-    spw_tab = table(f"{ms}::SPECTRAL_WINDOW",
-                    readonly=False, lockoptions='user', ack=False)
+    subtabs_row_dict = {"SPECTRAL_WINDOW":1,
+                        "FIELD":1,
+                        "DATA_DESCRIPTION":1,
+                        "ANTENNA":num_ants,
+                        "OBSERVATION":1,
+                        "FEED":num_ants,
+                        "POLARIZATION":1,
+                        "POINTING":num_rows,
+        
+    }
+    
+    log.info("writing FEED table...")
+    autils.ms_addrow(ms,"FEED",num_ants)
+    pol_response = da.array([[[1.+0.j, 0.+0.j],
+         [0.+0.j, 1.+0.j]]])
+    
+    feed_ds = {
+        "ANTENNA_ID":(("row"),da.arange(num_ants)),
+        "BEAM_ID":(("row"),da.from_array(np.full(num_ants,-1))),
+        "BEAM_OFFSET":(("row","receptors", "radec"),da.from_array(np.zeros((num_ants,2,2),dtype=float))),
+        "INTERVAL":(("row"),da.from_array(np.full(num_ants,1.e30))),
+        "NUM_RECEPTORS":(("row"),da.from_array(np.full(num_ants,2))),
+        "SPECTRAL_WINDOW_ID":(("row"),da.from_array(np.full(num_ants,-1))),
+        "POLARIZATION_TYPE":(("row", "receptors"), da.from_array(np.full((num_ants,2),(['X','Y'])))),
+        "POL_RESPONSE":(("row", "receptors", "receptors-2"),da.from_array(np.full((num_ants,2,2),pol_response)))
+    }
+    
 
-    try:
-        spw_tab.lock(write=True)
-        spw_tab.addrows(1)
-        spw_tab.putcol("CHAN_FREQ", freqs)
-        spw_tab.putcol("CHAN_WIDTH", channel_widths)
-        spw_tab.putcol("EFFECTIVE_BW", channel_widths)
-        spw_tab.putcol("RESOLUTION", channel_widths)
-        spw_tab.putcol("REF_FREQUENCY", ref_freq)
-        spw_tab.putcol("MEAS_FREQ_REF", ref_freq)
-        spw_tab.putcol("TOTAL_BANDWIDTH", total_bandwidth)
-        spw_tab.putcol("NUM_CHAN", nchan)
-        spw_tab.putcol("NAME", "00")
-        spw_tab.putcol("NET_SIDEBAND", [1])
-        spw_tab.putcol("FREQ_GROUP_NAME","Group 1")
-    finally:
-        spw_tab.unlock()
-        spw_tab.close()
 
+    feed_table = daskms.Dataset(
+        feed_ds)
 
+    write_feed = xds_to_table(feed_table, f"{ms}::FEED")
+    dask.compute(write_feed)
+    
+    
+    
+    log.info("Writing SPECTRAL_WINDOW table...")
+    autils.ms_addrow(ms,"SPECTRAL_WINDOW",1)
+    spw_ds = {
+        "CHAN_FREQ":(("row","chan"),da.from_array(freqs)),
+        "CHAN_WIDTH":(("row","chan"),channel_widths),
+        "EFFECTIVE_BW":(("row","chan"),channel_widths),
+        "RESOLUTION":(("row","chan"), channel_widths),
+        "REF_FREQ":(("row"),da.from_array(np.array([ref_freq]))),
+        "MEAS_RES_FREQ":(("row"),da.from_array(np.array([ref_freq]))),
+        "TOTAL_BANDWIDTH":(("row"),da.from_array(np.array([total_bandwidth]))),
+        "NUM_CHAN":(("row"),da.from_array(np.array([nchan]))),
+        "NAME":(("row"),da.from_array(np.array(["00"]))),
+        "NET_SIDEBAND":(("row"),da.array(np.array([1]))),
+        "FREQ_GROUP_NAME":(("row"),da.from_array(np.array(["GROUP 1"])))
+      
+    }
+    
+    spw_table = daskms.Dataset(
+        spw_ds)
+
+    write_spw = xds_to_table(spw_table, f"{ms}::SPECTRAL_WINDOW")
+    dask.compute(write_spw)
+    
+    
+    log.info("Writing ANTENNA table...")
+    autils.ms_addrow(ms,"ANTENNA",num_ants)
     dish_diameter = [size] * num_ants
     ant_mount = [mount] * num_ants
     teltype = ["GROUND_BASED"] * num_ants
-
-    ant_table = table(f"{ms}::ANTENNA",
-                    readonly=False, lockoptions='user', ack=False)
-    try:
-        names = [f"ANT-{x}" for x in range(num_ants)]
-        ant_table.lock(write=True)
-        ant_table.addrows(num_ants)
-        ant_table.putcol("DISH_DIAMETER", dish_diameter)
-        ant_table.putcol("MOUNT", ant_mount)
-        ant_table.putcol("POSITION", antlocation)
-        ant_table.putcol("NAME", names)
-        ant_table.putcol("STATION", names)
-        ant_table.putcol("TYPE", teltype)
-
-    finally:
-        ant_table.unlock()
-        ant_table.close()
-
-    fld_tab = table(f"{ms}::FIELD",
-                    readonly=False, lockoptions='user', ack=False)
-
-    try:
-        fld_tab.lock(write=True)
-        fld_tab.addrows(1)
-        fld_tab.putcol("PHASE_DIR", phase_dir)
-        fld_tab.putcol("DELAY_DIR", phase_dir)
-        fld_tab.putcol("REFERENCE_DIR", phase_dir)
-        fld_tab.putcol("TIME", 0.0)
-        fld_tab.putcol("SOURCE_ID", 0)
-        
-    finally:
-        fld_tab.unlock()
-        fld_tab.close()
-
-    dd_tab = table(f"{ms}::DATA_DESCRIPTION",
-                    readonly=False, lockoptions='user', ack=False)
-    try:
-        dd_tab.lock(write=True)
-        dd_tab.addrows(1)
-    finally:
-        dd_tab.unlock()
-        dd_tab.close()
-
-    obs_tab = table(f"{ms}::OBSERVATION",
-                    readonly=False, lockoptions='user', ack=False)
-    try:
-        obs_tab.lock(write=True)
-        obs_tab.addrows(1)
-        obs_tab.putcol("TIME_RANGE", time_range)
-        obs_tab.putcol("OBSERVER", 'simms simulator')
-        obs_tab.putcol("PROJECT",'simms simulation')
-        obs_tab.putcol("TELESCOPE_NAME", telescope_name)
-    finally:
-        obs_tab.unlock()
-        obs_tab.close()
-
-    pntng_tab = table(f"{ms}::POINTING",
-                    readonly=False, lockoptions='user', ack=False)
-    try:
-        pntng_tab.lock(write=True)
-        pntng_tab.addrows(num_rows)
-        pntng_tab.putcol("TARGET",np.full((num_rows,1,2),phase_dir))
-        pntng_tab.putcol("DIRECTION",np.full((num_rows,1,2),phase_dir))
-        pntng_tab.putcol("TIME",uvcoverage_data.times)
-        pntng_tab.putcol("INTERVAL",np.full(num_rows,dtime))
-        pntng_tab.putcol("TRACKING",np.full(num_rows,True))
-        
+    names = [f"ANT-{x}" for x in range(num_ants)]
     
-    finally:
-        pntng_tab.unlock()
-        pntng_tab.close()
-
-    pol_tab = table(f"{ms}::POLARIZATION",
-                    readonly=False, lockoptions='user', ack=False)
-    try:
-        pol_tab.lock(write=True)
-        pol_tab.addrows(1)
-        pol_tab.putcol("NUM_CORR", num_corr)
-        pol_tab.putcol("CORR_TYPE", corr_types)
-        pol_tab.putcol("CORR_PRODUCT", corr_products)
-    finally:
-        pol_tab.unlock()
-        pol_tab.close()
-
-    feed_tab = table(f"{ms}::FEED",
-                    readonly=False, lockoptions='user', ack=False)
-    try:
-        pol_response = np.array([[[1.+0.j, 0.+0.j],
-        [0.+0.j, 1.+0.j]]])
-        feed_tab.lock(write=True)
-        feed_tab.addrows(num_ants)
-        feed_tab.putcol("ANTENNA_ID",np.arange(num_ants))
-        feed_tab.putcol("BEAM_ID",np.full(num_ants,-1))
-        feed_tab.putcol("BEAM_OFFSET",np.zeros((num_ants,2,2),dtype=float))
-        feed_tab.putcol("INTERVAL",np.full(num_ants,1.e30))
-        feed_tab.putcol("NUM_RECEPTORS",np.full(num_ants,2))
-        feed_tab.putcol("SPECTRAL_WINDOW_ID",np.full(num_ants,-1))
-        feed_tab.putcol("POLARIZATION_TYPE",np.full((num_ants,2),(['X','Y'])))
-        feed_tab.putcol("POL_RESPONSE",np.full((num_ants,2,2),pol_response))
-    finally:
-        feed_tab.unlock()
-        feed_tab.close()
+    ant_ds = {
+        "DISH_DIAMETER":(("row"),da.from_array(dish_diameter)),
+        "MOUNT":(("row"),da.from_array(ant_mount)),
+        "POSITION":(("row","xyz"),da.from_array(antlocation)),
+        "NAME":(("row"),da.from_array(names)),
+        "STATION":(("row"),da.from_array(names)),
+        "TYPE":(("row"),da.from_array(teltype))
+    }
     
+    ant_table = daskms.Dataset(
+        ant_ds)
+
+    write_ant = xds_to_table(ant_table, f"{ms}::ANTENNA")
+    dask.compute(write_ant)
+    
+    
+    log.info("Writing FIELD table...")
+    autils.ms_addrow(ms,"FIELD",1)
+    fld_ds = {
+        "PHASE_DIR":(("row", "field-poly", "field-dir"),da.from_array(phase_dir)),
+        "DELAY_DIR":(("row", "field-poly", "field-dir"),da.from_array(phase_dir)),
+        "REFERENCE_DIR":(("row", "field-poly", "field-dir"),da.from_array(phase_dir)),
+        "TIME":(("row"),da.from_array(np.array([0.0]))),
+        "SOURCE_ID":(("row"),da.from_array(np.array([0])))
+    }
+    
+    fld_table = daskms.Dataset(
+        fld_ds)
+
+    write_fld = xds_to_table(fld_table, f"{ms}::FIELD")
+    dask.compute(write_fld)
+    
+    
+    log.info("Writing DATA_DESCRIPTION table...")
+    autils.ms_addrow(ms,"DATA_DESCRIPTION",1)
+    
+    
+    log.info("Writing OBSERVATION table...")
+    autils.ms_addrow(ms,"OBSERVATION",1)
+    
+    obs_ds = {
+        "TIME_RANGE":(("row","obs-exts"),da.from_array(time_range)),
+        "OBSERVER":(("row"),da.from_array(np.array(["simms simulator"]))),
+        "PROJECT":(("row"),da.from_array(np.array(["simms simulation"]))),
+        "TELESCOPE_NAME":(("row"),da.from_array(np.array([telescope_name]))),
+    }
+    
+    obs_table = daskms.Dataset(
+        obs_ds)
+
+    write_obs = xds_to_table(obs_table, f"{ms}::OBSERVATION")
+    dask.compute(write_obs)
+    
+    
+    
+    
+    log.info("Writing POLARIZATION table...")
+    autils.ms_addrow(ms,"POLARIZATION",1)
+    
+    pol_ds = {
+        "NUM_CORR":(("row"),da.from_array(np.array([num_corr]))),
+        "CORR_PRODUCT":(("row", "corr", "corrprod_idx"),da.from_array(corr_products)),
+        "CORR_TYPE":(("row","corr"),da.from_array(corr_types))
+    }
+    
+    pol_table = daskms.Dataset(
+        pol_ds)
+
+    write_pol = xds_to_table(pol_table, f"{ms}::POLARIZATION")
+    dask.compute(write_pol)
+    
+    
+    log.info("Writing POINTING table... ")
+    autils.ms_addrow(ms,"POINTING",num_rows)
+    phase_arr = da.from_array(np.full((num_rows,1,2),phase_dir))
+    
+    pntng_ds = {
+        "TARGET":(("row", "point-poly", "radec"),phase_arr),
+        "TIME":(("row"),da.from_array(uvcoverage_data.times)),
+        "INTERVAL":(("row"),da.from_array(np.full(num_rows,dtime))),
+        "TRACKING":(("row"),da.from_array(np.full(num_rows,True))),
+        
+    }
+    
+    pntng_table = daskms.Dataset(
+        pntng_ds)
+
+    write_pntng = xds_to_table(pntng_table, f"{ms}::POINTING")
+    dask.compute(write_pntng)
+
+    
+    dir_ds = {
+        "DIRECTION":(("row", "point-poly", "radec"),phase_arr),
+    }
+    
+    dir_table = daskms.Dataset(
+        dir_ds)
+
+    write_dir = xds_to_table(dir_table, f"{ms}::POINTING",columns=["DIRECTION"])
+    dask.compute(write_dir)
+    
+
