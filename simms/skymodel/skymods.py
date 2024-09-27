@@ -1,4 +1,6 @@
+from africanus
 from simms.skymodel.source_factory import singlegauss_1d, contspec
+from simms.constants import gauss_scale_fact, C
 import numpy as np
 from simms.skymodel.converters import (
     convert2float, 
@@ -10,12 +12,14 @@ from simms.skymodel.converters import (
 )
 
 class Source:
-    def __init__(self, name, ra, dec):
+    def __init__(self, name, ra, dec, emaj, emin, pa):
         self.name = name
         self.ra = convertra2rad(ra)
         self.dec = convertdec2rad(dec)
         self.spectrum = None
-        self.shape = None
+        self.emaj = convert2rad(emaj)
+        self.emin = convert2rad(emin)
+        self.pa = convert2rad(pa)
         
     
     def radec2lm(self, ra0, dec0):
@@ -24,19 +28,10 @@ class Source:
         self.m = np.sin(self.dec) * np.cos(dec0) - np.cos(self.dec) * np.sin(dec0) * np.cos(dra)
     
         return self.l, self.m
-
-class Shape:
-        def __init__(self, emaj, emin, pa):
-            self.emaj = convert2rad(emaj)
-            self.emin = convert2rad(emin)
-            self.pa = convert2rad(pa)
-            
-
-        def set_shape(self):
-            if self.emaj != 'null':
-                pass
-            else:
-                self.shape = 1
+    
+    @property
+    def is_point(self):
+        return self.emaj == 'null' and self.emin == 'null'       
 
             
 class Spectrum: 
@@ -101,15 +96,24 @@ def makesources(data,freqs, ra0, dec0):
         
     return sources
 
+#TODO: Test Gaussian shape
 def computevis(srcs, uvw, freqs, ncorr, mod_data=None, noise=None, subtract=False):
-    wavs = 2.99e8 / freqs
+    wavs = C / freqs
     uvw_scaled = uvw.T[...,np.newaxis] / wavs 
+    gauss_im_to_gauss_uv = gauss_scale_fact * freqs
     vis = 0j
     for source in srcs:
         l, m = source.l, source.m
         n_term = np.sqrt(1 - l*l - m*m) - 1
         arg = uvw_scaled[0] * l + uvw_scaled[1] * m + uvw_scaled[2] * n_term
-        vis += source.spectrum * np.exp(2 * np.pi * 1j * arg)
+        if source.is_point:
+            vis += source.spectrum * np.exp(2 * np.pi * 1j * arg)
+        else:
+            r = source.emaj / source.emin
+            u1 = (uvw[0]*source.emaj*np.cos(source.pa) - uvw[1]*source.emin*np.sin(source.pa)) * r * gauss_im_to_gauss_uv
+            v1 = (uvw[0]*source.emaj*np.sin(source.pa) - uvw[1]*source.emin*np.cos(source.pa)) * gauss_im_to_gauss_uv
+            vis += source.spectrum * np.exp(-u1*u1 - v1*v1) * np.exp(2 * np.pi * 1j * arg)
+        
     if ncorr == 2:
         vis = np.stack([vis, vis], axis=2)
     elif ncorr == 4:
