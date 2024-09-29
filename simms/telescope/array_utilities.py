@@ -3,6 +3,7 @@ from typing import Union
 import ephem
 import numpy as np
 from casacore.measures import measures
+from casacore.tables import table
 from omegaconf import OmegaConf
 from simms import constants
 from .layouts import known
@@ -331,3 +332,15 @@ class Array:
             obs.date -= 0.5
 
         return ih0
+
+def ms_addrow(ms,subtable,nrows):
+    
+    subtab = table(f"{ms}::{subtable}",
+                    readonly=False, lockoptions='user', ack=False)
+    try:
+        subtab.lock(write=True)
+        subtab.addrows(nrows)
+        
+    finally:
+        subtab.unlock()
+        subtab.close()
