@@ -135,20 +135,9 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     dask.compute(write_main)
     
 
-
-    subtabs_row_dict = {"SPECTRAL_WINDOW":1,
-                        "FIELD":1,
-                        "DATA_DESCRIPTION":1,
-                        "ANTENNA":num_ants,
-                        "OBSERVATION":1,
-                        "FEED":num_ants,
-                        "POLARIZATION":1,
-                        "POINTING":num_rows,
-        
-    }
     
     log.info("writing FEED table...")
-    autils.ms_addrow(ms,"FEED",num_ants)
+    # autils.ms_addrow(ms,"FEED",num_ants)
     pol_response = da.array([[[1.+0.j, 0.+0.j],
          [0.+0.j, 1.+0.j]]])
     
@@ -174,19 +163,19 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     
     
     log.info("Writing SPECTRAL_WINDOW table...")
-    autils.ms_addrow(ms,"SPECTRAL_WINDOW",1)
+    # autils.ms_addrow(ms,"SPECTRAL_WINDOW",1)
     spw_ds = {
         "CHAN_FREQ":(("row","chan"),da.from_array(freqs)),
         "CHAN_WIDTH":(("row","chan"),channel_widths),
         "EFFECTIVE_BW":(("row","chan"),channel_widths),
         "RESOLUTION":(("row","chan"), channel_widths),
-        "REF_FREQ":(("row"),da.from_array(np.array([ref_freq]))),
-        "MEAS_RES_FREQ":(("row"),da.from_array(np.array([ref_freq]))),
-        "TOTAL_BANDWIDTH":(("row"),da.from_array(np.array([total_bandwidth]))),
-        "NUM_CHAN":(("row"),da.from_array(np.array([nchan]))),
-        "NAME":(("row"),da.from_array(np.array(["00"]))),
-        "NET_SIDEBAND":(("row"),da.array(np.array([1]))),
-        "FREQ_GROUP_NAME":(("row"),da.from_array(np.array(["GROUP 1"])))
+        "REF_FREQ":(("row"),da.from_array([ref_freq])),
+        "MEAS_RES_FREQ":(("row"),da.from_array([ref_freq])),
+        "TOTAL_BANDWIDTH":(("row"),da.from_array([total_bandwidth])),
+        "NUM_CHAN":(("row"),da.from_array([nchan])),
+        "NAME":(("row"),da.from_array(["00"])),
+        "NET_SIDEBAND":(("row"),da.array([1])),
+        "FREQ_GROUP_NAME":(("row"),da.from_array(["GROUP 1"]))
       
     }
     
@@ -198,7 +187,7 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     
     
     log.info("Writing ANTENNA table...")
-    autils.ms_addrow(ms,"ANTENNA",num_ants)
+    # autils.ms_addrow(ms,"ANTENNA",num_ants)
     dish_diameter = [size] * num_ants
     ant_mount = [mount] * num_ants
     teltype = ["GROUND_BASED"] * num_ants
@@ -221,7 +210,7 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     
     
     log.info("Writing FIELD table...")
-    autils.ms_addrow(ms,"FIELD",1)
+    # autils.ms_addrow(ms,"FIELD",1)
     fld_ds = {
         "PHASE_DIR":(("row", "field-poly", "field-dir"),da.from_array(phase_dir)),
         "DELAY_DIR":(("row", "field-poly", "field-dir"),da.from_array(phase_dir)),
@@ -238,11 +227,11 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     
     
     log.info("Writing DATA_DESCRIPTION table...")
-    autils.ms_addrow(ms,"DATA_DESCRIPTION",1)
+    # autils.ms_addrow(ms,"DATA_DESCRIPTION",1)
     
     
     log.info("Writing OBSERVATION table...")
-    autils.ms_addrow(ms,"OBSERVATION",1)
+    # autils.ms_addrow(ms,"OBSERVATION",1)
     
     obs_ds = {
         "TIME_RANGE":(("row","obs-exts"),da.from_array(time_range)),
@@ -261,7 +250,7 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     
     
     log.info("Writing POLARIZATION table...")
-    autils.ms_addrow(ms,"POLARIZATION",1)
+    # autils.ms_addrow(ms,"POLARIZATION",1)
     
     pol_ds = {
         "NUM_CORR":(("row"),da.from_array(np.array([num_corr]))),
@@ -277,7 +266,7 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     
     
     log.info("Writing POINTING table... ")
-    autils.ms_addrow(ms,"POINTING",num_rows)
+    # autils.ms_addrow(ms,"POINTING",num_rows)
     phase_arr = da.from_array(np.full((num_rows,1,2),phase_dir))
     
     pntng_ds = {
@@ -306,3 +295,4 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     dask.compute(write_dir)
     
 
+    log.info(f"{ms} successfully generated.")
