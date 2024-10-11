@@ -296,4 +296,3 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     
 
     log.info(f"{ms} successfully generated.")
-    

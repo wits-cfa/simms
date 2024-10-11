@@ -344,4 +344,3 @@ def ms_addrow(ms,subtable,nrows):
     finally:
         subtab.unlock()
         subtab.close()
-        
