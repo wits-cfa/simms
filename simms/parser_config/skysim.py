@@ -102,6 +102,7 @@ def runit(**kwargs):
         noise = opts.sefd / np.sqrt(2*dt*df)
     
     sources = makesources(mapcols,freqs, ra0, dec0)
+
     
     allvis = []
     
