@@ -1,6 +1,6 @@
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
-from simms.constants import gauss_scale_fact, C
+from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
     convert2float, 
     convert2Hz, 
@@ -107,7 +107,7 @@ def makesources(data,freqs, ra0, dec0):
         #source.shape = shape.set_shape()
         print(source.emaj, source.emin, source.pa)
         if source.is_point:
-             print('source is a point source')
+            print('source is a point source')
         else:
             print('source is a not point source')
         sources.append(source)
@@ -119,17 +119,25 @@ def computevis(srcs, uvw, freqs, ncorr, mod_data=None, noise=None, subtract=Fals
     uvw_scaled = uvw.T[...,np.newaxis] / wavs 
     vis = 0j
     for source in srcs:
-        l, m = source.l, source.m
-        n_term = np.sqrt(1 - l*l - m*m) - 1
-        arg = uvw_scaled[0] * l + uvw_scaled[1] * m + uvw_scaled[2] * n_term
+        el, em = source.l, source.m
+        n_term = np.sqrt(1 - el*el - em*em) - 1
+        arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
         if source.emaj in [None, "null"] and source.emin in [None, "null"]:
             vis += source.spectrum * np.exp(2 * np.pi * 1j * arg)
         else:
-            ecc = source.emaj / source.emin
-            u1 = (uvw_scaled[0]*source.emaj*np.cos(source.pa) - uvw_scaled[1]*source.emin*np.sin(source.pa)) * ecc * gauss_scale_fact
-            v1 = (uvw_scaled[0]*source.emaj*np.sin(source.pa) - uvw_scaled[1]*source.emin*np.cos(source.pa)) * gauss_scale_fact
-            vis += source.spectrum * np.exp(-u1*u1 - v1*v1) * np.exp(2 * np.pi * 1j * arg)
-    
+            cos_pa = np.cos(source.pa)
+            sin_pa = np.sin(source.pa)
+            ell = source.emaj * cos_pa
+            emm = source.emin * sin_pa
+            ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
+        
+            fu1 = ( uvw_scaled[0]*emm - uvw_scaled[1]*ell ) * ecc
+            fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
+
+            shape_phase = fu1 * fu1 + fv1 * fv1
+        
+            vis += source.spectrum * np.exp(2j*np.pi * (arg - shape_phase) )
+        
     if ncorr == 2:
         vis = np.stack([vis, vis], axis=2)
     elif ncorr == 4:
