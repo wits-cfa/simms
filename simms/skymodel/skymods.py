@@ -123,12 +123,10 @@ def computevis(srcs, uvw, freqs, ncorr, mod_data=None, noise=None, subtract=Fals
         n_term = np.sqrt(1 - el*el - em*em) - 1
         arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
         if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-            vis += source.spectrum * np.exp(2 * np.pi * 1j * arg)
+            vis += source.spectrum * np.exp(-2 * np.pi * 1j * arg)
         else:
-            cos_pa = np.cos(source.pa)
-            sin_pa = np.sin(source.pa)
-            ell = source.emaj * cos_pa
-            emm = source.emin * sin_pa
+            ell = source.emaj * np.sin(source.pa)
+            emm = source.emaj * np.cos(source.pa)
             ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
         
             fu1 = ( uvw_scaled[0]*emm - uvw_scaled[1]*ell ) * ecc
@@ -136,7 +134,7 @@ def computevis(srcs, uvw, freqs, ncorr, mod_data=None, noise=None, subtract=Fals
 
             shape_phase = fu1 * fu1 + fv1 * fv1
         
-            vis += source.spectrum * np.exp(2j*np.pi * (arg - shape_phase) )
+            vis += source.spectrum * np.exp(-2j*np.pi * arg - shape_phase )
         
     if ncorr == 2:
         vis = np.stack([vis, vis], axis=2)
