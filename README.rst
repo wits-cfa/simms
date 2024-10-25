@@ -6,8 +6,9 @@ simms 3.0
 |Pypi Version|
 |Python Versions|  
 
-Tools for:
-1. creating simulated Radio Interferometry Array data (visibilities)
+Tools for: 
+
+1. creating simulated Radio Interferometry Array data (visibilities)  
 2. Simulating sky models into them. 
 
 
