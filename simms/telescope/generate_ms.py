@@ -227,7 +227,7 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     
     
     log.info("Writing DATA_DESCRIPTION table...")
-    # autils.ms_addrow(ms,"DATA_DESCRIPTION",1)
+    autils.ms_addrow(ms,"DATA_DESCRIPTION",1)
     
     
     log.info("Writing OBSERVATION table...")
