@@ -1,0 +1,6 @@
+#!/home/mukundi/group-projects/simms/tenv/bin/python
+import sys
+from simms.parser_config.observe import runit
+
+if __name__ == '__main__':
+    sys.exit(runit())
