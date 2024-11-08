@@ -1,5 +1,6 @@
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
+from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
     convert2float, 
     convert2Hz, 
@@ -9,13 +10,19 @@ from simms.skymodel.converters import (
     convert2rad,
 )
 
+
 class Source:
-    def __init__(self, name, ra, dec):
+    def __init__(self, name, ra, dec, emaj, emin, pa):
         self.name = name
         self.ra = convertra2rad(ra)
         self.dec = convertdec2rad(dec)
         self.spectrum = None
         self.shape = None
+        self.emaj = convert2rad(emaj)
+        self.emin = convert2rad(emin)
+        self.pa = convert2rad(pa)
+
+
         
     
     def radec2lm(self, ra0, dec0):
@@ -24,19 +31,24 @@ class Source:
         self.m = np.sin(self.dec) * np.cos(dec0) - np.cos(self.dec) * np.sin(dec0) * np.cos(dra)
     
         return self.l, self.m
+    
+    @property
+    def is_point(self):
+        
+        return self.emaj in  ('null',None) and self.emin in (None, 'null') 
 
-class Shape:
-        def __init__(self, emaj, emin, pa):
-            self.emaj = convert2rad(emaj)
-            self.emin = convert2rad(emin)
-            self.pa = convert2rad(pa)
+#class Shape:
+#        def __init__(self, emaj, emin, pa):
+        #     self.emaj = convert2rad(emaj)
+        #     self.emin = convert2rad(emin)
+        #     self.pa = convert2rad(pa)
             
 
-        def set_shape(self):
-            if self.emaj != 'null':
-                pass
-            else:
-                self.shape = 1
+        # def set_shape(self):
+        #     if self.emaj != 'null':
+        #         pass
+        #     else:
+        #         self.shape = 1
 
             
 class Spectrum: 
@@ -70,11 +82,14 @@ def makesources(data,freqs, ra0, dec0):
             name = data['name'][1][i],
             ra = data['ra'][1][i],
             dec = data['dec'][1][i],
+            emaj = data['emaj'][1][i] if i < len(data['emaj'][1]) else None,
+            emin = data['emin'][1][i] if i < len(data['emin'][1]) else None,
+            pa = data['pa'][1][i] if i < len(data['pa'][1]) else '0deg'
             
         )
         
         spectrum = Spectrum(
-            stokes_i = data['stokes_i'][1][i],
+            stokes_i = data['stokes_i'][1][i], #raise error for stokes i must be provided
             stokes_q = data['stokes_q'][1][i] if i < len(data['stokes_q'][1]) else None,
             stokes_u = data['stokes_u'][1][i] if i < len(data['stokes_u'][1]) else None,
             stokes_v = data['stokes_v'][1][i] if i < len(data['stokes_v'][1]) else None,
@@ -86,17 +101,15 @@ def makesources(data,freqs, ra0, dec0):
             cont_coeff_2 = data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None,
             
         )
-
-        shape = Shape(
-            emaj = data['emaj'][1][i] if i < len(data['emaj'][1]) else None,
-            emin = data['emin'][1][i] if i < len(data['emin'][1]) else None,
-            pa = data['pa'][1][i] if i < len(data['pa'][1]) else None
-            
-        )
         
         source.l, source.m = source.radec2lm(ra0,dec0)
         source.spectrum = spectrum.set_spectrum(freqs)
-        source.shape = shape.set_shape()
+        #source.shape = shape.set_shape()
+        print(source.emaj, source.emin, source.pa)
+        if source.is_point:
+            print('source is a point source')
+        else:
+            print('source is a not point source')
         sources.append(source)
         
     return sources
@@ -106,10 +119,23 @@ def computevis(srcs, uvw, freqs, ncorr, mod_data=None, noise=None, subtract=Fals
     uvw_scaled = uvw.T[...,np.newaxis] / wavs 
     vis = 0j
     for source in srcs:
-        l, m = source.l, source.m
-        n_term = np.sqrt(1 - l*l - m*m) - 1
-        arg = uvw_scaled[0] * l + uvw_scaled[1] * m + uvw_scaled[2] * n_term
-        vis += source.spectrum * np.exp(2 * np.pi * 1j * arg)
+        el, em = source.l, source.m
+        n_term = np.sqrt(1 - el*el - em*em) - 1
+        arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
+        if source.emaj in [None, "null"] and source.emin in [None, "null"]:
+            vis += source.spectrum * np.exp(-2 * np.pi * 1j * arg)
+        else:
+            ell = source.emaj * np.sin(source.pa)
+            emm = source.emaj * np.cos(source.pa)
+            ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
+        
+            fu1 = ( uvw_scaled[0]*emm - uvw_scaled[1]*ell ) * ecc
+            fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
+
+            shape_phase = fu1 * fu1 + fv1 * fv1
+        
+            vis += source.spectrum * np.exp(-2j*np.pi * arg - shape_phase )
+        
     if ncorr == 2:
         vis = np.stack([vis, vis], axis=2)
     elif ncorr == 4:

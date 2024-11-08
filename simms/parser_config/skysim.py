@@ -96,12 +96,14 @@ def runit(**kwargs):
     dec0 = radec0[0][1]
     nrows, nchan, ncorr = ms_ds0.DATA.data.shape
     freqs = spw_ds.CHAN_FREQ.data[opts.spwid].compute()
+    noise = 0
     if opts.sefd:
         df = spw_ds.CHAN_WIDTH.data[opts.spwid][0].compute()
         dt = ms_ds0.EXPOSURE.data[0].compute() 
         noise = opts.sefd / np.sqrt(2*dt*df)
     
     sources = makesources(mapcols,freqs, ra0, dec0)
+
     
     allvis = []
     
