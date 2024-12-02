@@ -41,6 +41,3 @@ jobs:
       run: |
         poetry run telsim --help
         poetry run skysim --help
-    #- name: Test with pytest
-    #  run: |
-    #    poetry run pytest tests

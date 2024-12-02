@@ -1,0 +1,40 @@
+_include:
+- (simms.parser_config)simms-cabs.yaml
+
+opts:
+  backend:
+    select: native
+
+recipe:
+  inputs:
+    ms:
+      dtype: MS
+      default: testms.ms
+    skymodel:
+      dtype: File
+      default: ../testsky.txt
+  steps:
+    printhelp:
+      cab:
+        command: skysim --help
+    basic:
+      cab: skysim
+      params:
+        ms: =recipe.ms
+        catalogue: =recipe.skymodel
+        column: DATA
+    withnoise:
+      cab: skysim
+      params:
+        ms: =recipe.ms
+        catalogue: =recipe.skymodel
+        column: DATA
+        sefd: 512
+    subtract:
+      cab: skysim
+      params:
+        _use: recipe.steps.basic.params
+        mode: subtract
+        input-column: DATA
+        column: CORRECTED_DATA
+    

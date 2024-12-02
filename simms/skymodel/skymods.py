@@ -104,12 +104,6 @@ def makesources(data,freqs, ra0, dec0):
         
         source.l, source.m = source.radec2lm(ra0,dec0)
         source.spectrum = spectrum.set_spectrum(freqs)
-        #source.shape = shape.set_shape()
-        print(source.emaj, source.emin, source.pa)
-        if source.is_point:
-            print('source is a point source')
-        else:
-            print('source is a not point source')
         sources.append(source)
         
     return sources

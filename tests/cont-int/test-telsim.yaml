@@ -1,0 +1,34 @@
+_include:
+- (simms.parser_config)simms-cabs.yaml
+
+opts:
+  backend:
+    select: native
+
+recipe:
+  inputs:
+    msname:
+      dtype: str
+      default: testms.ms
+    telescope:
+      dtype: str
+      default: kat-7
+  steps:
+    helpinfo:
+      cab:
+        command: telsim --help
+    basic:
+      cab: telsim
+      params:
+        ms: =recipe.msname
+        telescope: =recipe.telescope
+        ntime: 20
+        dtime: 4
+        nchan: 3
+    addnoise:
+      cab: telsim
+      params:
+        _use: recipe.steps.basic.params
+        addnoise: true
+        sefd: 410
+        

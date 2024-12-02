@@ -31,7 +31,7 @@ def runit(**kwargs):
     direction = opts.direction.split(",")
     starttime = opts.starttime
     dtime = opts.dtime
-    ntimes = opts.ntimes
+    ntimes = opts.ntime
     startfreq = opts.startfreq
     dfreq = opts.dfreq
     nchan = opts.nchan
