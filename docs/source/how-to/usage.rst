@@ -1,28 +1,13 @@
-.. highlight: yml
-.. _installation:
+.. _usage:
 .. role:: raw-math(raw)
     :format: latex html
-
-Installation
-##############################
-The stable version Simms 3.0 is available on `PyPI <https://pypi.org/project/simms>`_ and can be installed using:
-
-.. code-block:: bash
-
-    pip install simms>=3.0  
-
-The latest version can be installed directly from github by using:
-    
-.. code-block:: bash
-
-    pip install git+https://github.com/wits-cfa/simms.git
 
 Running Simms 3.0
 ==================
 Simms 3.0 has to applications (or scripts). The first ``telsim`` is for generating simulated radio interferometry data sets (or visibilities). This application produces an empty `Measurement Set (MS) <https://casa.nrao.edu/Memos/229.html>`_ given an array telescope's antenna layout and observation parameters. Use ``telsim --help`` for a general overview of the application and defintion of parameters. The package includes these known telescope antenna layouts:
 
 .. list-table:: Array telescope layouts available in Simms
-   :widths: 50 25
+   :widths: 40 50
    :header-rows: 1
 
    * - Telescope
@@ -50,4 +35,3 @@ The other application is ``skysim``. This simulates a catalogue of sources (or s
 .. code-block:: bash
 
     skysim --catalogue my-skymodel.txt my-meerkat-obs.ms
-
