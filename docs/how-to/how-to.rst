@@ -1,24 +1,25 @@
 .. highlight: yml
 .. _installation:
+.. role:: raw-math(raw)
+    :format: latex html
 
 Installation
 ##############################
-The stable version Simms 3.0 is available on `PyPI <https://pypi.org/project/simms/>` and can be installed using:
-    #. 
-    .. code-block:: bash
+The stable version Simms 3.0 is available on `PyPI <https://pypi.org/project/simms>`_ and can be installed using:
 
-        pip install simms>=3.0
+.. code-block:: bash
+
+    pip install simms>=3.0  
 
 The latest version can be installed directly from github by using:
-    #. 
-    .. code-block:: bash
-
-        pip install git+https://github.com/wits-cfa/simms.git
     
+.. code-block:: bash
+
+    pip install git+https://github.com/wits-cfa/simms.git
 
 Running Simms 3.0
 ==================
-Simms 3.0 has to applications (or scripts). The first ``telsim`` is for generating simulated radio interferometry data sets (or visibilities). This application produces an empty `Measurement Set (MS) <https://casa.nrao.edu/Memos/229.html\>` given an array telescope's antenna layout and observation parameters. Use ``telsim --help`` for a general overview of the application and defintion of parameters. The package includes these known telescope antenna layouts:
+Simms 3.0 has to applications (or scripts). The first ``telsim`` is for generating simulated radio interferometry data sets (or visibilities). This application produces an empty `Measurement Set (MS) <https://casa.nrao.edu/Memos/229.html>`_ given an array telescope's antenna layout and observation parameters. Use ``telsim --help`` for a general overview of the application and defintion of parameters. The package includes these known telescope antenna layouts:
 
 .. list-table:: Array telescope layouts available in Simms
    :widths: 50 25
@@ -37,17 +38,16 @@ Simms 3.0 has to applications (or scripts). The first ``telsim`` is for generati
      - vla-a, vla-b, vla-c, vla-d
 
 Say, we wanted to simulate a 30 minute MeerKAT observation at 1.4 GHz. Let's also set the exposure time to 5 seconds, the channel width to 1~MHz, and set observing direction to RA=23h59m0s and Dec=-30d0m0s. The command to run in this case is:
-    #. 
-    .. code-block:: bash
 
-        telsim --telescope meerkat --start-freq 1.4GHz --dfreq 1MHz --direction J2000,23h59m0s,-30d0m0s --dtime 5 --ntime  360 my-meerkat-obs.ms
+.. code-block:: bash
 
-Note that ``--ntimes`` is the number of exposures that make up the observation time period (30 minutes * 60 seconds per minute / 5 seconds = 360 minutes). The output MS is ``my-meerkat-obs.ms``
+    telsim --telescope meerkat --start-freq 1.4GHz --dfreq 1MHz --direction J2000,23h59m0s,-30d0m0s --dtime 5 --ntime  360 my-meerkat-obs.ms
+
+Note that ``--ntimes`` is the number of exposures that make up the observation time period i.e, :raw-math:`$$\frac{30 \times 60}{5} = 360$$` exposures. The output MS is ``my-meerkat-obs.ms``
 
 The other application is ``skysim``. This simulates a catalogue of sources (or sky model) into an MS. For example, I can simulate a sky model defined through a file ``my-skymodel.txt`` into the ``my-meerkat-obs.ms`` MS from above by running:
+   
+.. code-block:: bash
 
-    #.
-    .. code-block:: bash
-
-        skysim --catalogue my-skymodel.txt my-meerkat-obs.ms
+    skysim --catalogue my-skymodel.txt my-meerkat-obs.ms
 
