@@ -94,7 +94,8 @@ def runit(**kwargs):
                     f"Failed to identify required column corresponding to source name/ID in the catalogue."
                     " Please ensure that catalogue column headers match those in mapping file."
                 )
-            raise CatalogueError(
+            else:
+                raise CatalogueError(
                 f"Failed to identify required column corresponding to '{col}' in the catalogue."
                 " Please ensure that catalogue column headers match those in mapping file."
             )      
