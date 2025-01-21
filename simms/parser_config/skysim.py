@@ -43,7 +43,7 @@ def runit(**kwargs):
         map_path = f"{thisdir}/library/{opts.cat_species}.yaml"
     else:
         map_path = f"{thisdir}/library/catalogue_template.yaml"
-        print(f"Warning: No mapping file specified nor built-in map selected. Using default mapping file ({map_path})")
+        print(f"Warning: No mapping file specified nor built-in map selected. Assuming default column names (see {map_path})")
 
     mapdata = OmegaConf.load(map_path)
     mapcols = OmegaConf.create({})
