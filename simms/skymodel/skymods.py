@@ -63,15 +63,20 @@ class Spectrum:
             self.cont_reffreq = convert2Hz(cont_reffreq)
             self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
             self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
-    # We need to add a spectra for a polarized light too. 
+     
         def set_spectrum(self,freqs):
+            spectrum = []
             if self.line_width not in [None, "null"]:
-                self.spectrum = singlegauss_1d(freqs, self.stokes_i, self.line_width, self.line_peak)
+                for stokes_param in [self.stokes_i, self.stokes_q, self.stokes_u, self.stokes_v]:
+                    spectrum.append(singlegauss_1d(freqs, stokes_param, self.line_width, self.line_peak))
             elif self.cont_reffreq not in [None, "null"]:
-                self.spectrum = contspec(freqs, self.stokes_i, self.cont_coeff_1, self.cont_reffreq)
+                for stokes_param in [self.stokes_i, self.stokes_q, self.stokes_u, self.stokes_v]:
+                    spectrum.append(contspec(freqs, stokes_param, self.cont_coeff_1, self.cont_reffreq))
             else:
-                self.spectrum = self.stokes_i
-            return self.spectrum
+                for stokes_param in [self.stokes_i, self.stokes_q, self.stokes_u, self.stokes_v]:
+                    spectrum.append(stokes_param)
+            
+            return spectrum
 
 def makesources(data,freqs, ra0, dec0):
     num_sources = len(data['name'][1])
@@ -89,7 +94,7 @@ def makesources(data,freqs, ra0, dec0):
         )
         
         spectrum = Spectrum(
-            stokes_i = data['stokes_i'][1][i], #raise error for stokes i must be provided
+            stokes_i = data['stokes_i'][1][i],
             stokes_q = data['stokes_q'][1][i] if i < len(data['stokes_q'][1]) else None,
             stokes_u = data['stokes_u'][1][i] if i < len(data['stokes_u'][1]) else None,
             stokes_v = data['stokes_v'][1][i] if i < len(data['stokes_v'][1]) else None,
@@ -117,18 +122,18 @@ def computevis(srcs, uvw, freqs, ncorr, mod_data=None, noise=None, subtract=Fals
         n_term = np.sqrt(1 - el*el - em*em) - 1
         arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
         if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-            vis += source.spectrum * np.exp(-2 * np.pi * 1j * arg)
+            vis += source.spectrum[0] * np.exp(-2 * np.pi * 1j * arg)
         else:
             ell = source.emaj * np.sin(source.pa)
             emm = source.emaj * np.cos(source.pa)
             ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
         
-            fu1 = ( uvw_scaled[0]*emm - uvw_scaled[1]*ell ) * ecc
+            fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
             fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
 
             shape_phase = fu1 * fu1 + fv1 * fv1
         
-            vis += source.spectrum * np.exp(-2j*np.pi * arg - shape_phase )
+            vis += source.spectrum[0] * np.exp(-2j*np.pi * arg - shape_phase)
         
     if ncorr == 2:
         vis = np.stack([vis, vis], axis=2)
