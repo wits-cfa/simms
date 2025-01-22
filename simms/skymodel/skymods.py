@@ -149,7 +149,6 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
     if polarisation:
         xx, yy = 0j, 0j
         if ncorr==2:
-            print("Warning: Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
             for source in srcs:
                 el, em = source.l, source.m
                 n_term = np.sqrt(1 - el*el - em*em) - 1
@@ -204,7 +203,8 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
             
     
-    else:    
+    else:
+        vis = 0j    
         for source in srcs:
             el, em = source.l, source.m
             n_term = np.sqrt(1 - el*el - em*em) - 1

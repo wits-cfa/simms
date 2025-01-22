@@ -133,6 +133,10 @@ def runit(**kwargs):
         polarisation = True
     else:
         polarisation = False
+    
+    # warn user if polarisation is detected but only two correlations are requested    
+    if polarisation and ncorr == 2:
+        print("Warning: Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
 
     for ds in ms_dsl:
         simvis = da.blockwise(computevis, ("row", "chan", "corr"),
