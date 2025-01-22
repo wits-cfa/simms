@@ -127,6 +127,12 @@ def runit(**kwargs):
     else:
         incol = None
         incol_dims = None
+        
+    # check for polarisation information
+    if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']): # if any of the lists is not empty
+        polarisation = True
+    else:
+        polarisation = False
 
     for ds in ms_dsl:
         simvis = da.blockwise(computevis, ("row", "chan", "corr"),
@@ -134,6 +140,7 @@ def runit(**kwargs):
                             ds.UVW.data, ("row", "uvw"),
                             freqs, ("chan",),
                             ncorr, None,
+                            polarisation, None,
                             incol, None,
                             noise, None,
                             opts.mode == "subtract", None,
