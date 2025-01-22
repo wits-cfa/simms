@@ -113,7 +113,7 @@ def makesources(data,freqs, ra0, dec0):
             line_width = data['line_width'][1][i] if i < len(data['line_width'][1]) else None,
             line_restfreq = data['line_restfreq'][1][i] if i < len(data['line_restfreq'][1]) else None,
             cont_coeff_1 = (data['cont_coeff_1'][1][i]) if i < len(data['cont_coeff_1'][1]) else None,
-            cont_coeff_2 = data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None,
+            cont_coeff_2 = data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None
             
         )
         
@@ -202,7 +202,6 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
             
-    
     else:
         vis = 0j    
         for source in srcs:
@@ -237,4 +236,3 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
         vis = vis - mod_data if subtract else vis + mod_data # maybe we should first check if mod_data is the right shape
         
     return vis
-
