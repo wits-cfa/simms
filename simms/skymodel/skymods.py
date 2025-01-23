@@ -146,9 +146,10 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
     wavs = 2.99e8 / freqs
     uvw_scaled = uvw.T[...,np.newaxis] / wavs 
     
+    # if polarisation is detected, we need to compute different correlations separately
     if polarisation:
         xx, yy = 0j, 0j
-        if ncorr==2:
+        if ncorr==2: # if ncorr is 2, we only need compute XX and YY correlations
             for source in srcs:
                 el, em = source.l, source.m
                 n_term = np.sqrt(1 - el*el - em*em) - 1
@@ -171,7 +172,7 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
                 
             vis = np.stack([xx, yy], axis=2)
             
-        elif ncorr == 4:
+        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
             xy, yx = 0j, 0j
             for source in srcs:
                 el, em = source.l, source.m
@@ -201,7 +202,8 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
         
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
-            
+    
+    # if no polarisation is detected, we only need compute XX and duplicate to YY     
     else:
         vis = 0j    
         for source in srcs:
@@ -233,6 +235,6 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
         vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
     
     if isinstance(mod_data, np.ndarray):
-        vis = vis - mod_data if subtract else vis + mod_data # maybe we should first check if mod_data is the right shape
+        vis = vis - mod_data if subtract else vis + mod_data
         
     return vis
