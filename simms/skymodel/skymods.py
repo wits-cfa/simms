@@ -155,8 +155,9 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
                 n_term = np.sqrt(1 - el*el - em*em) - 1
                 arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
                 if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * np.exp(-2 * np.pi * 1j * arg) # I + Q
-                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * np.exp(-2 * np.pi * 1j * arg) # I - Q
+                    phase_factor = np.exp(-2 * np.pi * 1j * arg)
+                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor # I + Q
+                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor # I - Q
                 else:
                     ell = source.emaj * np.sin(source.pa)
                     emm = source.emaj * np.cos(source.pa)
@@ -166,9 +167,10 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
                     fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
 
                     shape_phase = fu1 * fu1 + fv1 * fv1
+                    phase_factor = np.exp(-2j*np.pi * arg - shape_phase)
                 
-                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * np.exp(-2j*np.pi * arg - shape_phase) # I + Q
-                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * np.exp(-2j*np.pi * arg - shape_phase) # I - Q
+                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor # I + Q
+                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor # I - Q
                 
             vis = np.stack([xx, yy], axis=2)
             
@@ -179,10 +181,11 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
                 n_term = np.sqrt(1 - el*el - em*em) - 1
                 arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
                 if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * np.exp(-2 * np.pi * 1j * arg)       # I + Q
-                    xy += (source.spectrum[2, :] + 1j * source.spectrum[3, :]) * np.exp(-2 * np.pi * 1j * arg)  # U + iV
-                    yx += (source.spectrum[2, :] - 1j * source.spectrum[3, :]) * np.exp(-2 * np.pi * 1j * arg)  # U - iV
-                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * np.exp(-2 * np.pi * 1j * arg)       # I - Q
+                    phase_factor = np.exp(-2 * np.pi * 1j * arg)
+                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor       # I + Q
+                    xy += (source.spectrum[2, :] + 1j * source.spectrum[3, :]) * phase_factor  # U + iV
+                    yx += (source.spectrum[2, :] - 1j * source.spectrum[3, :]) * phase_factor  # U - iV
+                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor       # I - Q
                 else:
                     ell = source.emaj * np.sin(source.pa)
                     emm = source.emaj * np.cos(source.pa)
@@ -192,11 +195,12 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
                     fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
 
                     shape_phase = fu1 * fu1 + fv1 * fv1
+                    phase_factor = np.exp(-2j*np.pi * arg - shape_phase)
                 
-                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * np.exp(-2j*np.pi * arg - shape_phase)       # I + Q
-                    xy += (source.spectrum[2, :] + 1j * source.spectrum[3, :]) * np.exp(-2j*np.pi * arg - shape_phase)  # U + iV
-                    yx += (source.spectrum[2, :] - 1j * source.spectrum[3, :]) * np.exp(-2j*np.pi * arg - shape_phase)  # U - iV
-                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * np.exp(-2j*np.pi * arg - shape_phase)       # I - Q
+                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor       # I + Q
+                    xy += (source.spectrum[2, :] + 1j * source.spectrum[3, :]) * phase_factor  # U + iV
+                    yx += (source.spectrum[2, :] - 1j * source.spectrum[3, :]) * phase_factor  # U - iV
+                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor       # I - Q
             
             vis = np.stack([xx, xy, yx, yy], axis=2)
         
