@@ -129,6 +129,7 @@ def runit(**kwargs):
         incol_dims = None
         
     # check for polarisation information
+    # TODO: also add condition that all elements are non-zero
     if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']): # if any of the lists is not empty
         polarisation = True
     else:
