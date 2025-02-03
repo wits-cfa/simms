@@ -103,7 +103,7 @@ def create_ms(ms: str, telescope_name: Union[str, File],
     noise = sefd / np.sqrt(abs(2*chan_width*dtime))
     dummy_data = np.random.randn(num_rows, num_chans, num_corr) + \
         1j*np.random.randn(num_rows, num_chans, num_corr)
-    noisy_data = da.array(dummy_data * noise)
+    noisy_data = da.array(dummy_data * noise,like=data).rechunk(chunks=data.chunks)
 
     ds = {
         'DATA_DESC_ID': (("row",), ddid),
