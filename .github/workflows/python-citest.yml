@@ -33,3 +33,7 @@ jobs:
     - name: CI Test for skysim
       run: |
         cd tests/cont-int && stimela run test-skysim.yaml recipe
+    - name: Unit tests for computevis
+      run: |
+        python -m unittest discover -s tests/ -p *_tests.py
+
