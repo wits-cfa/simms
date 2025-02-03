@@ -43,6 +43,7 @@ def runit(**kwargs):
         map_path = f"{thisdir}/library/{opts.cat_species}.yaml"
     else:
         map_path = f"{thisdir}/library/catalogue_template.yaml"
+        print(f"Warning: No mapping file specified nor built-in map selected. Assuming default column names (see {map_path})")
 
     mapdata = OmegaConf.load(map_path)
     mapcols = OmegaConf.create({})
@@ -84,7 +85,20 @@ def runit(**kwargs):
                     value += mapcols[key][2]
                 
                 mapcols[key][1].append(value)
-                
+    
+    # validate mapcols to ensure that the required columns were read successfully
+    for col in ["name", "ra", "dec", "stokes_i"]:
+        if not mapcols[col][1]: # if the list storing column's data is empty
+            if col == "name": # user might not understand what simply "name" means
+                raise CatalogueError(
+                    f"Failed to identify required column corresponding to source name/ID in the catalogue."
+                    " Please ensure that catalogue column headers match those in mapping file."
+                )
+            else:
+                raise CatalogueError(
+                f"Failed to identify required column corresponding to '{col}' in the catalogue."
+                " Please ensure that catalogue column headers match those in mapping file."
+            )      
                 
     ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks={"row":10000})               
     spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
