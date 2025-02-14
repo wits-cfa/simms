@@ -6,9 +6,11 @@ from casacore.measures import measures
 from casacore.tables import table
 from omegaconf import OmegaConf
 from simms import constants
-from .layouts import known
+from layouts import known, unknown
 from scabha.basetypes import File
 from simms.utilities import ObjDict
+from simms import get_logger
+log = get_logger(name="telsim")
 
 
 class Array:
@@ -28,10 +30,14 @@ class Array:
 
         """
 
-        self.layout = layout
+        
         self.degrees = degrees
         self.observatories = known()
-
+        if layout not in self.observatories:
+            self.layoutname, self.layout = unknown(layout)
+        else:
+            self.layout = layout
+            
     def set_arrayinfo(self):
         """
         Extract the array information from the schema
@@ -47,8 +53,8 @@ class Array:
                 vla = False
 
         else:
-            fname = self.layout
-
+            fname = self.layout.get(self.layoutname)
+        
         info = OmegaConf.load(fname)
         if vla:
             self.antlocations = np.array(info["antlocations"][self.layout])
@@ -60,6 +66,15 @@ class Array:
         self.names = info["antnames"]
         self.coordsys = info["coord_sys"]
         self.size = info["size"]
+        if "sefd" in info.keys():
+            self.sefd = info["sefd"]
+        else:
+            log.warning("The layout file does not contain the SEFD.")
+        if "tsys_over_eta" in info.keys():
+            self.tysys = info["tsys_over_eta"]
+        else:
+            log.warning("The layout file does not contain the Tsys/Eta.")
+        
 
         if self.degrees and self.coordsys.lower() == "geodetic":
             self.antlocations = np.deg2rad(self.antlocations)
