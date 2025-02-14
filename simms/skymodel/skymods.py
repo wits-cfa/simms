@@ -124,6 +124,116 @@ def makesources(data,freqs, ra0, dec0):
     return sources
 
 
+def process_fits_skymodel(input_fitsimages: Union[File, List[File]], chan_freqs: np.ndarray, ncorr: int):
+    """
+    Processes FITS skymodel into DFT input. Parse the FITS images one at a time or four at a time if they are Stokes I, Q, U and V
+    Adapted from https://github.com/ratt-ru/codex-africanus/blob/master/africanus/dft/examples/predict_from_fits.py
+    Args:
+        input_fitsimages:    sorted list of FITS images
+        chan_freqs:         MS frequencies
+        ncorr:             number of correlations
+    Returns:
+        intensities:    pixel-by-pixel brightness matrix
+        lm:                 (l, m) coordinate grid
+    """
+    
+    # if single fits image, turn into list so all processing is the same
+    if input_fitsimages.isinstance(File):
+        input_fitsimages = [input_fitsimages]
+    
+    model_cubes = []
+    for fits_image in input_fitsimages:
+        # get header and data
+        hdr = fits.getheader(fits_image)
+        skymodel = fits.getdata(fits_image)
+        
+        # get image coordinates
+        if hdr["CUNIT1"] not in ["DEG", "deg"]:
+            raise ValueError("Image units must be in degrees")
+        npix_l = hdr["NAXIS1"]
+        refpix_l = hdr["CRPIX1"]
+        delta_l = np.deg2rad(hdr["CDELT1"])
+        l0 = np.deg2rad(hdr["CRVAL1"])
+        l_coords = np.sort(np.arange(1 - refpix_l, 1 + npix_l - refpix_l) * delta_l) # we do it like this in case reference pixel is not at the centre of the image
+
+        if hdr["CUNIT2"] not in ["DEG", "deg"]:
+            raise ValueError("Image units must be in degrees")
+        npix_m = hdr["NAXIS2"]
+        refpix_m = hdr["CRPIX2"]
+        delta_m = np.deg2rad(hdr["CDELT2"])
+        m0 = np.deg2rad(hdr["CRVAL2"])
+        m_coords = np.arange(1 - refpix_m, 1 + npix_m - refpix_m) * delta_m
+
+        npix_tot = npix_l * npix_m
+        
+        # get frequencies
+        if hdr["CTYPE4"] == "FREQ":
+            nband = hdr["NAXIS4"]
+            refpix_nu = hdr["CRPIX4"]
+            delta_nu = hdr["CDELT4"]  # assumes units are Hz
+            ref_freq = hdr["CRVAL4"]
+            ncorr = hdr["NAXIS3"]
+            freq_axis = str(4)
+        elif hdr["CTYPE3"] == "FREQ":
+            nband = hdr["NAXIS3"]
+            refpix_nu = hdr["CRPIX3"]
+            delta_nu = hdr["CDELT3"]  # assumes units are Hz
+            ref_freq = hdr["CRVAL3"]
+            ncorr = hdr["NAXIS4"]
+            freq_axis = str(3)
+        else:
+            raise ValueError("Freq axis must be 3rd or 4th")
+
+        freqs = ref_freq + np.arange(1 - refpix_nu, 1 + nband - refpix_nu) * delta_nu
+
+        logging.info(f"Reference frequency is {ref_freq}")
+
+        nchan = chan_freqs.size
+        
+        # if frequencies do not match we need to reprojects fits cube
+        if np.any(freqs != chan_freqs):
+            logging.info(
+                "Warning - reprojecting fits cube to MS freqs. " "This uses a lot of memory. "
+            )
+            from scipy.interpolate import RegularGridInterpolator
+
+            # interpolate fits cube
+            fits_interp = RegularGridInterpolator(
+                (freqs, l_coords, m_coords), skymodel.squeeze(), bounds_error=False, fill_value=None
+            )
+            # reevaluate at ms freqs
+            vv, ll, mm = np.meshgrid(chan_freqs, l_coords, m_coords, indexing="ij")
+            vlm = np.vstack((vv.flatten(), ll.flatten(), mm.flatten())).T
+            model_cube = fits_interp(vlm).reshape(nchan, npix_l, npix_m)
+        else:
+            model_cube = skymodel
+        
+        model_cubes.append(model_cube)
+        
+    # create pixel grid for sky model
+    intensities = np.zeros((npix_l, npix_m, nchan, ncorr))
+    
+    # compute sky model
+    if len(model_cubes) == 1:   # if no polarisation
+        I = model_cubes[0]
+        intensities[:, :, :, 0] = I
+        intensities[:, :, :, 1] = I
+    else:
+        I, Q, U, V = model_cubes
+        intensities[:, :, :, 0] = I + Q
+        intensities[:, :, :, 1] = U + 1j * V
+        intensities[:, :, :, 2] = U - 1j * V
+        intensities[:, :, :, 3] = I - Q
+        
+    intensities = intensities.reshape(npix_tot, nchan, ncorr)
+    
+    # set up coordinates for DFT
+    ll, mm = np.meshgrid(l_coords, m_coords)
+    lm = np.vstack((ll.flatten(), mm.flatten())).T
+    
+    return intensities, lm
+
+
 def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None, subtract=False):
     """
     Compute visibilities.

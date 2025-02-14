@@ -14,6 +14,11 @@ cabs:
         dtype: File
         required: yes
         abbreviation: cat
+      sky-fits:
+        info: FITS file(s) containing the sky model
+        dtype: Union[File, List[File]]
+        required: no
+        abbreviation: sf
       cat-delim: 
         info: Delimeter that is used in the catalogue
         dtype: str
