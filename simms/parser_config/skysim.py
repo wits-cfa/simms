@@ -127,6 +127,17 @@ def runit(**kwargs):
     else:
         incol = None
         incol_dims = None
+        
+    # check for polarisation information
+    # TODO: also add condition that all elements are non-zero
+    if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']): # if any of the lists is not empty
+        polarisation = True
+    else:
+        polarisation = False
+    
+    # warn user if polarisation is detected but only two correlations are requested    
+    if polarisation and ncorr == 2:
+        print("Warning: Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
 
     for ds in ms_dsl:
         simvis = da.blockwise(computevis, ("row", "chan", "corr"),
@@ -134,6 +145,7 @@ def runit(**kwargs):
                             ds.UVW.data, ("row", "uvw"),
                             freqs, ("chan",),
                             ncorr, None,
+                            polarisation, None,
                             incol, None,
                             noise, None,
                             opts.mode == "subtract", None,

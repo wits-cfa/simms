@@ -63,15 +63,30 @@ class Spectrum:
             self.cont_reffreq = convert2Hz(cont_reffreq)
             self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
             self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
-    # We need to add a spectra for a polarized light too. 
-        def set_spectrum(self,freqs):
-            if self.line_width not in [None, "null"]:
-                self.spectrum = singlegauss_1d(freqs, self.stokes_i, self.line_width, self.line_peak)
-            elif self.cont_reffreq not in [None, "null"]:
-                self.spectrum = contspec(freqs, self.stokes_i, self.cont_coeff_1, self.cont_reffreq)
-            else:
-                self.spectrum = self.stokes_i
-            return self.spectrum
+     
+        def set_spectrum(self, freqs):
+            # only Stokes I case
+            if all(param in [None, "null"] for param in [self.stokes_q, self.stokes_u, self.stokes_v]):
+                if self.line_peak not in [None, "null"]:
+                    return singlegauss_1d(freqs, self.stokes_i, self.line_width, self.line_peak)
+                elif self.cont_reffreq not in [None, "null"]:
+                    return contspec(freqs, self.stokes_i, self.cont_coeff_1, self.cont_reffreq)
+                else:
+                    return self.stokes_i
+            
+            # case with Stokes I plus at least one of the other Stokes parameters
+            spectrum = []
+            for stokes_param in [self.stokes_i, self.stokes_q, self.stokes_u, self.stokes_v]:
+                if stokes_param in [None, "null"]:
+                    spectrum.append(np.zeros_like(freqs))
+                elif self.line_peak not in [None, "null"]:
+                    spectrum.append(singlegauss_1d(freqs, stokes_param, self.line_width, self.line_peak))
+                elif self.cont_reffreq not in [None, "null"]:
+                    spectrum.append(contspec(freqs, stokes_param, self.cont_coeff_1, self.cont_reffreq))
+                else:
+                    spectrum.append(stokes_param * np.ones_like(freqs))
+            
+            return np.stack(spectrum, axis=0)
 
 def makesources(data,freqs, ra0, dec0):
     num_sources = len(data['name'][1])
@@ -89,7 +104,7 @@ def makesources(data,freqs, ra0, dec0):
         )
         
         spectrum = Spectrum(
-            stokes_i = data['stokes_i'][1][i], #raise error for stokes i must be provided
+            stokes_i = data['stokes_i'][1][i],
             stokes_q = data['stokes_q'][1][i] if i < len(data['stokes_q'][1]) else None,
             stokes_u = data['stokes_u'][1][i] if i < len(data['stokes_u'][1]) else None,
             stokes_v = data['stokes_v'][1][i] if i < len(data['stokes_v'][1]) else None,
@@ -98,7 +113,7 @@ def makesources(data,freqs, ra0, dec0):
             line_width = data['line_width'][1][i] if i < len(data['line_width'][1]) else None,
             line_restfreq = data['line_restfreq'][1][i] if i < len(data['line_restfreq'][1]) else None,
             cont_coeff_1 = (data['cont_coeff_1'][1][i]) if i < len(data['cont_coeff_1'][1]) else None,
-            cont_coeff_2 = data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None,
+            cont_coeff_2 = data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None
             
         )
         
@@ -108,34 +123,117 @@ def makesources(data,freqs, ra0, dec0):
         
     return sources
 
-def computevis(srcs, uvw, freqs, ncorr, mod_data=None, noise=None, subtract=False):
+
+def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None, subtract=False):
+    """
+    Compute visibilities.
+
+    Args:
+        srcs (list): List of Source objects.
+        uvw (numpy.ndarray): Array of shape (3, nrows) containing the UVW coordinates.
+        freqs (numpy.ndarray): Array of shape (nchan,) containing the frequencies.
+        ncorr (int): Number of correlations.
+        polarisation (bool): True if polarisation information is present, False otherwise.
+        mod_data (numpy.ndarray): Array of shape (nrows, nchan, ncorr) containing the model data 
+            to/from which computed visibilities should be added/subtracted.
+        noise (float): RMS noise.
+        subtract (bool): True if visibilities should be subtracted from the model data, False otherwise.
+
+    Returns:
+        numpy.ndarray: Array of shape (nrows, nchan, ncorr) containing the visibilities.
+    """
+
     wavs = 2.99e8 / freqs
     uvw_scaled = uvw.T[...,np.newaxis] / wavs 
-    vis = 0j
-    for source in srcs:
-        el, em = source.l, source.m
-        n_term = np.sqrt(1 - el*el - em*em) - 1
-        arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
-        if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-            vis += source.spectrum * np.exp(-2 * np.pi * 1j * arg)
-        else:
-            ell = source.emaj * np.sin(source.pa)
-            emm = source.emaj * np.cos(source.pa)
-            ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
-        
-            fu1 = ( uvw_scaled[0]*emm - uvw_scaled[1]*ell ) * ecc
-            fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
+    
+    # if polarisation is detected, we need to compute different correlations separately
+    if polarisation:
+        xx, yy = 0j, 0j
+        if ncorr==2: # if ncorr is 2, we only need compute XX and YY correlations
+            for source in srcs:
+                el, em = source.l, source.m
+                n_term = np.sqrt(1 - el*el - em*em) - 1
+                arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
+                if source.emaj in [None, "null"] and source.emin in [None, "null"]:
+                    phase_factor = np.exp(-2 * np.pi * 1j * arg)
+                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor # I + Q
+                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor # I - Q
+                else:
+                    ell = source.emaj * np.sin(source.pa)
+                    emm = source.emaj * np.cos(source.pa)
+                    ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
+                
+                    fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
+                    fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
 
-            shape_phase = fu1 * fu1 + fv1 * fv1
+                    shape_phase = fu1 * fu1 + fv1 * fv1
+                    phase_factor = np.exp(-2j*np.pi * arg - shape_phase)
+                
+                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor # I + Q
+                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor # I - Q
+                
+            vis = np.stack([xx, yy], axis=2)
+            
+        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
+            xy, yx = 0j, 0j
+            for source in srcs:
+                el, em = source.l, source.m
+                n_term = np.sqrt(1 - el*el - em*em) - 1
+                arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
+                if source.emaj in [None, "null"] and source.emin in [None, "null"]:
+                    phase_factor = np.exp(-2 * np.pi * 1j * arg)
+                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor       # I + Q
+                    xy += (source.spectrum[2, :] + 1j * source.spectrum[3, :]) * phase_factor  # U + iV
+                    yx += (source.spectrum[2, :] - 1j * source.spectrum[3, :]) * phase_factor  # U - iV
+                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor       # I - Q
+                else:
+                    ell = source.emaj * np.sin(source.pa)
+                    emm = source.emaj * np.cos(source.pa)
+                    ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
+                
+                    fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
+                    fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
+
+                    shape_phase = fu1 * fu1 + fv1 * fv1
+                    phase_factor = np.exp(-2j*np.pi * arg - shape_phase)
+                
+                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor       # I + Q
+                    xy += (source.spectrum[2, :] + 1j * source.spectrum[3, :]) * phase_factor  # U + iV
+                    yx += (source.spectrum[2, :] - 1j * source.spectrum[3, :]) * phase_factor  # U - iV
+                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor       # I - Q
+            
+            vis = np.stack([xx, xy, yx, yy], axis=2)
         
-            vis += source.spectrum * np.exp(-2j*np.pi * arg - shape_phase )
-        
-    if ncorr == 2:
-        vis = np.stack([vis, vis], axis=2)
-    elif ncorr == 4:
-        vis = np.stack([vis, np.empty_like(vis), np.empty_like(vis), vis], axis=2)
+        else:
+            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+    
+    # if no polarisation is detected, we only need compute XX and duplicate to YY     
     else:
-        raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+        vis = 0j    
+        for source in srcs:
+            el, em = source.l, source.m
+            n_term = np.sqrt(1 - el*el - em*em) - 1
+            arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
+            if source.emaj in [None, "null"] and source.emin in [None, "null"]:
+                vis += source.spectrum * np.exp(-2 * np.pi * 1j * arg)
+            else:
+                ell = source.emaj * np.sin(source.pa)
+                emm = source.emaj * np.cos(source.pa)
+                ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
+            
+                fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
+                fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
+
+                shape_phase = fu1 * fu1 + fv1 * fv1
+            
+                vis += source.spectrum * np.exp(-2j*np.pi * arg - shape_phase)
+            
+        if ncorr == 2:
+            vis = np.stack([vis, vis], axis=2)
+        elif ncorr == 4:
+            vis = np.stack([vis, np.empty_like(vis), np.empty_like(vis), vis], axis=2)
+        else:
+            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
     
     if noise:
         vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
@@ -144,4 +242,3 @@ def computevis(srcs, uvw, freqs, ncorr, mod_data=None, noise=None, subtract=Fals
         vis = vis - mod_data if subtract else vis + mod_data
         
     return vis
-
