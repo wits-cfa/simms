@@ -28,6 +28,11 @@ cabs:
         dtype: str
         default: MODEL_DATA
         abbreviation: col
+      chunk-size:
+        info: Number of rows per chunk
+        dtype: int
+        default: 10000
+        abbreviation: cs
       field-id:
         info: Field ID
         dtype: int

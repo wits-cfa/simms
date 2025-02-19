@@ -1,5 +1,7 @@
+from simms import BIN, get_logger
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
+from daskms import xds_from_ms, xds_from_table, xds_to_table
 from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
     convert2float, 
@@ -10,6 +12,7 @@ from simms.skymodel.converters import (
     convert2rad,
 )
 
+log = get_logger(BIN.skysim)
 
 class Source:
     def __init__(self, name, ra, dec, emaj, emin, pa):
@@ -124,17 +127,34 @@ def makesources(data,freqs, ra0, dec0):
     return sources
 
 
+def check_var_axis(var: str, starts_with: Optional[bool]=False):
+    axis_num = 1
+    while f'CTYPE{axis_num}' in header:  # Check if CTYPE{n} exists
+        ctype = header[f'CTYPE{axis_num}']
+        if starts_with:
+            if ctype.startswith(var):
+                return str(axis_num)
+        else:
+            if ctype == var:
+                return str(axis_num)
+        axis_num += 1
+        
+    raise SkymodelError(f"Could not find axis with CTYPE starting with {var}" if starts_with else f"Could not find axis with CTYPE {var}")
+
+
+# TODO - update docs to state that we require FITS image of shape (nchan, npix_l, npix_m) i.e. the convention,
+# unless the sky model is the same across frequency band
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], chan_freqs: np.ndarray, ncorr: int):
     """
-    Processes FITS skymodel into DFT input. Parse the FITS images one at a time or four at a time if they are Stokes I, Q, U and V
-    Adapted from https://github.com/ratt-ru/codex-africanus/blob/master/africanus/dft/examples/predict_from_fits.py
+    Processes FITS skymodel into DFT input. The frequency interpolation part is adapted from:
+    https://github.com/ratt-ru/codex-africanus/blob/master/africanus/dft/examples/predict_from_fits.py
     Args:
-        input_fitsimages:    sorted list of FITS images
+        input_fitsimages:    FITS image or sorted list of FITS images if polarisation is present
         chan_freqs:         MS frequencies
         ncorr:             number of correlations
     Returns:
         intensities:    pixel-by-pixel brightness matrix
-        lm:                 (l, m) coordinate grid
+        lm:                 (l, m) coordinate grid for DFT
     """
     
     # if single fits image, turn into list so all processing is the same
@@ -144,74 +164,70 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], chan_freqs:
     model_cubes = []
     for fits_image in input_fitsimages:
         # get header and data
-        hdr = fits.getheader(fits_image)
-        skymodel = fits.getdata(fits_image)
+        hdulist = fits.open(fits_image)
+        header = hdulist[0].header
+        skymodel = np.squeeze(hdulist[0].data)
+        hdulist.close()
         
-        # get image coordinates
-        if hdr["CUNIT1"] not in ["DEG", "deg"]:
-            raise ValueError("Image units must be in degrees")
-        npix_l = hdr["NAXIS1"]
-        refpix_l = hdr["CRPIX1"]
-        delta_l = np.deg2rad(hdr["CDELT1"])
-        l0 = np.deg2rad(hdr["CRVAL1"])
-        l_coords = np.sort(np.arange(1 - refpix_l, 1 + npix_l - refpix_l) * delta_l) # we do it like this in case reference pixel is not at the centre of the image
-
-        if hdr["CUNIT2"] not in ["DEG", "deg"]:
-            raise ValueError("Image units must be in degrees")
-        npix_m = hdr["NAXIS2"]
-        refpix_m = hdr["CRPIX2"]
-        delta_m = np.deg2rad(hdr["CDELT2"])
-        m0 = np.deg2rad(hdr["CRVAL2"])
-        m_coords = np.arange(1 - refpix_m, 1 + npix_m - refpix_m) * delta_m
-
-        npix_tot = npix_l * npix_m
+        wcs = WCS(header) # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
         
-        # get frequencies
-        if hdr["CTYPE4"] == "FREQ":
-            nband = hdr["NAXIS4"]
-            refpix_nu = hdr["CRPIX4"]
-            delta_nu = hdr["CDELT4"]  # assumes units are Hz
-            ref_freq = hdr["CRVAL4"]
-            ncorr = hdr["NAXIS3"]
-            freq_axis = str(4)
-        elif hdr["CTYPE3"] == "FREQ":
-            nband = hdr["NAXIS3"]
-            refpix_nu = hdr["CRPIX3"]
-            delta_nu = hdr["CDELT3"]  # assumes units are Hz
-            ref_freq = hdr["CRVAL3"]
-            ncorr = hdr["NAXIS4"]
-            freq_axis = str(3)
-        else:
-            raise ValueError("Freq axis must be 3rd or 4th")
-
-        freqs = ref_freq + np.arange(1 - refpix_nu, 1 + nband - refpix_nu) * delta_nu
-
-        logging.info(f"Reference frequency is {ref_freq}")
-
+        if not wcs.has_celestial:
+            raise SkymodelError("FITS image does not have celestial coordinates")
+        
+        ny, nx = wcs.array_shape # get image dimensions
+        y_pix, x_pix = np.indices((ny, nx)) # create pixel coordinate grid
+        
+        world_coords = wcs.pixel_to_world(x_pix, y_pix) # convert pixel coordinates to world coordinates
+        ra, dec = world_coords.ra.rad, world_coords.dec.rad
+        
+        # convert ra, dec into array with shape (coord, 2)
+        radec = np.vstack((ra.ravel(), dec.ravel())).T
+        
+        # set up coordinates for DFT
+        lm = radec2lm(radec, np.array([ra0, dec0]))
+        
         nchan = chan_freqs.size
         
-        # if frequencies do not match we need to reprojects fits cube
-        if np.any(freqs != chan_freqs):
-            logging.info(
-                "Warning - reprojecting fits cube to MS freqs. " "This uses a lot of memory. "
-            )
-            from scipy.interpolate import RegularGridInterpolator
+        # read in spectral info
+        if wcs.has_spectral:
+            # find frequency axis
+            freq_axis = check_var_axis("FREQ")
+            
+            nband = header[f"NAXIS{freq_axis}"]
+            refpix_nu = header[f"CRPIX{freq_axis}"]
+            delta_nu = header[f"CDELT{freq_axis}"]  # assumes units are Hz
+            ref_freq = header[f"CRVAL{freq_axis}"]
 
-            # interpolate fits cube
-            fits_interp = RegularGridInterpolator(
-                (freqs, l_coords, m_coords), skymodel.squeeze(), bounds_error=False, fill_value=None
-            )
-            # reevaluate at ms freqs
-            vv, ll, mm = np.meshgrid(chan_freqs, l_coords, m_coords, indexing="ij")
-            vlm = np.vstack((vv.flatten(), ll.flatten(), mm.flatten())).T
-            model_cube = fits_interp(vlm).reshape(nchan, npix_l, npix_m)
+            freqs = ref_freq + np.arange(1 - refpix_nu, 1 - refpix_nu + nband) * delta_nu # calculate frequencies
+            
+            # if frequencies do not match we need to reprojects fits cube
+            if np.any(freqs != chan_freqs):
+                log.warning(
+                    "Reprojecting fits cube to MS freqs. " "This uses a lot of memory. "
+                )
+                from scipy.interpolate import RegularGridInterpolator
+
+                # interpolate fits cube
+                fits_interp = RegularGridInterpolator(
+                    (freqs, l_coords, m_coords), skymodel, bounds_error=False, fill_value=None
+                )
+                # reevaluate at ms freqs
+                l_coords, m_coords = lm[:, 0], lm[:, 1]
+                vv, ll, mm = np.meshgrid(chan_freqs, l_coords, m_coords, indexing="ij")
+                vlm = np.vstack((vv.ravel(), ll.ravel(), mm.ravel())).T
+                model_cube = fits_interp(vlm).reshape(nchan, nx, ny)
+            else:
+                model_cube = skymodel
+            
+            # reshape model cube to (nx, ny, nchan)
+            model_cube = model_cube.reshape(nx, ny, nchan)
         else:
-            model_cube = skymodel
+            freqs = chan_freqs
+            model_cube = np.repeat(skymodel[:, :, np.newaxis], nchan, axis=2)
         
         model_cubes.append(model_cube)
         
-    # create pixel grid for sky model
-    intensities = np.zeros((npix_l, npix_m, nchan, ncorr))
+    intensities = np.zeros((nx, ny, nchan, ncorr)) # create pixel grid for sky model
     
     # compute sky model
     if len(model_cubes) == 1:   # if no polarisation
@@ -225,11 +241,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], chan_freqs:
         intensities[:, :, :, 2] = U - 1j * V
         intensities[:, :, :, 3] = I - Q
         
-    intensities = intensities.reshape(npix_tot, nchan, ncorr)
-    
-    # set up coordinates for DFT
-    ll, mm = np.meshgrid(l_coords, m_coords)
-    lm = np.vstack((ll.flatten(), mm.flatten())).T
+    intensities = intensities.reshape(nx * ny, nchan, ncorr) # reshape image for compatibility with im_to_vis
     
     return intensities, lm
 
@@ -352,3 +364,41 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
         vis = vis - mod_data if subtract else vis + mod_data
         
     return vis
+
+
+def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, df: bool=False, dt: bool=False):
+    """
+    Reads MS info
+    Args:
+        ms: MS file
+        spw_id: spectral window ID
+        field_id: field ID
+        chunks: dask chunking strategy
+        df: read channel width
+        dt: read integration time
+    Returns:
+        ms_dsl: xarray dataset list
+        ra0: RA of phase-tracking centre in radians
+        dec0: Dec of phase-tracking centre in radians
+        chan_freqs: MS channel frequencies
+        nrows: number of rows
+        nchan: number of channels
+        ncorr: number of correlations
+        df: channel width
+        dt: integration time
+    """
+    ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks=chunks)
+    spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
+    field_ds = xds_from_table(f"{ms}::FIELD")[0]
+    
+    radec0 = field_ds.PHASE_DIR.data[field_id].compute()
+    ra0, dec0 = radec0[0][0], radec0[0][1]
+    chan_freqs = spw_ds.CHAN_FREQ.data[spw_id].compute()
+    nrow, nchan, ncorr = ms_dsl[0].DATA.data.shape
+    
+    if df:
+        df = spw_ds.CHAN_WIDTH.data[opts.spwid][0].compute()
+    if dt:
+        dt = ms_dsl[0].EXPOSURE.data[0].compute() 
+    
+    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, ncorr, df, dt

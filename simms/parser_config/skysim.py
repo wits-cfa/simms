@@ -7,10 +7,9 @@ from omegaconf import OmegaConf
 from simms import BIN, get_logger 
 import glob
 from simms.utilities import CatalogueError, isnummber, ParameterError
-from simms.skymodel.skymods import makesources, computevis, process_fits_skymodel
+from simms.skymodel.skymods import read_ms, makesources, computevis, process_fits_skymodel
 import numpy as np
 from africanus.dft import im_to_vis
-from daskms import xds_from_ms, xds_from_table, xds_to_table
 from tqdm.dask import TqdmCallback
 import dask.array as da
 
@@ -35,10 +34,11 @@ def runit(**kwargs):
     ms = opts.ms
     cat = opts.catalogue
     sf = opt.sky_fits
+    chunks = {"row": opts.chunk_size}
     
     if cat and sf:
         raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
-    elif cat and not sf:
+    elif cat:
         map_path = opts.mapping
 
         if opts.mapping and opts.cat_species:
@@ -49,7 +49,7 @@ def runit(**kwargs):
             map_path = f"{thisdir}/library/{opts.cat_species}.yaml"
         else:
             map_path = f"{thisdir}/library/catalogue_template.yaml"
-            print(f"Warning: No mapping file specified nor built-in map selected. Assuming default column names (see {map_path})")
+            log.warning(f"No mapping file specified nor built-in map selected. Assuming default column names (see {map_path})")
 
         mapdata = OmegaConf.load(map_path)
         mapcols = OmegaConf.create({})
@@ -105,25 +105,17 @@ def runit(**kwargs):
                     f"Failed to identify required column corresponding to '{col}' in the catalogue."
                     " Please ensure that catalogue column headers match those in mapping file."
                 )      
-                    
-        ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks={"row":10000})               
-        spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
-        field_ds  = xds_from_table(f"{ms}::FIELD")[0]
-        ms_ds0 = ms_dsl[0]
         
-        radec0 = field_ds.PHASE_DIR.data[opts.field_id].compute()
-        ra0 = radec0[0][0] 
-        dec0 = radec0[0][1]
-        nrows, nchan, ncorr = ms_ds0.DATA.data.shape
-        freqs = spw_ds.CHAN_FREQ.data[opts.spwid].compute()
-        noise = 0
+        # read MS
         if opts.sefd:
-            df = spw_ds.CHAN_WIDTH.data[opts.spwid][0].compute()
-            dt = ms_ds0.EXPOSURE.data[0].compute() 
+            ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr, df, dt = read_ms(ms, opts.spwid, opts.field_id, chunks, df=True, dt=True)
             noise = opts.sefd / np.sqrt(2*dt*df)
+        else:
+            ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr = read_ms(ms, opts.spwid, opts.field_id, chunks)
+            noise = 0
         
-        sources = makesources(mapcols,freqs, ra0, dec0)
-
+        
+        sources = makesources(mapcols, freqs, ra0, dec0)
         
         allvis = []
         
@@ -135,15 +127,15 @@ def runit(**kwargs):
             incol_dims = None
             
         # check for polarisation information
-        # TODO: also add condition that all elements are non-zero
-        if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']) and any(mapcols[col][1] not in [0, "null", None] for col in ['stokes_q', 'stokes_u', 'stokes_v']):
+        # TODO: also add condition that all elements are non-zero and not "null" or None
+        if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']):
             polarisation = True
         else:
             polarisation = False
         
         # warn user if polarisation is detected but only two correlations are requested    
         if polarisation and ncorr == 2:
-            print("Warning: Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
+            log.warning("Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
 
         for ds in ms_dsl:
             simvis = da.blockwise(computevis, ("row", "chan", "corr"),
@@ -163,10 +155,8 @@ def runit(**kwargs):
             allvis.append(simvis)
         
     elif sf:
-        ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks={"row":10000})               
-        spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
-        freqs = spw_ds.CHAN_FREQ.data[opts.spwid].compute()
-        _, _, ncorr = ms_dsl[0].DATA.data.shape
+        # read MS
+        ms_dsl, _, _, freqs, _, _, ncorr = read_ms(ms, opts.spwid, opts.field_id, chunks)
         
         # process FITS sky model
         model_predict, lm = process_fits_skymodel(sf, freqs, ncorr)
@@ -185,7 +175,10 @@ def runit(**kwargs):
                 )
             
             allvis.append(simvis)
-    
+        
+        # TODO: add support for subtracting existing visibilities
+        # TODO: add support for adding noise to the visibilities
+        
     else:
         raise ParameterError("No sky model specified. Please provide either a catalogue or a FITS sky model.")
             
