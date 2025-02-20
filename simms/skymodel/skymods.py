@@ -1,6 +1,10 @@
+from typing import Optional, Union, List
+from scabha.basetypes import File, MS
 from simms import BIN, get_logger
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
+from astropy.io import fits
+from astropy.wcs import WCS
 from daskms import xds_from_ms, xds_from_table, xds_to_table
 from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
@@ -10,11 +14,13 @@ from simms.skymodel.converters import (
     convertra2rad,
     convert2Jy,
     convert2rad,
+    radec2lm
 )
 
 log = get_logger(BIN.skysim)
 
 class Source:
+    
     def __init__(self, name, ra, dec, emaj, emin, pa):
         self.name = name
         self.ra = convertra2rad(ra)
@@ -25,15 +31,8 @@ class Source:
         self.emin = convert2rad(emin)
         self.pa = convert2rad(pa)
 
-
-        
-    
-    def radec2lm(self, ra0, dec0):
-        dra = self.ra - ra0
-        self.l = np.cos(self.dec) * np.sin(dra) 
-        self.m = np.sin(self.dec) * np.cos(dec0) - np.cos(self.dec) * np.sin(dec0) * np.cos(dra)
-    
-        return self.l, self.m
+    def set_lm(self, ra0, dec0):
+        self.l, self.m = radec2lm(np.array([ra0, dec0]), self.ra, self.dec)
     
     @property
     def is_point(self):
@@ -120,7 +119,7 @@ def makesources(data,freqs, ra0, dec0):
             
         )
         
-        source.l, source.m = source.radec2lm(ra0,dec0)
+        source.set_lm(ra0, dec0)
         source.spectrum = spectrum.set_spectrum(freqs)
         sources.append(source)
         
@@ -144,12 +143,14 @@ def check_var_axis(var: str, starts_with: Optional[bool]=False):
 
 # TODO - update docs to state that we require FITS image of shape (nchan, npix_l, npix_m) i.e. the convention,
 # unless the sky model is the same across frequency band
-def process_fits_skymodel(input_fitsimages: Union[File, List[File]], chan_freqs: np.ndarray, ncorr: int):
+def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray, ncorr: int):
     """
     Processes FITS skymodel into DFT input. The frequency interpolation part is adapted from:
     https://github.com/ratt-ru/codex-africanus/blob/master/africanus/dft/examples/predict_from_fits.py
     Args:
         input_fitsimages:    FITS image or sorted list of FITS images if polarisation is present
+        ra0:                     RA of phase-tracking centre in radians
+        dec0:                   Dec of phase-tracking centre in radians
         chan_freqs:         MS frequencies
         ncorr:             number of correlations
     Returns:
@@ -158,7 +159,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], chan_freqs:
     """
     
     # if single fits image, turn into list so all processing is the same
-    if input_fitsimages.isinstance(File):
+    if not isinstance(input_fitsimages, list):
         input_fitsimages = [input_fitsimages]
     
     model_cubes = []
@@ -180,11 +181,8 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], chan_freqs:
         world_coords = wcs.pixel_to_world(x_pix, y_pix) # convert pixel coordinates to world coordinates
         ra, dec = world_coords.ra.rad, world_coords.dec.rad
         
-        # convert ra, dec into array with shape (coord, 2)
-        radec = np.vstack((ra.ravel(), dec.ravel())).T
-        
         # set up coordinates for DFT
-        lm = radec2lm(radec, np.array([ra0, dec0]))
+        lm = radec2lm(np.array([ra0, dec0]), ra, dec)
         
         nchan = chan_freqs.size
         

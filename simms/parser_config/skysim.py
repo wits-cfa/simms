@@ -156,10 +156,10 @@ def runit(**kwargs):
         
     elif sf:
         # read MS
-        ms_dsl, _, _, freqs, _, _, ncorr = read_ms(ms, opts.spwid, opts.field_id, chunks)
+        ms_dsl, ra0, dec0, freqs, _, _, ncorr = read_ms(ms, opts.spwid, opts.field_id, chunks)
         
         # process FITS sky model
-        model_predict, lm = process_fits_skymodel(sf, freqs, ncorr)
+        model_predict, lm = process_fits_skymodel(sf, ra0, dec0, freqs, ncorr)
         
         allvis = []
         for ds in ms_dsl:
