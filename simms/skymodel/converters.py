@@ -1,6 +1,7 @@
 from casacore.quanta import quantity as qa
 from casacore.measures import measures
 import numpy as np
+from typing import Union
 
 def convert2rad(string):
     if string is not None and string != 'null':
@@ -68,7 +69,7 @@ def convert2float(string, null_value=None):
     #    print(f"string is null")
     return numfloat
 
-def radec2lm(phase_centre: np.ndarray, ra: float, dec: float):
+def radec2lm(phase_centre: np.ndarray, ra: Union[float, np.ndarray], dec: Union[float, np.ndarray]):
     ra0, dec0 = phase_centre
     dra = ra - ra0
     l = np.cos(dec) * np.sin(dra) 
