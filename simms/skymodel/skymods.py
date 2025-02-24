@@ -1,13 +1,13 @@
 from typing import Optional, Union, List
 from scabha.basetypes import File, MS
 from simms import BIN, get_logger
+from simms.utilities import FITSSkymodelError as SkymodelError
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from numba import njit
 from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
     convert2float, 
@@ -15,11 +15,11 @@ from simms.skymodel.converters import (
     convertdec2rad, 
     convertra2rad,
     convert2Jy,
-    convert2rad,
-    radec2lm
+    convert2rad
 )
 
 log = get_logger(BIN.skysim)
+
 
 class Source:
     
@@ -128,8 +128,8 @@ def makesources(data,freqs, ra0, dec0):
     return sources
 
 
-# TODO: go through all code and make sure that the RA and Dec units are consistent
-def pix_radec2lm(wcs: WCS, phase_centre: np.ndarray, spectral_axis: Optional[bool]=False):
+# TODO: figure out how to properly handle axis ordering properly
+def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, spectral_axis: Optional[bool]=False):
     """
     Calculate pixel (l, m) coordinates
     Args:
@@ -143,31 +143,41 @@ def pix_radec2lm(wcs: WCS, phase_centre: np.ndarray, spectral_axis: Optional[boo
         m (np.ndarray): m coordinates
     """
     ra0, dec0 = phase_centre
-    frame = wcs.wcs.radesys.lower() # get frame from header
+    if wcs.wcs.radesys:
+        frame = wcs.wcs.radesys.lower() # get frame from header
+    else:
+        frame = 'icrs'
+        log.warning("No RA/Dec system found in header. Assuming ICRS.")
+        
     pc = SkyCoord(ra0, dec0, frame=frame, unit='rad') # create SkyCoord object for phase centre
     
     # get image dimensions
     if spectral_axis:
-        x_pix_0, y_pix_0, _ = wcs.world_to_pixel_values(0, pc.ra, pc.dec) # get pixel coordinates of phase centre
-        _, n_pix_y, n_pix_x = wcs.array_shape # get image dimensions
-        x_pix, y_pix = np.arange(n_pix_x), np.arange(n_pix_y)
-        
-        # horizontal slice at dec0 and first channel
-        ra = wcs.pixel_to_world(x_pix, np.full_like(x_pix, y_pix_0), np.full_like(x_pix, 0))[0].ra.rad
-        
-        # vertical slice at ra0 and first channel
-        dec = wcs.pixel_to_world(np.full_like(y_pix, x_pix_0), y_pix, np.full_like(y_pix, 0))[0].dec.rad
+        # TODO: check if var and param order is correct in the following line
+        _, x_pix_0, y_pix_0 = wcs.world_to_pixel_values(0, pc.ra, pc.dec) # get pixel coordinates of phase centre
+        _, n_pix_m, n_pix_l = wcs.array_shape # get image dimensions
+        delta_l, delta_m, _ = wcs.wcs.cdelt # get pixel scale
     else:
         x_pix_0, y_pix_0 = wcs.world_to_pixel(pc) # get pixel coordinates of phase centre
-        n_pix_y, n_pix_x = wcs.array_shape # get image dimensions
-        x_pix, y_pix = np.arange(n_pix_x), np.arange(n_pix_y)
-        ra = wcs.pixel_to_world(x_pix, np.full_like(x_pix, y_pix_0)).ra.rad  # horizontal slice at dec0
-        dec = wcs.pixel_to_world(np.full_like(y_pix, x_pix_0), y_pix).dec.rad  # vertical slice at ra0
-
-    # calculate l, m coordinates
-    l, m = radec2lm(np.array([ra0, dec0]), ra, dec)
+        n_pix_m, n_pix_l = wcs.array_shape # get image dimensions
+        delta_l, delta_m = wcs.wcs.cdelt # get pixel scale
     
-    return l, m, n_pix_x, n_pix_y
+    if wcs.wcs.cunit[wcs.wcs.lng] == wcs.wcs.cunit[wcs.wcs.lat]:
+        if wcs.wcs.cunit[wcs.wcs.lng] in ["RAD", "rad"] and wcs.wcs.cunit[wcs.wcs.lat] in ["RAD", "rad"]:
+            pass
+        elif wcs.wcs.cunit[wcs.wcs.lng] in ["DEG", "deg"] and wcs.wcs.cunit[wcs.wcs.lat] in ["DEG", "deg"]:
+            delta_m = np.deg2rad(delta_m)
+            delta_l = np.deg2rad(delta_l)
+        else:
+            raise SkymodelError("RA and Dec units must be in radians or degrees")
+    else:
+        raise SkymodelError("RA and Dec units must be the same")
+    
+    # calculate l, m coordinates
+    l_coords = np.sort(np.arange(1 - x_pix_0, 1 - x_pix_0 + n_pix_l) * delta_l)
+    m_coords = np.arange(1 - y_pix_0, 1 - y_pix_0 + n_pix_m) * delta_m    
+    
+    return l_coords, m_coords, n_pix_l, n_pix_m
     
 
 def check_var_axis(header, var: str, starts_with: Optional[bool]=False):
@@ -183,22 +193,6 @@ def check_var_axis(header, var: str, starts_with: Optional[bool]=False):
         axis_num += 1
         
     raise SkymodelError(f"Could not find axis with CTYPE starting with {var}" if starts_with else f"Could not find axis with CTYPE {var}")
-
-
-def create_lm_grid(l_coords, m_coords):
-    """
-    Fast implementation using repeat and tile
-    """
-    # Ensure inputs are 1D arrays
-    l_coords = np.asarray(l_coords).ravel()
-    m_coords = np.asarray(m_coords).ravel()
-    
-    # Create coordinates using repeat and tile
-    l_repeated = np.repeat(l_coords, len(m_coords))
-    m_tiled = np.tile(m_coords, len(l_coords))
-    
-    # Stack the coordinates
-    return np.column_stack((l_repeated, m_tiled))
 
 
 # TODO - update docs to state that we require FITS image of shape (nchan, npix_l, npix_m) i.e. the convention,
@@ -237,18 +231,19 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         if not wcs.has_celestial:
             raise SkymodelError("FITS image does not have celestial coordinates")
         
-        # TODO: check if the celestial coordinates are in the correct units
-        
         # read in spectral info
         if wcs.has_spectral:
-            l_coords, m_coords, n_pix_x, n_pix_y = pix_radec2lm(wcs, np.array([ra0, dec0]), spectral_axis=True) # calculate pixel (l, m) coordinates
+            l_coords, m_coords, n_pix_l, n_pix_m = compute_lm_coords(wcs, np.array([ra0, dec0]), spectral_axis=True) # calculate pixel (l, m) coordinates
             
             # find frequency axis
             freq_axis = check_var_axis(header, "FREQ")
             
             nband = header[f"NAXIS{freq_axis}"]
             refpix_nu = header[f"CRPIX{freq_axis}"]
-            delta_nu = header[f"CDELT{freq_axis}"]  # assumes units are Hz
+            if header[f"CUNIT{freq_axis}"] == "Hz":
+                delta_nu = header[f"CDELT{freq_axis}"]  # assumes units are Hz
+            else:
+                raise SkymodelError("Frequency units must be in Hz")
             ref_freq = header[f"CRVAL{freq_axis}"]
 
             freqs = ref_freq + np.arange(1 - refpix_nu, 1 - refpix_nu + nband) * delta_nu # calculate frequencies
@@ -262,26 +257,27 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 
                 # interpolate fits cube
                 fits_interp = RegularGridInterpolator(
-                    (freqs, l_coords, m_coords), skymodel, bounds_error=False, fill_value=None
+                    (freqs, m_coords, l_coords), skymodel, bounds_error=False, fill_value=None
                 )
+                
                 # reevaluate at ms freqs
-                vv, ll, mm = np.meshgrid(chan_freqs, l_coords, m_coords, indexing="ij")
-                vlm = np.vstack((vv.ravel(), ll.ravel(), mm.ravel())).T
-                model_cube = fits_interp(vlm).reshape(nchan, n_pix_x, n_pix_y)
+                vv, mm, ll = np.meshgrid(chan_freqs, m_coords, l_coords, indexing="ij")
+                vml = np.vstack((vv.ravel(), mm.ravel(), ll.ravel())).T
+                model_cube = fits_interp(vml).reshape(nchan, n_pix_m, n_pix_l)
             else:
                 model_cube = skymodel
             
-            # reshape model cube to (n_pix_x, n_pix_y, nchan)
-            model_cube = model_cube.reshape(n_pix_x, n_pix_y, nchan)
+            # reshape model cube to (n_pix_l, n_pix_m, nchan)
+            model_cube = np.transpose(model_cube, axes=(2, 1, 0))
             
         else: # no spectral axis
-            l_coords, m_coords, n_pix_x, n_pix_y = pix_radec2lm(wcs, np.array([ra0, dec0])) # calculate pixel (l, m) coordinates
+            l_coords, m_coords, n_pix_l, n_pix_m = compute_lm_coords(wcs, np.array([ra0, dec0])) # calculate pixel (l, m) coordinates
             freqs = chan_freqs
             model_cube = np.repeat(skymodel[:, :, np.newaxis], nchan, axis=2) # repeat the image along the frequency axis
         
         model_cubes.append(model_cube)
         
-    intensities = np.zeros((n_pix_x, n_pix_y, nchan, ncorr)) # create pixel grid for sky model
+    intensities = np.empty((n_pix_l, n_pix_m, nchan, ncorr), dtype=np.complex128) # create pixel grid for sky model
     
     # compute sky model
     if len(model_cubes) == 1:   # if no polarisation
@@ -295,13 +291,10 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         intensities[:, :, :, 2] = U - 1j * V
         intensities[:, :, :, 3] = I - Q
         
-    intensities = intensities.reshape(n_pix_x * n_pix_y, nchan, ncorr) # reshape image for compatibility with im_to_vis
+    intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr) # reshape image for compatibility with im_to_vis
     
-    # print(l_coords.shape)
     # set up coordinates for DFT
-    # print('meshgrid')
     ll, mm = np.meshgrid(l_coords, m_coords)
-    # print('meshgrid done. stacking')
     lm = np.vstack((ll.flatten(), mm.flatten())).T
     
     return intensities, lm
