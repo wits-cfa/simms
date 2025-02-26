@@ -207,6 +207,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         dec0:                   Dec of phase-tracking centre in radians
         chan_freqs:         MS frequencies
         ncorr:             number of correlations
+        polarisation:         True if polarisation information is present, False otherwise
     Returns:
         intensities:    pixel-by-pixel brightness matrix
         lm:                 (l, m) coordinate grid for DFT
@@ -276,26 +277,46 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             model_cube = np.repeat(skymodel[:, :, np.newaxis], nchan, axis=2) # repeat the image along the frequency axis
         
         model_cubes.append(model_cube)
-        
-    intensities = np.empty((n_pix_l, n_pix_m, nchan, ncorr), dtype=np.complex128) # create pixel grid for sky model
     
+    polarisation = False if len(model_cubes) == 1 else True
     # compute sky model
-    if len(model_cubes) == 1:   # if no polarisation
+    if not polarisation: # if no polarisation is present
+        intensities = np.empty((n_pix_l, n_pix_m, nchan, ncorr)) # create pixel grid for sky model
         I = model_cubes[0]
-        intensities[:, :, :, 0] = I
-        intensities[:, :, :, 1] = I
-    else:
-        I, Q, U, V = model_cubes
-        intensities[:, :, :, 0] = I + Q
-        intensities[:, :, :, 1] = U + 1j * V
-        intensities[:, :, :, 2] = U - 1j * V
-        intensities[:, :, :, 3] = I - Q
+        if ncorr == 2: # if ncorr is 2, we only need compute XX and duplicate to YY
+            intensities[:, :, :, 0] = I
+            intensities[:, :, :, 1] = I
+        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
+            intensities[:, :, :, 0] = I
+            intensities[:, :, :, 1] = 0j
+            intensities[:, :, :, 2] = 0j
+            intensities[:, :, :, 3] = I
+        else:
+            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+    
+    else: # if polarisation is present
+        intensities = np.empty((n_pix_l, n_pix_m, nchan, ncorr), dtype=np.complex128) # create pixel grid for sky model
+        if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
+            logging.warning("Only two correlations requested, but four are present in the FITS image directory. Using only XX and YY.")
+            I, Q, _, _ = model_cubes
+            intensities[:, :, :, 0] = I + Q
+            intensities[:, :, :, 1] = I - Q
+        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
+            I, Q, U, V = model_cubes
+            intensities[:, :, :, 0] = I + Q
+            intensities[:, :, :, 1] = U + 1j * V
+            intensities[:, :, :, 2] = U - 1j * V
+            intensities[:, :, :, 3] = I - Q
+        else:
+            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
         
     intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr) # reshape image for compatibility with im_to_vis
     
     # set up coordinates for DFT
     ll, mm = np.meshgrid(l_coords, m_coords)
     lm = np.vstack((ll.flatten(), mm.flatten())).T
+    
+    # TODO: get only non-zero pixels
     
     return intensities, lm
 
