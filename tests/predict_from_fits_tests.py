@@ -1,11 +1,12 @@
 import unittest
-import os
-import logging
 import uuid
+import os
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
+from africanus.dft import im_to_vis
 from simms import BIN, get_logger
+from simms.telescope.array_utilities import Array
 from simms.skymodel.skymods import process_fits_skymodel
 
 
@@ -15,19 +16,36 @@ log = get_logger(BIN.skysim)
 class TestPredictFromFITS(unittest.TestCase):
     
     def setUp(self):
-        """Set up common test parameters before each test method runs."""
-        # Common parameters used across tests
+        """"Set up test inputs."""
+        self.nchan = 16
+        self.n_times = 75
+        self.n_baselines = 64*63/2
+        
+        test_array = Array('meerkat')
+        uv_coverage_data = test_array.uvgen(
+            pointing_direction = 'J2000,0deg,-30deg'.split(','),
+            dtime = 8,
+            ntimes = self.n_times,
+            start_freq = '1293MHz',
+            dfreq = '206kHz',
+            nchan = self.nchan
+        )
+        self.uvw = uv_coverage_data.uvw
+        self.freqs = uv_coverage_data.freqs
+        self.ra0 = 0.0
+        self.dec0 = np.deg2rad(-30.0)
+        self.ncorr = 2
+
+        # image parameters
         self.img_size = 256
         self.cell_size = 3e-6  # arcsec
-        self.chan_freqs = np.array([1e9, 2e9, 3e9])
-        self.nchan = len(self.chan_freqs)
-        self.ncorr = 2
         
         # Store temporary files to be cleaned up
         self.test_files = []
         
         # Set up logging level
         self.original_log_level = log.level
+        
     
     def tearDown(self):
         """Clean up after each test method runs."""
@@ -38,20 +56,24 @@ class TestPredictFromFITS(unittest.TestCase):
         
         # Reset logging level
         log.setLevel(self.original_log_level)
+        
     
-    def test_stokes_I_fits_processing(self):
+    def test_fits_predict_stokes_I(self):
         """
-        Tests if Stokes I only FITS file is processed correctly (centred point source, no spectral axis in FITS file)
+        Test visibility prediction from only a FITS sky model, ncorr = 2
         Validates:
-            - output intensities shape
-            - output intensities values
+            - Output shape of visibilities
+            - XX = I
+            - YY = I
         """
-        # create a FITS file with Stokes I only
+        I = 1.0
+        
+        # create a FITS sky model
         wcs = WCS(naxis=2)
         wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN']
         wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600]) # pixel scale in deg
         wcs.wcs.crpix = [self.img_size/2, self.img_size/2] # reference pixel
-        wcs.wcs.crval = [0, 0] # reference pixel RA and Dec in deg
+        wcs.wcs.crval = [np.rad2deg(self.ra0), np.rad2deg(self.dec0)] # reference pixel RA and Dec in deg
         
         # make header
         header = wcs.to_header()
@@ -59,7 +81,7 @@ class TestPredictFromFITS(unittest.TestCase):
         
         # make image
         image = np.zeros((self.img_size, self.img_size))
-        image[self.img_size//2, self.img_size//2] = 1.0 # put a point source at the center
+        image[self.img_size//2, self.img_size//2] = I
         
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
@@ -68,173 +90,38 @@ class TestPredictFromFITS(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
+        brightness_matrix, lm = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.ncorr)
         
+        # predict visibilities
+        log.info('Predicting visibilities')
+        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
         
-        # create expected intensities
-        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
-        expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
-        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
-        
-        # compare the intensities with the original image
-        assert intensities.shape == expected_intensities.shape
-        assert np.allclose(intensities, expected_intensities)
+        # check the output
+        assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
+        assert np.allclose(vis[:, :, 0], I, atol=1e-6)
+        assert np.allclose(vis[:, :, 1], I, atol=1e-6)
     
-    def test_off_centre_stokes_I_processing(self):
+    
+    def test_fits_predicting_all_stokes(self):
         """
-        Tests if Stokes I only FITS file is processed correctly (off-centre point source, no spectral axis in FITS file)
+        Test visibility prediction from FITS images of all Stokes parameters, ncorr = 4
         Validates:
-            - output intensities shape
-            - output intensities values
+            - Output shape of visibilities
+            - XX = I + Q
+            - XY = U + iV
+            - YX = U - iV
+            - YY = I - Q
         """
-            
-        # create a FITS file with Stokes I only
-        wcs = WCS(naxis=2)
-        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN']
-        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600]) # pixel scale in deg
-        wcs.wcs.crpix = [self.img_size/2, self.img_size/2] # reference pixel
-        wcs.wcs.crval = [0, 0] # reference pixel RA and Dec in deg
-        
-        # make header
-        header = wcs.to_header()
-        header['BUNIT'] = 'Jy'
-        
-        # make image
-        image = np.zeros((self.img_size, self.img_size))
-        
-        # place a point source in a random pixel
-        seed = np.random.randint(0, 1000)
-        np.random.seed(seed)
-        rand_pix = np.random.randint(0, self.img_size)
-        image[rand_pix, rand_pix] = 1.0
-        
-        # write to FITS file
-        hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f'test_{uuid.uuid4()}.fits'
-        self.test_files.append(test_filename)
-        hdu.writeto(test_filename, overwrite=True)
-        
-        # process the FITS file
-        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
-        
-        
-        # create expected intensities
-        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
-        expected_intensities[rand_pix, rand_pix, :, :] = 1.0
-        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
-        
-        # compare the intensities with the original image
-        assert intensities.shape == expected_intensities.shape
-        assert np.allclose(intensities, expected_intensities)
-        
-    
-    def test_stokes_I_with_spectral_axis_processing(self):
-        """
-        Tests if Stokes I only FITS file is processed correctly (centred point source, spectral axis in FITS file)
-        Validates:
-            - output intensities shape
-            - output intensities values
-        """
-            
-        # create a FITS file with Stokes I only
-        wcs = WCS(naxis=3)
-        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
-        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0]]) # pixel scale in deg
-        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
-        wcs.wcs.crval = [0, 0, self.chan_freqs[0]] # reference pixel RA and Dec in deg
-    
-        # make header
-        header = wcs.to_header()
-        header['BUNIT'] = 'Jy'
-        
-        # make image
-        image = np.zeros((self.nchan, self.img_size, self.img_size))
-        image[:, self.img_size//2, self.img_size//2] = 1.0 # put a point source at the center
-        
-        # write to FITS file
-        hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f'test_{uuid.uuid4()}.fits'
-        self.test_files.append(test_filename)
-        hdu.writeto(test_filename, overwrite=True)
-        
-        # process the FITS file
-        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
-        
-        
-        # create expected intensities
-        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
-        expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
-        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
-        
-        # compare the intensities with the original image
-        assert intensities.shape == expected_intensities.shape
-        assert np.allclose(intensities, expected_intensities)
-
-                
-    def test_stokes_I_with_freq_interp_processing(self):
-        """
-        Tests if Stokes I only FITS file is processed correctly with frequencies not matching MS channel frequencies
-        Validates:
-            - output intensities shape
-            - output intensities values
-        """
-
-        self.chan_freqs = np.array([1.0e9, 1.5e9, 2.0e9])
-        
-        # create a FITS file with Stokes I only
-        wcs = WCS(naxis=3)
-        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
-        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, 0.25e9]) # pixel scale in deg
-        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
-        wcs.wcs.crval = [0, 0, self.chan_freqs[0]] # reference pixel RA and Dec in deg
-        
-        # make header
-        header = wcs.to_header()
-        header['BUNIT'] = 'Jy'
-        
-        # make image
-        image = np.zeros((self.nchan, self.img_size, self.img_size))
-        image[:, self.img_size//2, self.img_size//2] = 1.0
-        
-        # write to FITS file
-        hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f'test_{uuid.uuid4()}.fits'
-        self.test_files.append(test_filename)
-        hdu.writeto(test_filename, overwrite=True)
-        
-        log.setLevel(logging.ERROR) # suppress warning messages
-        # process the FITS file
-        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
-        
-        
-        # create expected intensities
-        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
-        expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
-        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
-        
-        # compare the intensities with the original image
-        assert intensities.shape == expected_intensities.shape
-        assert np.allclose(intensities, expected_intensities)
-    
-    
-    def test_full_stokes_fits_list_processing(self):
-        """
-        Tests if list FITS files each containing one Stokes parameter is processed correctly
-        Validates:
-            - output intensities shape
-            - output intensities values
-        """
-        
         self.ncorr = 4
         stokes_params = [('I', 1.0), ('Q', 1.0), ('U', 1.0), ('V', 1.0)]
 
-        test_fits_files = []
+        test_skymodels = []
         for stokes in stokes_params:
             wcs = WCS(naxis=3)
             wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
             wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0]]) # pixel scale in deg
             wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
-            wcs.wcs.crval = [0, 0, self.chan_freqs[0]] # reference pixel RA and Dec in deg
+            wcs.wcs.crval = [np.rad2deg(self.ra0), np.rad2deg(self.dec0), self.chan_freqs[0]] # reference pixel RA and Dec in deg
         
             # make header
             header = wcs.to_header()
@@ -250,65 +137,18 @@ class TestPredictFromFITS(unittest.TestCase):
             self.test_files.append(test_filename)
             hdu.writeto(test_filename, overwrite=True)
         
-            test_fits_files.append(test_filename)
+            test_skymodels.append(test_filename)
             
         # process the FITS files
-        intensities, _ = process_fits_skymodel(test_fits_files, 0, 0, self.chan_freqs, self.ncorr)
+        brightness_matrix, lm = process_fits_skymodel(test_skymodels, self.ra0, self.dec0, self.chan_freqs, self.ncorr)
         
+        # predict visibilities
+        log.info('Predicting visibilities')
+        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.chan_freqs)
         
-        # create expected intensities
-        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr), dtype=np.complex128)
-        expected_intensities[self.img_size//2, self.img_size//2, :, 0] = stokes_params[0][1] + stokes_params[1][1]        # I + Q
-        expected_intensities[self.img_size//2, self.img_size//2, :, 1] = stokes_params[2][1] + 1j*stokes_params[3][1]    # U + iV
-        expected_intensities[self.img_size//2, self.img_size//2, :, 2] = stokes_params[2][1] - 1j*stokes_params[3][1]     # U - iV
-        expected_intensities[self.img_size//2, self.img_size//2, :, 3] = stokes_params[0][1] - stokes_params[1][1]       # I - Q
-        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
-        
-        # compare the intensities with the original image
-        assert intensities.shape == expected_intensities.shape
-        assert np.allclose(intensities, expected_intensities)
-            
-    
-    # def test_lm_grid_creation_with_stokes_I_only(self):
-    #     """
-    #     Tests if the l-m grid is created correctly for Stokes I only FITS file
-    #     Validates:
-    #         - output l-m grid shape
-    #         - output l-m grid values
-    #     """
-    
-    #     # create a FITS file with Stokes I only
-    #     wcs = WCS(naxis=2)
-    #     wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN']
-    #     wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600]) # pixel scale in deg
-    #     wcs.wcs.crpix = [self.img_size/2, self.img_size/2] # reference pixel
-    #     wcs.wcs.crval = [0.0, -30.0] # reference pixel RA and Dec in deg
-        
-    #     # make header
-    #     header = wcs.to_header()
-    #     header['BUNIT'] = 'Jy'
-        
-    #     # make image
-    #     image = np.zeros((self.nchan, self.img_size, self.img_size))
-        
-    #     # write to FITS file
-    #     hdu = fits.PrimaryHDU(image, header=header)
-    #     test_filename = f'test_{uuid.uuid4()}.fits'
-    #     hdu.writeto(test_filename, overwrite=True)
-        
-    #     # process the FITS file
-    #     _, lm = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.self.ncorr)
-        
-    #     # created expected l-m grid
-    #     delt = np.deg2rad(self.cell_size/3600)
-    #     l = np.sort(np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt)
-    #     m = np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt
-    #     ll, mm = np.meshgrid(l, m)
-    #     expected_lm = np.vstack((ll.flatten(), mm.flatten())).T
-        
-    #     # validate the l-m grid
-    #     assert lm.shape == expected_lm.shape
-    #     assert np.allclose(lm, expected_lm)
-        
-    #     # clean up
-    #     os.remove(test_filename)
+        # check the output
+        assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
+        assert np.allclose(vis[:, :, 0], I + Q, atol=1e-6)
+        assert np.allclose(vis[:, :, 1], U + 1j*V, atol=1e-6)
+        assert np.allclose(vis[:, :, 2], U - 1j*V, atol=1e-6)
+        assert np.allclose(vis[:, :, 3], I - Q, atol=1e-6)

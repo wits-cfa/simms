@@ -15,7 +15,8 @@ from simms.skymodel.converters import (
     convertdec2rad, 
     convertra2rad,
     convert2Jy,
-    convert2rad
+    convert2rad,
+    radec2lm
 )
 
 log = get_logger(BIN.skysim)
@@ -158,7 +159,7 @@ def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, spectral_axis: Optiona
         _, n_pix_m, n_pix_l = wcs.array_shape # get image dimensions
         delta_l, delta_m, _ = wcs.wcs.cdelt # get pixel scale
     else:
-        x_pix_0, y_pix_0 = wcs.world_to_pixel(pc) # get pixel coordinates of phase centre
+        x_pix_0, y_pix_0 = wcs.world_to_pixel_values(pc.ra, pc.dec) # get pixel coordinates of phase centre
         n_pix_m, n_pix_l = wcs.array_shape # get image dimensions
         delta_l, delta_m = wcs.wcs.cdelt # get pixel scale
     
@@ -278,8 +279,9 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         
         model_cubes.append(model_cube)
     
-    polarisation = False if len(model_cubes) == 1 else True
     # compute sky model
+    polarisation = False if len(model_cubes) == 1 else True
+    
     if not polarisation: # if no polarisation is present
         intensities = np.empty((n_pix_l, n_pix_m, nchan, ncorr)) # create pixel grid for sky model
         I = model_cubes[0]
