@@ -12,7 +12,7 @@ import numpy as np
 from africanus.dft import im_to_vis
 from tqdm.dask import TqdmCallback
 import dask.array as da
-
+from daskms import xds_to_table
 log = get_logger(BIN.skysim)
 
 command = BIN.skysim
@@ -25,7 +25,6 @@ parserfile = File(f"{thisdir}/{command}.yaml")
 
 config = paramfile_loader(parserfile, sources)[command]
 
-
 @click.command(command)
 @click.version_option(str(simms.__version__))
 @clickify_parameters(config)
@@ -33,7 +32,7 @@ def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     ms = opts.ms
     cat = opts.catalogue
-    sf = opt.sky_fits
+    sf = opts.sky_fits
     chunks = {"row": opts.chunk_size}
     
     if cat and sf:

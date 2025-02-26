@@ -44,3 +44,6 @@ line_width:     # line width; default units [Hz]
 line_restfreq:  # line rest frequency; default units [Hz]
   name: null
   units: null
+z:             # redshift (unitless)
+  name: z      
+  units: null

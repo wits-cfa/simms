@@ -4,12 +4,13 @@ from simms import BIN, get_logger
 from simms.utilities import FITSSkymodelError as SkymodelError
 from simms.skymodel.source_factory import singlegauss_1d, contspec
 import numpy as np
+import warnings
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from daskms import xds_from_ms, xds_from_table, xds_to_table
 from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
-from simms.skymodel.converters import (
+from simms.skymodel.converters import (radec2lm,
     convert2float, 
     convert2Hz, 
     convertdec2rad, 
@@ -32,7 +33,7 @@ class Source:
         self.emaj = convert2rad(emaj)
         self.emin = convert2rad(emin)
         self.pa = convert2rad(pa)
-
+  
     def set_lm(self, ra0, dec0):
         self.l, self.m = radec2lm(np.array([ra0, dec0]), self.ra, self.dec)
     
@@ -56,7 +57,7 @@ class Source:
 
             
 class Spectrum: 
-        def __init__(self, stokes_i, stokes_q, stokes_u, stokes_v, line_peak, line_width, line_restfreq, cont_reffreq, cont_coeff_1, cont_coeff_2):
+        def __init__(self, stokes_i, stokes_q, stokes_u, stokes_v, line_peak, line_width, line_restfreq, cont_reffreq, cont_coeff_1, cont_coeff_2, z=0):
             self.stokes_i = convert2Jy(stokes_i)
             self.stokes_q = convert2Jy(stokes_q)
             self.stokes_u = convert2Jy(stokes_u)
@@ -67,12 +68,23 @@ class Spectrum:
             self.cont_reffreq = convert2Hz(cont_reffreq)
             self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
             self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
+            self.z = convert2float(z, null_value=0)
      
         def set_spectrum(self, freqs):
+            # warning if both line and cont params are given
+            has_line = self.line_width not in [None, "null"]
+            has_cont = self.cont_reffreq not in [None, "null"]
+            
+            if has_line and has_cont:
+                warnings.warn("\033[91m Warning: You gave both line and cont params.\n Only line parameters will be used if given together. "
+                            "If you want both components, please create two separate sources: "
+                            "one for the line and another for the continuum emission.\033[0m", 
+                            UserWarning)
             # only Stokes I case
             if all(param in [None, "null"] for param in [self.stokes_q, self.stokes_u, self.stokes_v]):
                 if self.line_peak not in [None, "null"]:
-                    return singlegauss_1d(freqs, self.stokes_i, self.line_width, self.line_peak)
+                    observed_line_peak = self.line_peak/(1+self.z)
+                    return singlegauss_1d(freqs, self.stokes_i, self.line_width, observed_line_peak)
                 elif self.cont_reffreq not in [None, "null"]:
                     return contspec(freqs, self.stokes_i, self.cont_coeff_1, self.cont_reffreq)
                 else:
@@ -84,7 +96,8 @@ class Spectrum:
                 if stokes_param in [None, "null"]:
                     spectrum.append(np.zeros_like(freqs))
                 elif self.line_peak not in [None, "null"]:
-                    spectrum.append(singlegauss_1d(freqs, stokes_param, self.line_width, self.line_peak))
+                    observed_line_peak = self.line_peak/(1+self.z)
+                    spectrum.append(singlegauss_1d(freqs, stokes_param, self.line_width, observed_line_peak))
                 elif self.cont_reffreq not in [None, "null"]:
                     spectrum.append(contspec(freqs, stokes_param, self.cont_coeff_1, self.cont_reffreq))
                 else:
@@ -117,8 +130,8 @@ def makesources(data,freqs, ra0, dec0):
             line_width = data['line_width'][1][i] if i < len(data['line_width'][1]) else None,
             line_restfreq = data['line_restfreq'][1][i] if i < len(data['line_restfreq'][1]) else None,
             cont_coeff_1 = (data['cont_coeff_1'][1][i]) if i < len(data['cont_coeff_1'][1]) else None,
-            cont_coeff_2 = data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None
-            
+            cont_coeff_2 = data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None,
+            z = data['z'][1][i] if i < len(data['z'][1]) else 0
         )
         
         source.set_lm(ra0, dec0)
@@ -472,7 +485,9 @@ def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, df: bool=False, dt
     nrow, nchan, ncorr = ms_dsl[0].DATA.data.shape
     
     if df:
-        df = spw_ds.CHAN_WIDTH.data[opts.spwid][0].compute()
+        # df = spw_ds.CHAN_WIDTH.data[opts.spwid][0].compute()
+        #opts is not in read_ms
+        df = spw_ds.CHAN_WIDTH.data[spw_id][0].compute()
     if dt:
         dt = ms_dsl[0].EXPOSURE.data[0].compute() 
     
