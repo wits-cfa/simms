@@ -80,11 +80,30 @@ class Spectrum:
                             "If you want both components, please create two separate sources: "
                             "one for the line and another for the continuum emission.\033[0m", 
                             UserWarning)
+                
             # only Stokes I case
             if all(param in [None, "null"] for param in [self.stokes_q, self.stokes_u, self.stokes_v]):
+                
                 if self.line_peak not in [None, "null"]:
-                    observed_line_peak = self.line_peak/(1+self.z)
-                    return singlegauss_1d(freqs, self.stokes_i, self.line_width, observed_line_peak)
+                    
+                    if self.z not in [None, "null"] and self.z >0:
+                        
+                    #if line_peak and z (>0) are provided: assume, line_peak is rest_freq
+                        #and calculate observed_freq
+                        observed_freq = self.line_peak / (1+self.z)
+                    else: 
+                        """if z is null, 0, or not positive, or not given: 
+                        treat line_peak as observed"""    
+                        observed_freq = self.line_peak
+                        
+                 # TODO: What about blueshift? 
+                 # TODO: Add warning if negative z (blueshift) is provided     
+                else:
+                    observed_freq = None        
+                           
+                if observed_freq is not None:    
+                    return singlegauss_1d(freqs, self.stokes_i, self.line_width, observed_freq)
+                
                 elif self.cont_reffreq not in [None, "null"]:
                     return contspec(freqs, self.stokes_i, self.cont_coeff_1, self.cont_reffreq)
                 else:
@@ -95,9 +114,16 @@ class Spectrum:
             for stokes_param in [self.stokes_i, self.stokes_q, self.stokes_u, self.stokes_v]:
                 if stokes_param in [None, "null"]:
                     spectrum.append(np.zeros_like(freqs))
+                    
                 elif self.line_peak not in [None, "null"]:
-                    observed_line_peak = self.line_peak/(1+self.z)
-                    spectrum.append(singlegauss_1d(freqs, stokes_param, self.line_width, observed_line_peak))
+                    if self.z not in [None, "null"] and self.z>0:
+                    
+                        observed_freq = self.line_peak/(1+self.z)
+                    else:
+                        observed_freq = self.line_peak    
+                    
+                    spectrum.append(singlegauss_1d(freqs, stokes_param, self.line_width, observed_freq))     
+                 
                 elif self.cont_reffreq not in [None, "null"]:
                     spectrum.append(contspec(freqs, stokes_param, self.cont_coeff_1, self.cont_reffreq))
                 else:
