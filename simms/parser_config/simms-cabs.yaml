@@ -35,6 +35,7 @@ cabs:
       sefd:
         info: Add noise using the this SEFD value
         dtype: float
+        # TODO: Add default value
       cat-species:
         info: type of catalogue e.g. PyBDSF
         dtype: str
@@ -126,11 +127,6 @@ cabs:
         dtype: int
         default: 50000
         abbreviation: rc
-      addnoise:
-        info: A tag to determine if noise should be added to the visibilities
-        dtype: bool
-        default: False
-        abbreviation: an
       column:
         info: The column in which to corrupt the visibilities with noise.
         dtype: str
@@ -139,7 +135,7 @@ cabs:
       sefd:
         info: Antenna SEFD (one value for all frequencies)
         dtype: float
-        default: 551
+        # default: 551
       tsys_over_eta:
         info: Antenna system temperature over aperture efficiency (one value for all frequecies) 
         dtype: float

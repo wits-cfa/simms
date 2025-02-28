@@ -6,8 +6,8 @@ from casacore.measures import measures
 from casacore.tables import table
 from omegaconf import OmegaConf
 from simms import constants
-from layouts import known, unknown
-from scabha.basetypes import File
+from .layouts import known, unknown
+from scabha.basetypes import File, List
 from simms.utilities import ObjDict
 from simms import get_logger
 log = get_logger(name="telsim")
@@ -18,7 +18,7 @@ class Array:
     The Array class has functions for converting from one coordinate system to another.
     """
 
-    def __init__(self, layout: Union[str, File], degrees: bool = True):
+    def __init__(self, layout: Union[str, File], degrees: bool = True, sefd: float=None):
         """
         layout: str|File
                     : specify an observatory as a str or a file.
@@ -37,6 +37,9 @@ class Array:
             self.layoutname, self.layout = unknown(layout)
         else:
             self.layout = layout
+        self.sefd = sefd
+        
+    
             
     def set_arrayinfo(self):
         """
@@ -66,14 +69,20 @@ class Array:
         self.names = info["antnames"]
         self.coordsys = info["coord_sys"]
         self.size = info["size"]
-        if "sefd" in info.keys():
-            self.sefd = info["sefd"]
-        else:
-            log.warning("The layout file does not contain the SEFD.")
-        if "tsys_over_eta" in info.keys():
-            self.tysys = info["tsys_over_eta"]
-        else:
-            log.warning("The layout file does not contain the Tsys/Eta.")
+        if self.sefd is None:
+            sefd = info.get("sefd", None)
+            self.sefd = sefd
+            
+            if isinstance(sefd, (float, int)):
+                self.sefd = [sefd]
+            elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
+                self.sefd = sefd
+           
+            
+        # if "tsys_over_eta" in info.keys():
+        #     self.tysys = info["tsys_over_eta"]
+        # else:
+        #     self.tysys = 0.1
         
 
         if self.degrees and self.coordsys.lower() == "geodetic":
