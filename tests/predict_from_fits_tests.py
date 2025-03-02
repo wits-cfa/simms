@@ -93,7 +93,49 @@ class TestPredictFromFITS(unittest.TestCase):
         brightness_matrix, lm = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.ncorr)
         
         # predict visibilities
-        log.info('Predicting visibilities')
+        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        
+        # check the output
+        assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
+        assert np.allclose(vis[:, :, 0], I, atol=1e-6)
+        assert np.allclose(vis[:, :, 1], I, atol=1e-6)
+        
+    
+    def test_fits_predict_stokes_I_with_spectral_axis(self):
+        """
+        Test visibility prediction from only a FITS sky model with a spectral axis, ncorr = 2
+        Validates:
+            - Output shape of visibilities
+            - XX = I
+            - YY = I
+        """
+        I = 1.0
+        
+        # create a FITS sky model
+        wcs = WCS(naxis=3)
+        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.freqs[1]-self.freqs[0]]) # pixel scale in deg
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 0] # reference pixel
+        wcs.wcs.crval = [np.rad2deg(self.ra0), np.rad2deg(self.dec0), self.freqs[0]] # reference pixel RA and Dec in deg
+        
+        # make header
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy'
+        
+        # make image
+        image = np.zeros((self.nchan, self.img_size, self.img_size))
+        image[:, self.img_size//2, self.img_size//2] = I
+        
+        # write to FITS file
+        hdu = fits.PrimaryHDU(image, header=header)
+        test_filename = f'test_{uuid.uuid4()}.fits'
+        self.test_files.append(test_filename)
+        hdu.writeto(test_filename, overwrite=True)
+        
+        # process the FITS file
+        brightness_matrix, lm = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.ncorr)
+        
+        # predict visibilities
         vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
         
         # check the output
@@ -119,9 +161,9 @@ class TestPredictFromFITS(unittest.TestCase):
         for stokes in stokes_params:
             wcs = WCS(naxis=3)
             wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
-            wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0]]) # pixel scale in deg
+            wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.freqs[1]-self.freqs[0]]) # pixel scale in deg
             wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
-            wcs.wcs.crval = [np.rad2deg(self.ra0), np.rad2deg(self.dec0), self.chan_freqs[0]] # reference pixel RA and Dec in deg
+            wcs.wcs.crval = [np.rad2deg(self.ra0), np.rad2deg(self.dec0), self.freqs[0]] # reference pixel RA and Dec in deg
         
             # make header
             header = wcs.to_header()
@@ -140,15 +182,14 @@ class TestPredictFromFITS(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        brightness_matrix, lm = process_fits_skymodel(test_skymodels, self.ra0, self.dec0, self.chan_freqs, self.ncorr)
+        brightness_matrix, lm = process_fits_skymodel(test_skymodels, self.ra0, self.dec0, self.freqs, self.ncorr)
         
         # predict visibilities
-        log.info('Predicting visibilities')
-        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.chan_freqs)
+        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
         
         # check the output
         assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
-        assert np.allclose(vis[:, :, 0], I + Q, atol=1e-6)
-        assert np.allclose(vis[:, :, 1], U + 1j*V, atol=1e-6)
-        assert np.allclose(vis[:, :, 2], U - 1j*V, atol=1e-6)
-        assert np.allclose(vis[:, :, 3], I - Q, atol=1e-6)
+        assert np.allclose(vis[:, :, 0], stokes_params[0][1] + stokes_params[1][1], atol=1e-6)      # I + Q
+        assert np.allclose(vis[:, :, 1], stokes_params[2][1] + 1j*stokes_params[3][1], atol=1e-6)   # U + iV
+        assert np.allclose(vis[:, :, 2], stokes_params[2][1] - 1j*stokes_params[3][1], atol=1e-6)   # U - iV
+        assert np.allclose(vis[:, :, 3], stokes_params[0][1] - stokes_params[1][1], atol=1e-6)      # I - Q

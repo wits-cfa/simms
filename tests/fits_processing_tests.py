@@ -22,6 +22,7 @@ class TestFITSProcessing(unittest.TestCase):
         self.chan_freqs = np.array([1e9, 2e9, 3e9])
         self.nchan = len(self.chan_freqs)
         self.ncorr = 2
+        self.tol = 1e-9
         
         # Store temporary files to be cleaned up
         self.test_files = []
@@ -77,6 +78,8 @@ class TestFITSProcessing(unittest.TestCase):
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
         expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
         expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
         
         # compare the intensities with the original image
         assert intensities.shape == expected_intensities.shape
@@ -125,6 +128,8 @@ class TestFITSProcessing(unittest.TestCase):
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
         expected_intensities[rand_pix, rand_pix, :, :] = 1.0
         expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
         
         # compare the intensities with the original image
         assert intensities.shape == expected_intensities.shape
@@ -163,11 +168,12 @@ class TestFITSProcessing(unittest.TestCase):
         # process the FITS file
         intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
         
-        
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
         expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
         expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
         
         # compare the intensities with the original image
         assert intensities.shape == expected_intensities.shape
@@ -214,6 +220,8 @@ class TestFITSProcessing(unittest.TestCase):
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
         expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
         expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
         
         # compare the intensities with the original image
         assert intensities.shape == expected_intensities.shape
@@ -266,11 +274,53 @@ class TestFITSProcessing(unittest.TestCase):
         expected_intensities[self.img_size//2, self.img_size//2, :, 2] = stokes_params[2][1] - 1j*stokes_params[3][1]     # U - iV
         expected_intensities[self.img_size//2, self.img_size//2, :, 3] = stokes_params[0][1] - stokes_params[1][1]       # I - Q
         expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
         
         # compare the intensities with the original image
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
-            
+        
+        
+    def test_stokes_I_processing_with_heinous_axis_ordering(self):
+        """
+        Tests if Stokes I FITS file with spectral axis pocessing.
+        """
+        # create a FITS file with Stokes I only
+        wcs = WCS(naxis=3)
+        wcs.wcs.ctype = ['RA---SIN', 'FREQ' , 'DEC--SIN']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0], self.cell_size/3600]) # pixel scale in deg
+        wcs.wcs.crpix = [self.img_size/2, 1, self.img_size/2] # reference pixel
+        wcs.wcs.crval = [0, self.chan_freqs[0], 0] # reference pixel RA and Dec in deg
+    
+        # make header
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy'
+    
+        # make image
+        image = np.zeros((self.img_size, self.nchan, self.img_size))
+        image[self.img_size//2, :, self.img_size//2] = 1.0 # put a point source at the center
+        
+        # write to FITS file
+        hdu = fits.PrimaryHDU(image, header=header)
+        test_filename = f'test_{uuid.uuid4()}.fits'
+        self.test_files.append(test_filename)
+        hdu.writeto(test_filename, overwrite=True)
+        
+        # process the FITS file
+        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
+        
+        # create expected intensities
+        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
+        expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
+        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
+        
+        # compare the intensities with the original image
+        assert intensities.shape == expected_intensities.shape
+        assert np.allclose(intensities, expected_intensities)
+        
     
     def test_lm_grid_creation_with_stokes_I_only(self):
         """
@@ -292,7 +342,52 @@ class TestFITSProcessing(unittest.TestCase):
         header['BUNIT'] = 'Jy'
         
         # make image
-        image = np.zeros((self.img_size, self.img_size))
+        image = np.ones((self.img_size, self.img_size))
+        
+        # write to FITS file
+        hdu = fits.PrimaryHDU(image, header=header)
+        test_filename = f'test_{uuid.uuid4()}.fits'
+        hdu.writeto(test_filename, overwrite=True)
+        
+        # process the FITS file
+        _, lm = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr)
+        
+        # created expected l-m grid
+        delt = np.deg2rad(self.cell_size/3600)
+        l = np.sort(np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt)
+        m = np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt
+        ll, mm = np.meshgrid(l, m)
+        expected_lm = np.vstack((ll.flatten(), mm.flatten())).T
+        
+        # validate the l-m grid
+        assert lm.shape == expected_lm.shape
+        assert np.allclose(lm, expected_lm)
+        
+        # clean up
+        os.remove(test_filename)
+        
+        
+    def test_lm_grid_creation_with_stokes_I_and_spectral_axis(self):
+        """
+        Tests if the l-m grid is created correctly for Stokes I only FITS file with spectral axis
+        Validates:
+            - output l-m grid shape
+            - output l-m grid values
+        """
+    
+        # create a FITS file with Stokes I only
+        wcs = WCS(naxis=3)
+        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0]]) # pixel scale in deg
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
+        wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0]] # reference pixel RA and Dec in deg
+        
+        # make header
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy'
+        
+        # make image
+        image = np.ones((self.nchan, self.img_size, self.img_size))
         
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
