@@ -1,6 +1,7 @@
 import unittest
 import uuid
 import os
+import logging
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -115,7 +116,7 @@ class TestPredictFromFITS(unittest.TestCase):
         wcs = WCS(naxis=3)
         wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
         wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.freqs[1]-self.freqs[0]]) # pixel scale in deg
-        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 0] # reference pixel
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
         wcs.wcs.crval = [np.rad2deg(self.ra0), np.rad2deg(self.dec0), self.freqs[0]] # reference pixel RA and Dec in deg
         
         # make header
@@ -133,6 +134,7 @@ class TestPredictFromFITS(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
+        log.setLevel(logging.ERROR)
         brightness_matrix, lm = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.ncorr)
         
         # predict visibilities

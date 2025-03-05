@@ -7,6 +7,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from simms import BIN, get_logger
 from simms.skymodel.skymods import process_fits_skymodel
+from simms.utilities import FITSSkymodelError as SkymodelError
 
 
 log = get_logger(BIN.skysim)
@@ -188,21 +189,21 @@ class TestFITSProcessing(unittest.TestCase):
             - output intensities values
         """
 
-        self.chan_freqs = np.array([1.0e9, 1.5e9, 2.0e9])
+        # we make the FITS frequencies [0.5e9, 1.5e9, 2.5e9, 3.5e9]
         
         # create a FITS file with Stokes I only
         wcs = WCS(naxis=3)
         wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
-        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, 0.25e9]) # pixel scale in deg
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, 1e9]) # pixel scale in deg
         wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
-        wcs.wcs.crval = [0, 0, self.chan_freqs[0]] # reference pixel RA and Dec in deg
+        wcs.wcs.crval = [0, 0, self.chan_freqs[0] - 0.5e9] # reference pixel RA and Dec in deg
         
         # make header
         header = wcs.to_header()
         header['BUNIT'] = 'Jy'
         
         # make image
-        image = np.zeros((self.nchan, self.img_size, self.img_size))
+        image = np.zeros((4, self.img_size, self.img_size))
         image[:, self.img_size//2, self.img_size//2] = 1.0
         
         # write to FITS file
@@ -226,6 +227,41 @@ class TestFITSProcessing(unittest.TestCase):
         # compare the intensities with the original image
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
+        
+        
+    def test_stokes_I_processing_with_interp_bounds_error(self):
+        """
+        Test that the frequency interpolation raises an error when the FITS frequency axis doesn't
+        cover the full range of the MS frequency axis.
+        Validates:
+            - error message
+        """
+        # we make the FITS frequencies [1e9, 2e9]
+        
+         # create a FITS file with Stokes I only
+        wcs = WCS(naxis=3)
+        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0]]) # pixel scale in deg
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
+        wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0]] # reference pixel RA and Dec in deg
+        
+        # make header
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy'
+        
+        # make image
+        image = np.zeros((self.nchan - 1, self.img_size, self.img_size))
+        
+        # write to FITS file
+        hdu = fits.PrimaryHDU(image, header=header)
+        test_filename = f'test_{uuid.uuid4()}.fits'
+        self.test_files.append(test_filename)
+        hdu.writeto(test_filename, overwrite=True)
+        
+        log.setLevel(logging.ERROR)
+        # process the FITS file
+        with self.assertRaises(SkymodelError):
+            process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr)
     
     
     def test_full_stokes_fits_list_processing(self):
@@ -266,7 +302,6 @@ class TestFITSProcessing(unittest.TestCase):
         # process the FITS files
         intensities, _ = process_fits_skymodel(test_skymodels, 0, 0, self.chan_freqs, self.ncorr)
         
-        
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr), dtype=np.complex128)
         expected_intensities[self.img_size//2, self.img_size//2, :, 0] = stokes_params[0][1] + stokes_params[1][1]        # I + Q
@@ -281,6 +316,68 @@ class TestFITSProcessing(unittest.TestCase):
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
         
+        
+    def test_stokes_axis_in_fits_processing(self):
+        """
+        Tests that the code raises an error when a FITS file contains a Stokes axis
+        Validates:
+            - error message
+        """
+        # create a FITS file with Stokes ndim > 1
+        wcs = WCS(naxis=4)
+        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0], 1.0]) # pixel scale in deg
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1, 1] # reference pixel
+        wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0], 1] # reference pixel RA and Dec in deg
+        
+        # make header
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy'
+        
+        # make image
+        image = np.ones((4, self.nchan, self.img_size, self.img_size))
+        
+        # write to FITS file
+        hdu = fits.PrimaryHDU(image, header=header)
+        test_filename = f'test_{uuid.uuid4()}.fits'
+        self.test_files.append(test_filename)
+        hdu.writeto(test_filename, overwrite=True)
+        
+        # process the FITS file
+        with self.assertRaises(SkymodelError):
+            process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr)
+        
+    
+    def test_time_axis_fits_processing(self):
+        """
+        Tests that the code raises an error when a FITS file contains a time axis
+        Validates:
+            - error message
+        """
+        # create a FITS file with time axis
+        wcs = WCS(naxis=4)
+        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'TIME']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0], 1.0]) # pixel scale in deg
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1, 1] # reference pixel
+        wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0], 1] # reference pixel RA and Dec in deg
+        
+        # make header
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy'
+        
+        # make image
+        image = np.ones((2, self.nchan, self.img_size, self.img_size))
+        
+        # write to FITS file
+        hdu = fits.PrimaryHDU(image, header=header)
+        test_filename = f'test_{uuid.uuid4()}.fits'
+        self.test_files.append(test_filename)
+        hdu.writeto(test_filename, overwrite=True)
+        
+        # process the FITS file
+        with self.assertRaises(SkymodelError):
+            process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr)
+    
         
     def test_stokes_I_processing_with_heinous_axis_ordering(self):
         """
@@ -347,6 +444,7 @@ class TestFITSProcessing(unittest.TestCase):
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
         test_filename = f'test_{uuid.uuid4()}.fits'
+        self.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
@@ -392,6 +490,7 @@ class TestFITSProcessing(unittest.TestCase):
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
         test_filename = f'test_{uuid.uuid4()}.fits'
+        self.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file

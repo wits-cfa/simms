@@ -1,4 +1,5 @@
 import os
+from glob import glob
 import simms
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 from scabha.basetypes import File
@@ -7,11 +8,17 @@ from omegaconf import OmegaConf
 from simms import BIN, get_logger 
 import glob
 from simms.utilities import CatalogueError, isnummber, ParameterError
-from simms.skymodel.skymods import read_ms, makesources, computevis, process_fits_skymodel
+from simms.skymodel.skymods import (
+    read_ms, 
+    makesources, 
+    computevis,
+    process_fits_skymodel,
+    augmented_im_to_vis
+)
 import numpy as np
-from africanus.dft import im_to_vis
 from tqdm.dask import TqdmCallback
 import dask.array as da
+from daskms import xds_to_table
 
 log = get_logger(BIN.skysim)
 
@@ -33,8 +40,8 @@ def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     ms = opts.ms
     cat = opts.catalogue
-    sf = opt.sky_fits
-    chunks = {"row": opts.chunk_size}
+    sf = opts.sky_fits
+    chunks = {"row": opts.row_chunk_size}
     
     if cat and sf:
         raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
@@ -106,32 +113,25 @@ def runit(**kwargs):
                     " Please ensure that catalogue column headers match those in mapping file."
                 )      
         
-        # read MS
-        if opts.sefd:
-            ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr, df, dt = read_ms(ms, opts.spwid, opts.field_id, chunks, df=True, dt=True)
-            noise = opts.sefd / np.sqrt(2*dt*df)
-        else:
-            ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr = read_ms(ms, opts.spwid, opts.field_id, chunks)
-            noise = 0
-        
+        # read MS (also computes noise)
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr, noise, incol, incol_dims = read_ms(ms, 
+                                                                                         opts.spwid, 
+                                                                                         opts.field_id, 
+                                                                                         chunks, 
+                                                                                         sefd = opts.sefd, 
+                                                                                         input_column = opts.input_column
+                                                                                        )
         
         sources = makesources(mapcols, freqs, ra0, dec0)
         
         allvis = []
-        
-        if isinstance(opts.input_column, str):
-            incol = getattr(ms_ds0, opts.input_column).data
-            incol_dims = ("row", "chan", "corr")
-        else:
-            incol = None
-            incol_dims = None
-            
+
         # check for polarisation information
-        # TODO: also add condition that all elements are non-zero and not "null" or None
         if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']):
             polarisation = True
         else:
             polarisation = False
+        # TODO: Consider adding condition that all elements are non-zero and not "null" or None
         
         # warn user if polarisation is detected but only two correlations are requested    
         if polarisation and ncorr == 2:
@@ -155,34 +155,60 @@ def runit(**kwargs):
             allvis.append(simvis)
         
     elif sf:
-        # read MS
-        ms_dsl, ra0, dec0, freqs, _, _, ncorr = read_ms(ms, opts.spwid, opts.field_id, chunks)
+        if os.path.exists(sf):
+            if os.path.isdir(sf):
+                sf = []
+                try:
+                    sf.append(glob(f"{sf}/*I.fits")[0])
+                    sf.append(glob(f"{sf}/*Q.fits")[0])
+                    sf.append(glob(f"{sf}/*U.fits")[0])
+                    sf.append(glob(f"{sf}/*V.fits")[0])
+                except IndexError:
+                    raise ParameterError("Could not find all required FITS files in the specified directory")
+                
+                if len(sf) > 4:
+                    raise ParameterError("Too many FITS files found in the specified directory")
+                
+            elif not sf.endswith(".fits"):
+                raise ParameterError("Invalid FITS file specified")
+        else:
+            raise ParameterError("FITS file/directory does not exist")
+        
+        # read MS (also computes noise)
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr, noise, incol, incol_dims = read_ms(ms, 
+                                                                                         opts.spwid, 
+                                                                                         opts.field_id, 
+                                                                                         chunks, 
+                                                                                         sefd = opts.sefd, 
+                                                                                         input_column = opts.input_column
+                                                                                        )
         
         # process FITS sky model
-        model_predict, lm = process_fits_skymodel(sf, ra0, dec0, freqs, ncorr)
+        image, lm = process_fits_skymodel(sf, ra0, dec0, freqs, ncorr, tol=float(opts.pixel_tol))
+        
+        assert image.shape[0] == lm.shape[0]
         
         allvis = []
         for ds in ms_dsl:
             simvis = da.blockwise(
-                im_to_vis, ("row", "chan", "corr"),
-                model_predict, ("lm", "chan", "corr"),
+                augmented_im_to_vis, ("row", "chan", "corr"),
+                image, ("npix", "chan", "corr"),
                 ds.UVW.data, ("row", "uvw"),
-                lm, ("lm",),
-                chan_freqs, ("chan",),
-                new_axes={"corr": ncorr},
+                lm, ("npix", "lm"),
+                freqs, ("chan",),
+                opts.mode == "subtract", None,
+                incol, incol_dims,
+                noise, None,
                 dtype=ds.DATA.data.dtype,
                 concatenate=True
                 )
             
             allvis.append(simvis)
         
-        # TODO: add support for subtracting existing visibilities
-        # TODO: add support for adding noise to the visibilities
         
     else:
         raise ParameterError("No sky model specified. Please provide either a catalogue or a FITS sky model.")
-            
-            
+                        
     writes = []
     for i, ds in enumerate(ms_dsl):
         ms_dsl[i] = ds.assign(**{

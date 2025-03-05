@@ -7,7 +7,8 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
-from daskms import xds_from_ms, xds_from_table, xds_to_table
+from daskms import xds_from_ms, xds_from_table
+from africanus.dft import im_to_vis
 from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
     convert2float, 
@@ -43,7 +44,8 @@ class Source:
         return self.emaj in  ('null',None) and self.emin in (None, 'null') 
 
             
-class Spectrum: 
+class Spectrum:
+    
         def __init__(self, stokes_i, stokes_q, stokes_u, stokes_v, line_peak, line_width, line_restfreq, cont_reffreq, cont_coeff_1, cont_coeff_2):
             self.stokes_i = convert2Jy(stokes_i)
             self.stokes_q = convert2Jy(stokes_q)
@@ -56,7 +58,7 @@ class Spectrum:
             self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
             self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
      
-        def set_spectrum(self, freqs):
+        def make_spectrum(self, freqs):
             # only Stokes I case
             if all(param in [None, "null"] for param in [self.stokes_q, self.stokes_u, self.stokes_v]):
                 if self.line_peak not in [None, "null"]:
@@ -80,7 +82,7 @@ class Spectrum:
             
             return np.stack(spectrum, axis=0)
 
-def makesources(data,freqs, ra0, dec0):
+def makesources(data, freqs, ra0, dec0):
     num_sources = len(data['name'][1])
     
     sources = []
@@ -110,15 +112,23 @@ def makesources(data,freqs, ra0, dec0):
         )
         
         source.set_lm(ra0, dec0)
-        source.spectrum = spectrum.set_spectrum(freqs)
+        source.spectrum = spectrum.make_spectrum(freqs)
         sources.append(source)
         
     return sources
 
 
 def check_var_axis(header, var: str):
+    """
+    Finds the axis number of the variable in the FITS header
+    Args:
+        - header: FITS header
+        - var: variable to find
+    Returns:
+        - axis_num: axis number of the variable
+    """
     axis_num = 1
-    while f'CTYPE{axis_num}' in header:  # Check if CTYPE{n} exists
+    while f'CTYPE{axis_num}' in header:
         ctype = header[f'CTYPE{axis_num}']
         if ctype.lower().startswith(var.lower()):
             return str(axis_num)
@@ -136,7 +146,7 @@ def check_data_axis_ordering(header, required_axes: List[str]):
     Returns:
         - data_axis_indices: array of axis indices in the data array in order of required_axes
     """
-    naxis = len(required_axes)
+    naxis = header['NAXIS']
     data_axis_indices = {}
     
     for axis in required_axes:
@@ -164,7 +174,7 @@ def check_header_axis_ordering(header, required_axes: List[str]):
 
 def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, spectral_axis: Optional[bool]=False):
     """
-    Calculate pixel (l, m) coordinates
+    Calculates pixel (l, m) coordinates
     Args:
         wcs (WCS): WCS object
         phase_centre (np.ndarray): phase centre coordinates
@@ -231,13 +241,11 @@ def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, 
     return l_coords, m_coords
     
 
-# TODO: handle case where all 4 Stokes paramaters are given in the same file
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray, ncorr: int, tol: float=1e-9):
     """
-    Processes FITS skymodel into DFT input. The frequency interpolation part is adapted from:
-    https://github.com/ratt-ru/codex-africanus/blob/master/africanus/dft/examples/predict_from_fits.py
+    Processes FITS skymodel into DFT input
     Args:
-        input_fitsimages:    FITS image or sorted list of FITS images if polarisation is present
+        input_fitsimages: FITS image or sorted list of FITS images if polarisation is present
         ra0:                     RA of phase-tracking centre in radians
         dec0:                   Dec of phase-tracking centre in radians
         chan_freqs:         MS frequencies
@@ -264,8 +272,16 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         wcs = WCS(header) # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
         
         if not wcs.has_celestial:
-            raise SkymodelError("FITS image does not have celestial coordinates")
+            raise SkymodelError("FITS image does not have or has unrecognised celestial coordinates")
         # TODO (Mika, Senkhosi): assume image in l-m coords already if no celestial coords
+        # Would this mean the lengths of CTYPE and CRVAL are not the same? Is that even possible?
+        
+        # ensure that there is no Stokes or time axis
+        if skymodel.ndim > 3:    
+            if wcs.has_temporal:
+                raise SkymodelError("FITS image has a time axis. Use separate files for time-varying models.")
+            else:            
+                raise SkymodelError("FITS image has >3 significant dimensions. Use separate files for Stokes I, Q, U, V models.")
         
         # read in spectral info
         if wcs.has_spectral:
@@ -282,6 +298,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             freq_axis = check_var_axis(header, "FREQ")
             
             nband = header[f"NAXIS{freq_axis}"]
+            # print(nband)
             refpix_nu = header[f"CRPIX{freq_axis}"]
             if header[f"CUNIT{freq_axis}"] == "Hz":
                 delta_nu = header[f"CDELT{freq_axis}"]  # assumes units are Hz
@@ -289,25 +306,26 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 raise SkymodelError("Frequency units must be in Hz")
             ref_freq = header[f"CRVAL{freq_axis}"]
 
-            # TODO: change this to truncate freqs outside MS bandwidth and pad with zeros if data bandwidth is smaller
             freqs = ref_freq + np.arange(1 - refpix_nu, 1 - refpix_nu + nband) * delta_nu # calculate frequencies
             
-            # if frequencies do not match we need to reprojects fits cube
-            if np.any(freqs != chan_freqs):
-                log.warning(
-                    "Reprojecting fits cube to MS freqs. " "This uses a lot of memory. "
-                )
+            # reproject FITS cube to MS freqs
+            if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
+                log.warning("Reprojecting FITS cube to MS freqs. This uses a lot of memory.")
                 from scipy.interpolate import RegularGridInterpolator
                 
-                # interpolate fits cube
-                fits_interp = RegularGridInterpolator(
-                    (l_coords, m_coords, freqs), skymodel, bounds_error=False, fill_value=None
-                )
+                # interpolate FITS cube
+                fits_interp = RegularGridInterpolator((l_coords, m_coords, freqs), skymodel, bounds_error=True)
                 
-                # reevaluate at ms freqs
-                ll, mm, vv = np.meshgrid(l_coords,m_coords, chan_freqs, indexing="ij")
+                # reevaluate at MS freqs
+                ll, mm, vv = np.meshgrid(l_coords, m_coords, chan_freqs, indexing="ij")
                 lmv = np.vstack((ll.ravel(), mm.ravel(), vv.ravel())).T
-                model_cube = fits_interp(lmv).reshape(n_pix_l, n_pix_m, nchan)
+                try:
+                    model_cube = fits_interp(lmv).reshape(n_pix_l, n_pix_m, nchan)
+                except ValueError as e: # catch and re-raise bounds error
+                    if str(e) == "One of the requested xi is out of bounds in dimension 2":
+                        raise SkymodelError("At least one frequency in FITS image is out of bounds of MS channel frequencies.")
+                    else:
+                        raise e
             else:
                 model_cube = skymodel
             
@@ -363,34 +381,62 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     
     # set up coordinates for DFT
     ll, mm = np.meshgrid(l_coords, m_coords)
-    lm = np.vstack((ll.flatten(), mm.flatten())).T
+    lm = np.vstack((ll.ravel(), mm.ravel())).T
 
-    # TODO: decide whether image is sparse enough for DFT, else use FFT
     # get only non-zero pixels
-    non_zero_mask = np.any(np.abs(intensities) > tol, axis=(1, 2))
-    non_zero_intensities = intensities[non_zero_mask]
-    non_zero_lm = lm[non_zero_mask]
+    tol_mask = np.any(np.abs(intensities) > tol, axis=(1, 2))
+    non_zero_intensities = intensities[tol_mask]
+    non_zero_lm = lm[tol_mask]
+    
+    # TODO: decide whether image is sparse enough for DFT, else use FFT
     
     return non_zero_intensities, non_zero_lm
 
 
+def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, frequency: np.ndarray, subtract: Optional[bool]=False, mod_data: Optional[np.ndarray]=None, noise: Optional[float]=None):
+    """
+    Augmented version of im_to_vis
+    Args:
+        image: image array
+        uvw: UVW coordinates
+        lm: (l, m) coordinates
+        frequency: frequency array
+        noise: RMS noise
+        subtract: True if visibilities should be subtracted from the model data, False otherwise
+    Returns:
+        vis: visibility array
+    """
+    # predict visibilities
+    vis = im_to_vis(image, uvw, lm, frequency)
+    
+    # add noise
+    if noise:
+        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
+    
+    # subtract visibilities
+    if mod_data:
+        vis = vis - mod_data if subtract else vis + mod_data
+        
+    return vis
+
+
 def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None, subtract=False):
     """
-    Compute visibilities.
+    Computes visibilities
 
     Args:
-        srcs (list): List of Source objects.
-        uvw (numpy.ndarray): Array of shape (3, nrows) containing the UVW coordinates.
-        freqs (numpy.ndarray): Array of shape (nchan,) containing the frequencies.
-        ncorr (int): Number of correlations.
-        polarisation (bool): True if polarisation information is present, False otherwise.
-        mod_data (numpy.ndarray): Array of shape (nrows, nchan, ncorr) containing the model data 
-            to/from which computed visibilities should be added/subtracted.
-        noise (float): RMS noise.
-        subtract (bool): True if visibilities should be subtracted from the model data, False otherwise.
+        srcs (list):                List of Source objects
+        uvw (numpy.ndarray):        Array of shape (3, nrows) containing the UVW coordinates
+        freqs (numpy.ndarray):      Array of shape (nchan,) containing the frequencies
+        ncorr (int):                Number of correlations
+        polarisation (bool):        True if polarisation information is present, False otherwise
+        mod_data (numpy.ndarray):   Array of shape (nrows, nchan, ncorr) containing the model data 
+            to/from which computed visibilities should be added/subtracted
+        noise (float):              RMS noise
+        subtract (bool):            True if visibilities should be subtracted from the model data, False otherwise
 
     Returns:
-        numpy.ndarray: Array of shape (nrows, nchan, ncorr) containing the visibilities.
+        vis (numpy.ndarray):        Visibility array of shape (nrows, nchan, ncorr)
     """
 
     wavs = 2.99e8 / freqs
@@ -494,7 +540,7 @@ def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None,
     return vis
 
 
-def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, df: bool=False, dt: bool=False):
+def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, sefd: float, input_column: str):
     """
     Reads MS info
     Args:
@@ -502,8 +548,8 @@ def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, df: bool=False, dt
         spw_id: spectral window ID
         field_id: field ID
         chunks: dask chunking strategy
-        df: read channel width
-        dt: read integration time
+        sefd: system equivalent flux density; used if return_noise is True
+        input_column: whether to read a column for manipulation
     Returns:
         ms_dsl: xarray dataset list
         ra0: RA of phase-tracking centre in radians
@@ -512,8 +558,8 @@ def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, df: bool=False, dt
         nrows: number of rows
         nchan: number of channels
         ncorr: number of correlations
-        df: channel width
-        dt: integration time
+        noise: RMS noise
+        input_column_data: data from input column
     """
     ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks=chunks)
     spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
@@ -524,9 +570,18 @@ def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, df: bool=False, dt
     chan_freqs = spw_ds.CHAN_FREQ.data[spw_id].compute()
     nrow, nchan, ncorr = ms_dsl[0].DATA.data.shape
     
-    if df:
-        df = spw_ds.CHAN_WIDTH.data[opts.spwid][0].compute()
-    if dt:
-        dt = ms_dsl[0].EXPOSURE.data[0].compute() 
+    if sefd:
+        df = spw_ds.CHAN_WIDTH.data[spw_id][0].compute()
+        dt = ms_dsl[0].EXPOSURE.data[0].compute()
+        noise = sefd / np.sqrt(2*dt*df)
+    else:
+        noise = None
+        
+    if input_column:
+        input_column_data =  getattr(ms_dsl[0], input_column).data
+        input_column_dims = ("row", "chan", "corr")
+    else:
+        input_column_data = None
+        input_column_dims = None
     
-    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, ncorr, df, dt
+    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, ncorr, noise, input_column_data, input_column_dims

@@ -56,7 +56,7 @@ class TestComputeVis(unittest.TestCase):
             cont_coeff_2 = None
         )
         
-        self.source.spectrum = spectrum.set_spectrum(self.freqs)
+        self.source.spectrum = spectrum.make_spectrum(self.freqs)
         sources = [self.source]
         
         ncorr = 2
@@ -103,7 +103,7 @@ class TestComputeVis(unittest.TestCase):
             cont_coeff_2 = None
         )
         
-        self.source.spectrum = spectrum.set_spectrum(self.freqs)
+        self.source.spectrum = spectrum.make_spectrum(self.freqs)
         sources = [self.source]
         
         vis = computevis(sources, self.uvw, self.freqs, ncorr, True)
@@ -142,7 +142,7 @@ class TestComputeVis(unittest.TestCase):
             cont_coeff_2 = None
         )
         
-        self.source.spectrum = spectrum.set_spectrum(self.freqs)
+        self.source.spectrum = spectrum.make_spectrum(self.freqs)
         sources = [self.source]
         
         vis = computevis(sources, self.uvw, self.freqs, ncorr, True)
@@ -185,7 +185,7 @@ class TestComputeVis(unittest.TestCase):
             cont_coeff_2 = None
         )
         
-        self.source.spectrum = spectrum.set_spectrum(self.freqs)
+        self.source.spectrum = spectrum.make_spectrum(self.freqs)
         sources = [self.source]
         
         vis = computevis(sources, self.uvw, self.freqs, ncorr, True)
