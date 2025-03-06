@@ -364,7 +364,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     else: # if polarisation is present
         intensities = np.empty((n_pix_l, n_pix_m, nchan, ncorr), dtype=np.complex128) # create pixel grid for sky model
         if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
-            logging.warning("Only two correlations requested, but four are present in the FITS image directory. Using only XX and YY.")
+            log.warning("Only two correlations requested, but four are present in the FITS image directory. Using only Stokes I and Q.")
             I, Q, _, _ = model_cubes
             intensities[:, :, :, 0] = I + Q
             intensities[:, :, :, 1] = I - Q

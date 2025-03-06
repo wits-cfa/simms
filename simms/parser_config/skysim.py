@@ -186,8 +186,6 @@ def runit(**kwargs):
         # process FITS sky model
         image, lm = process_fits_skymodel(sf, ra0, dec0, freqs, ncorr, tol=float(opts.pixel_tol))
         
-        assert image.shape[0] == lm.shape[0]
-        
         allvis = []
         for ds in ms_dsl:
             simvis = da.blockwise(
