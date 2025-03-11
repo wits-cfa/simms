@@ -190,7 +190,8 @@ def computevis(
     """
 
     wavs = 2.99e8 / freqs
-    uvw_scaled = -uvw.T[..., np.newaxis] / wavs
+    uvw_scaled = uvw.T[..., np.newaxis] / wavs
+    uvw_scaled = -uvw_scaled
 
     # if polarisation is detected, we need to compute different correlations separately
     if polarisation:
@@ -201,7 +202,7 @@ def computevis(
                 n_term = np.sqrt(1 - el * el - em * em) - 1
                 arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
                 if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-                    phase_factor = np.exp(-2 * np.pi * 1j * arg)
+                    phase_factor = np.exp(-2j * np.pi * arg)
                     xx += (
                         source.spectrum[0, :] + source.spectrum[1, :]
                     ) * phase_factor  # I + Q
@@ -235,7 +236,7 @@ def computevis(
                 n_term = np.sqrt(1 - el * el - em * em) - 1
                 arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
                 if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-                    phase_factor = np.exp(-2 * np.pi * 1j * arg)
+                    phase_factor = np.exp(-2j * np.pi * arg)
                     xx += (
                         source.spectrum[0, :] + source.spectrum[1, :]
                     ) * phase_factor  # I + Q
@@ -287,7 +288,7 @@ def computevis(
             n_term = np.sqrt(1 - el * el - em * em) - 1
             arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
             if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-                vis += source.spectrum * np.exp(-2 * np.pi * 1j * arg)
+                vis += source.spectrum * np.exp(-2j * np.pi * arg)
             else:
                 ell = source.emaj * np.sin(source.pa)
                 emm = source.emaj * np.cos(source.pa)
