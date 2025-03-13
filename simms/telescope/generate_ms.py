@@ -247,12 +247,18 @@ def create_ms(
     with TqdmCallback(desc=f"Writing the ANTENNA table to {ms}"):
         dask.compute(write_ant)
 
+    num_fields = len(phase_dir)
+
+    field_names = np.array([f"{i:02d}" for i in range(num_fields)])
+    ftimes = np.zeros(num_fields)
+
     fld_ds = {
+        "NAME": (("row"), da.from_array(field_names)),
         "PHASE_DIR": (("row", "field-poly", "field-dir"), da.from_array(phase_dir)),
         "DELAY_DIR": (("row", "field-poly", "field-dir"), da.from_array(phase_dir)),
         "REFERENCE_DIR": (("row", "field-poly", "field-dir"), da.from_array(phase_dir)),
-        "TIME": (("row"), da.from_array(np.array([0.0]))),
-        "SOURCE_ID": (("row"), da.from_array(np.array([0]))),
+        "TIME": (("row"), da.from_array(ftimes)),
+        "SOURCE_ID": (("row"), da.from_array(np.arange(num_fields))),
     }
 
     fld_table = daskms.Dataset(fld_ds)
