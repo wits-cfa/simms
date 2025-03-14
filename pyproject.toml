@@ -20,6 +20,7 @@ packages = [{ include = "simms" }]
 [tool.poetry.dependencies]
 python = "^3.9"
 numpy = "*"
+astropy = "<7.0.0"
 tdqm = "*"
 click = "^8.1.3"
 dask-ms = { version="^0.2.18", extras=["xarray"] }
