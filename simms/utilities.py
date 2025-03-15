@@ -6,6 +6,10 @@ class CatalogueError(Exception):
     pass
 
 
+class FITSSkymodelError(Exception):
+    pass
+
+
 class ParameterError(Exception):
     pass
 

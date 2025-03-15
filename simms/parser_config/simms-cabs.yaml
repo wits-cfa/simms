@@ -12,8 +12,19 @@ cabs:
       catalogue: 
         info: Catalogue file containing sources. A full description of accepted units can be found in the documentation.
         dtype: File
-        required: yes
+        required: no
         abbreviation: cat
+      sky-fits:
+        info: FITS file(s) containing the sky model
+        dtype: Union[File, List[File]]
+        required: no
+        abbreviation: sf
+      pixel-tol:
+        info: minimum brightness for a pixel to be considered in direct Fourier transform
+        dtype: float
+        required: no
+        default: 1e-9
+        abbreviation: pt
       cat-delim: 
         info: Delimeter that is used in the catalogue
         dtype: str
@@ -23,6 +34,11 @@ cabs:
         dtype: str
         default: MODEL_DATA
         abbreviation: col
+      row-chunk-size:
+        info: Chunking strategy for the simulation
+        dtype: int
+        default: 10000
+        abbreviation: rcs
       field-id:
         info: Field ID
         dtype: int
