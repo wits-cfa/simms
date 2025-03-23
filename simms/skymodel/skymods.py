@@ -355,8 +355,8 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             intensities[:, :, :, 1] = I
         elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
             intensities[:, :, :, 0] = I
-            intensities[:, :, :, 1] = 0
-            intensities[:, :, :, 2] = 0
+            intensities[:, :, :, 1] = 0.0
+            intensities[:, :, :, 2] = 0.0
             intensities[:, :, :, 3] = I
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
