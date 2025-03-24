@@ -355,8 +355,8 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             intensities[:, :, :, 1] = I
         elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
             intensities[:, :, :, 0] = I
-            intensities[:, :, :, 1] = 0j
-            intensities[:, :, :, 2] = 0j
+            intensities[:, :, :, 1] = 0.0
+            intensities[:, :, :, 2] = 0.0
             intensities[:, :, :, 3] = I
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
@@ -383,7 +383,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     ll, mm = np.meshgrid(l_coords, m_coords)
     lm = np.vstack((ll.ravel(), mm.ravel())).T
 
-    # get only non-zero pixels
+    # get only pixels with brightness > tol
     tol_mask = np.any(np.abs(intensities) > tol, axis=(1, 2))
     non_zero_intensities = intensities[tol_mask]
     non_zero_lm = lm[tol_mask]
