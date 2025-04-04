@@ -23,6 +23,7 @@ class TestFITSProcessing(unittest.TestCase):
         self.chan_freqs = np.array([1e9, 2e9, 3e9])
         self.nchan = len(self.chan_freqs)
         self.ncorr = 2
+        self.basis = 'linear'
         self.tol = 1e-9
         
         # Store temporary files to be cleaned up
@@ -72,7 +73,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
+        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr, self.basis)
         
         
         # create expected intensities
@@ -122,7 +123,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
+        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr, self.basis)
         
         
         # create expected intensities
@@ -167,7 +168,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
+        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -214,8 +215,7 @@ class TestFITSProcessing(unittest.TestCase):
         
         log.setLevel(logging.ERROR) # suppress warning messages
         # process the FITS file
-        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
-        
+        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -261,7 +261,7 @@ class TestFITSProcessing(unittest.TestCase):
         log.setLevel(logging.ERROR)
         # process the FITS file
         with self.assertRaises(SkymodelError):
-            process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr)
+            process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr, self.basis)
     
     
     def test_full_stokes_fits_list_processing(self):
@@ -300,7 +300,7 @@ class TestFITSProcessing(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        intensities, _ = process_fits_skymodel(test_skymodels, 0, 0, self.chan_freqs, self.ncorr)
+        intensities, _ = process_fits_skymodel(test_skymodels, 0, 0, self.chan_freqs, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr), dtype=np.complex128)
@@ -317,66 +317,68 @@ class TestFITSProcessing(unittest.TestCase):
         assert np.allclose(intensities, expected_intensities)
         
         
-    def test_stokes_axis_in_fits_processing(self):
-        """
-        Tests that the code raises an error when a FITS file contains a Stokes axis
-        Validates:
-            - error message
-        """
-        # create a FITS file with Stokes ndim > 1
-        wcs = WCS(naxis=4)
-        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
-        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0], 1.0]) # pixel scale in deg
-        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1, 1] # reference pixel
-        wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0], 1] # reference pixel RA and Dec in deg
+    # TODO: Modify test below to check use of second element of Stokes axis
+    # def test_stokes_axis_in_fits_processing(self):
+    #     """
+    #     Tests that the code raises an error when a FITS file contains a Stokes axis
+    #     Validates:
+    #         - error message
+    #     """
+    #     # create a FITS file with Stokes ndim > 1
+    #     wcs = WCS(naxis=4)
+    #     wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
+    #     wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0], 1.0]) # pixel scale in deg
+    #     wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1, 1] # reference pixel
+    #     wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0], 1] # reference pixel RA and Dec in deg
         
-        # make header
-        header = wcs.to_header()
-        header['BUNIT'] = 'Jy'
+    #     # make header
+    #     header = wcs.to_header()
+    #     header['BUNIT'] = 'Jy'
         
-        # make image
-        image = np.ones((4, self.nchan, self.img_size, self.img_size))
+    #     # make image
+    #     image = np.ones((4, self.nchan, self.img_size, self.img_size))
         
-        # write to FITS file
-        hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f'test_{uuid.uuid4()}.fits'
-        self.test_files.append(test_filename)
-        hdu.writeto(test_filename, overwrite=True)
+    #     # write to FITS file
+    #     hdu = fits.PrimaryHDU(image, header=header)
+    #     test_filename = f'test_{uuid.uuid4()}.fits'
+    #     self.test_files.append(test_filename)
+    #     hdu.writeto(test_filename, overwrite=True)
         
-        # process the FITS file
-        with self.assertRaises(SkymodelError):
-            process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr)
+    #     # process the FITS file
+    #     with self.assertRaises(SkymodelError):
+    #         process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr, self.basis)
         
     
-    def test_time_axis_fits_processing(self):
-        """
-        Tests that the code raises an error when a FITS file contains a time axis
-        Validates:
-            - error message
-        """
-        # create a FITS file with time axis
-        wcs = WCS(naxis=4)
-        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'TIME']
-        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0], 1.0]) # pixel scale in deg
-        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1, 1] # reference pixel
-        wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0], 1] # reference pixel RA and Dec in deg
+    # TODO: Modify test below to check use of only first element of temporal axis
+    # def test_time_axis_fits_processing(self):
+    #     """
+    #     Tests that the code raises an error when a FITS file contains a temporal axis
+    #     Validates:
+    #         - error message
+    #     """
+    #     # create a FITS file with time axis
+    #     wcs = WCS(naxis=4)
+    #     wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'TIME']
+    #     wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0], 1.0]) # pixel scale in deg
+    #     wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1, 1] # reference pixel
+    #     wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0], 1] # reference pixel RA and Dec in deg
         
-        # make header
-        header = wcs.to_header()
-        header['BUNIT'] = 'Jy'
+    #     # make header
+    #     header = wcs.to_header()
+    #     header['BUNIT'] = 'Jy'
         
-        # make image
-        image = np.ones((2, self.nchan, self.img_size, self.img_size))
+    #     # make image
+    #     image = np.ones((2, self.nchan, self.img_size, self.img_size))
         
-        # write to FITS file
-        hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f'test_{uuid.uuid4()}.fits'
-        self.test_files.append(test_filename)
-        hdu.writeto(test_filename, overwrite=True)
+    #     # write to FITS file
+    #     hdu = fits.PrimaryHDU(image, header=header)
+    #     test_filename = f'test_{uuid.uuid4()}.fits'
+    #     self.test_files.append(test_filename)
+    #     hdu.writeto(test_filename, overwrite=True)
         
-        # process the FITS file
-        with self.assertRaises(SkymodelError):
-            process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr)
+    #     # process the FITS file
+    #     with self.assertRaises(SkymodelError):
+    #         process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr, self.basis)
     
         
     def test_stokes_I_processing_with_heinous_axis_ordering(self):
@@ -405,7 +407,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr)
+        intensities, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -448,7 +450,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        _, lm = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr)
+        _, lm = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr, self.basis)
         
         # created expected l-m grid
         delt = np.deg2rad(self.cell_size/3600)
@@ -494,7 +496,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        _, lm = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr)
+        _, lm = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ncorr, self.basis)
         
         # created expected l-m grid
         delt = np.deg2rad(self.cell_size/3600)
