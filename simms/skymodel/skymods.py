@@ -177,7 +177,7 @@ def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, 
     """
     Calculates pixel (l, m) coordinates
     Args:
-        wcs (WCS): WCS object
+        wcs (WCS): WCS object (axes ordering: longitude, latitude, spectral)
         phase_centre (np.ndarray): phase centre coordinates
         ra (np.ndarray): RA coordinates of pixels
         dec (np.ndarray): Dec coordinates of pixels
@@ -188,7 +188,7 @@ def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, 
         m (np.ndarray): m coordinates
     """
     ra0, dec0 = phase_centre
-    n_pix_m, n_pix_l = img_dims
+    n_pix_l, n_pix_m = img_dims
     x_index, y_index = wcs.wcs.lng, wcs.wcs.lat
     
     if wcs.wcs.radesys:
@@ -201,35 +201,19 @@ def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, 
     
     # get image dimensions
     if spectral_axis:
-        axis_ordering = check_header_axis_ordering(wcs.to_header(), ['ra', 'dec', 'freq'])
-        if np.array_equal(axis_ordering, np.array([1, 2, 3])):
-            x_pix_0, y_pix_0, _ = wcs.world_to_pixel_values(pc.ra, pc.dec, 0) # get pixel coordinates of phase centre
-        elif np.array_equal(axis_ordering, np.array([3, 2, 1])):
-            _, y_pix_0, x_pix_0 = wcs.world_to_pixel_values(0, pc.dec, pc.ra)
-        elif np.array_equal(axis_ordering, np.array([2, 1, 3])):
-            y_pix_0, x_pix_0, _ = wcs.world_to_pixel_values(pc.dec, pc.ra, 0)
-        elif np.array_equal(axis_ordering, np.array([2, 3, 1])):
-            y_pix_0, _, x_pix_0 = wcs.world_to_pixel_values(pc.dec, 0, pc.ra)
-        elif np.array_equal(axis_ordering, np.array([1, 3, 2])):
-            x_pix_0, _, y_pix_0 = wcs.world_to_pixel_values(pc.ra, 0, pc.dec)
-        else:
-            _, x_pix_0, y_pix_0 = wcs.world_to_pixel_values(0, pc.ra, pc.dec)   
+        x_pix_0, y_pix_0, _ = wcs.world_to_pixel_values(pc.ra, pc.dec, 0) # get pixel coordinates of phase centre
     else:
-        axis_ordering = check_header_axis_ordering(wcs.to_header(), ['ra', 'dec'])
-        if np.array_equal(axis_ordering, np.array([1, 2])):
-            x_pix_0, y_pix_0 = wcs.world_to_pixel_values(pc.ra, pc.dec) # get pixel coordinates of phase centre
-        else:
-            y_pix_0, x_pix_0 = wcs.world_to_pixel_values(pc.dec, pc.ra)
+        x_pix_0, y_pix_0 = wcs.world_to_pixel_values(pc.ra, pc.dec) # get pixel coordinates of phase centre
 
     # get pixel scale
     delta_l, delta_m = wcs.wcs.cdelt[x_index], wcs.wcs.cdelt[wcs.wcs.lng]
     
-    if wcs.wcs.cunit[y_index] == wcs.wcs.cunit[x_index]:
-        if wcs.wcs.cunit[y_index] in ["RAD", "rad"] and wcs.wcs.cunit[x_index] in ["RAD", "rad"]:
+    if wcs.wcs.cunit[x_index] == wcs.wcs.cunit[y_index]:
+        if wcs.wcs.cunit[x_index] in ["RAD", "rad"] and wcs.wcs.cunit[y_index] in ["RAD", "rad"]:
             pass
-        elif wcs.wcs.cunit[y_index] in ["DEG", "deg"] and wcs.wcs.cunit[x_index] in ["DEG", "deg"]:
-            delta_m = np.deg2rad(delta_m)
+        elif wcs.wcs.cunit[x_index] in ["DEG", "deg"] and wcs.wcs.cunit[y_index] in ["DEG", "deg"]:
             delta_l = np.deg2rad(delta_l)
+            delta_m = np.deg2rad(delta_m)
         else:
             raise SkymodelError("RA and Dec units must be in radians or degrees")
     else:
@@ -242,7 +226,7 @@ def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, 
     return l_coords, m_coords
     
 
-def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray, ncorr: int, tol: float=1e-6, stokes:int = 0 ):
+def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray, ncorr: int, tol: float=1e-6, stokes: int = 0):
     """
     Processes FITS skymodel into DFT input
     Args:
@@ -251,7 +235,8 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         dec0:                   Dec of phase-tracking centre in radians
         chan_freqs:         MS frequencies
         ncorr:             number of correlations
-        polarisation:         True if polarisation information is present, False otherwise
+        tol:                tolerance for pixel brightness
+        stokes:             Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V)
     Returns:
         intensities:    pixel-by-pixel brightness matrix for each channel and correlation
         lm:                 (l, m) coordinate grid for DFT
@@ -271,33 +256,39 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             naxis = header['NAXIS']
             if naxis < 2:
                 raise SkymodelError("FITS image must have at least 2 dimensions")
-            orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
-            stokes_idx = orig_dims.index("STOKES")
-            stokes_slice = [slice(None)] * naxis
-            stokes_slice[stokes_idx] = stokes
-            # 
-            skymodel = hdulist[0].data[tuple(stokes_slice)]
             
+            # get all axis types
+            orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
+            
+            data_slice = [slice(None)] * naxis
             dims = []
-            for dim in orig_dims:
-                
-                if dim == orig_dims[stokes_idx]:
-                    continue
-                idx = orig_dims.index(dim)
-                dims.append(dim.split("-")[0].lower()) 
+            
+            for i, dim in enumerate(orig_dims):
+                dim_name = dim.split("-")[0].lower()
+                # axes of interest
+                if dim_name in ["ra", "dec", "freq"]:
+                    dims.append(dim_name)
+                # axes to be ignored
+                else:
+                    # Stokes axis
+                    if dim_name == "STOKES":
+                        data_slice[i] = stokes
+                    # other axes
+                    else:
+                        data_slice[i] = 0
+                        if header[f"NAXIS{naxis - i}"] > 1:
+                            if dim_name == "time":
+                                log.warning(f"Removing 'TIME' axis with size > 1. Using only first time stamp. Use separate files for time-varying models.")
+                            else:
+                                log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
         
         # if not wcs.has_celestial:
         #     raise SkymodelError("FITS image does not have or has unrecognised celestial coordinates")
         # # TODO (Mika, Senkhosi): assume image in l-m coords already if no celestial coords
         # # Would this mean the lengths of CTYPE and CRVAL are not the same? Is that even possible?
-        
-        # # ensure that there is no Stokes or time axis
-        # if wcs.has_temporal:
-        #     raise SkymodelError("FITS image has a time axis. Use separate files for time-varying models.")
     
-        # if frequency axis exists and is not singleton
-        if skymodel.shape[dims.index("freq")] > 1:
-            
+        # if spectral axis exists and is not singleton
+        if "freq" in dims and skymodel.shape[dims.index("freq")] > 1:
             # find frequency axis
             freq_axis = check_var_axis(header, "FREQ")
             
@@ -315,50 +306,60 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             if freqs[0] < chan_freqs[0] or freqs[-1] > chan_freqs[-1]:
                 raise SkymodelError("At least one frequency in FITS image is out of bounds of MS channel frequencies.")
             
-            # data_axis_indices = check_data_axis_ordering(header, ['ra', 'dec', 'freq'])
-            
             # reshape FITS data to (n_pix_l, n_pix_m, nchan)
             skymodel = np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec"), dims.index("freq")))
             
+            # get image shape
             n_pix_l, n_pix_m, _ = skymodel.shape
             
             # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
             wcs = WCS(header, naxis=['longitude', 'latitude', 'spectral'])
             
             # calculate pixel (l, m) coordinates
-            l_coords, m_coords = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_m, n_pix_l]), spectral_axis=True)
+            l_coords, m_coords = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_l, n_pix_m]), spectral_axis=True)
             
-            # reproject FITS cube to MS freqs
-            
+            # reproject FITS cube to MS frequencies
             if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
                 log.warning("Reprojecting FITS cube to MS freqs. This uses a lot of memory.")
                 
                 # interpolate FITS cube
                 fits_interp = RegularGridInterpolator((l_coords, m_coords, freqs), skymodel, bounds_error=True)
                 
-                # reevaluate at MS freqs
+                # reevaluate at MS frequencies
                 ll, mm, vv = np.meshgrid(l_coords, m_coords, chan_freqs, indexing="ij")
                 lmv = np.vstack((ll.ravel(), mm.ravel(), vv.ravel())).T
                 model_cube = fits_interp(lmv).reshape(n_pix_l, n_pix_m, nchan)
             else:
                 model_cube = skymodel
             
-        else: # no spectral axis
-            # data_axis_indices = check_data_axis_ordering(header, ['ra', 'dec'])
+        else: # singleton or no spectral axis
             # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
             wcs = WCS(header, naxis=['longitude', 'latitude'])
-            # reshape FITS data to (n_pix_l, n_pix_m)
-            if len(dims) == 2: 
+            if len(dims) == 2:
+                # reshape FITS data to (n_pix_l, n_pix_m)
                 skymodel = np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec")))
                 n_pix_l, n_pix_m = skymodel.shape
+                
                 # calculate pixel (l, m) coordinates
-                l_coords, m_coords = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_m, n_pix_l]))
+                l_coords, m_coords = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_l, n_pix_m]))
             else:
+                # find frequency axis
+                freq_axis = check_var_axis(header, "FREQ")
+                freq = header[f"CRVAL{freq_axis}"]
+                
+                # raise error if frequency is not in bounds of MS channel frequencies
+                if freq < chan_freqs[0] or freq > chan_freqs[-1]:
+                    raise SkymodelError("FITS image frequency is out of bounds of MS channel frequencies.")
+                
+                # reshape FITS data to (n_pix_l, n_pix_m, nchan)
                 skymodel= np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec"), dims.index("freq")))
                 skymodel = np.squeeze(skymodel)
+                
+                # get image shape
                 n_pix_l, n_pix_m = skymodel.shape
+                
                 # calculate pixel (l, m) coordinates
-                l_coords, m_coords = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_m, n_pix_l]), spectral_axis=False)
+                l_coords, m_coords = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_l, n_pix_m]))
             
             freqs = chan_freqs
             model_cube = np.repeat(skymodel[:, :, np.newaxis], nchan, axis=2) # repeat the image along the frequency axis
