@@ -275,7 +275,8 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 # axes to be ignored
                 else:
                     # Stokes axis
-                    if dim_name == "STOKES":
+                    if dim_name == "stokes":
+                        log.warning(f"Using only Stokes parameter at index {stokes} from FITS image. Use separate files for full Stokes models.")
                         data_slice[i] = stokes
                     # other axes
                     else:
