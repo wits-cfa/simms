@@ -40,10 +40,10 @@ def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     ms = opts.ms
     cat = opts.catalogue
-    sf = opts.sky_fits
+    fs = opts.fits_sky
     chunks = {"row": opts.row_chunk_size}
     
-    if cat and sf:
+    if cat and fs:
         raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
     elif cat:
         map_path = opts.mapping
@@ -154,22 +154,22 @@ def runit(**kwargs):
             
             allvis.append(simvis)
         
-    elif sf:
-        if os.path.exists(sf):
-            if os.path.isdir(sf):
-                sf = []
+    elif fs:
+        if os.path.exists(fs):
+            if os.path.isdir(fs):
+                fs = []
                 try:
-                    sf.append(glob(f"{sf}/*I.fits")[0])
-                    sf.append(glob(f"{sf}/*Q.fits")[0])
-                    sf.append(glob(f"{sf}/*U.fits")[0])
-                    sf.append(glob(f"{sf}/*V.fits")[0])
+                    fs.append(glob(f"{fs}/*I.fits")[0])
+                    fs.append(glob(f"{fs}/*Q.fits")[0])
+                    fs.append(glob(f"{fs}/*U.fits")[0])
+                    fs.append(glob(f"{fs}/*V.fits")[0])
                 except IndexError:
                     raise ParameterError("Could not find all required FITS files in the specified directory")
                 
-                if len(sf) > 4:
+                if len(fs) > 4:
                     raise ParameterError("Too many FITS files found in the specified directory")
                 
-            elif not sf.endswith(".fits"):
+            elif not fs.endswith(".fits"):
                 raise ParameterError("Invalid FITS file specified")
         else:
             raise ParameterError("FITS file/directory does not exist")
@@ -184,9 +184,10 @@ def runit(**kwargs):
                                                                                         )
         
         # process FITS sky model
-        image, lm, sparsity, n_pix_l, n_pix_m, delta_l, delta_m = process_fits_skymodel(sf, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
+        image, lm, sparsity, n_pix_l, n_pix_m, delta_l, delta_m = process_fits_skymodel(fs, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
         
         allvis = []
+        subtract = opts.mode == "subtract"
         for ds in ms_dsl:
             simvis = da.blockwise(
                 augmented_im_to_vis, ("row", "chan", "corr"),
@@ -195,14 +196,14 @@ def runit(**kwargs):
                 lm, ("npix", "lm"),
                 freqs, ("chan",),
                 sparsity, None,
-                npix_l = n_pix_l, None,
-                npix_m = n_pix_m, None,
+                n_pix_l = n_pix_l, None,
+                n_pix_m = n_pix_m, None,
                 delta_l = delta_l, None,
                 delta_m = delta_m, None,
-                opts.mode == "subtract", None,
-                incol, incol_dims,
-                noise, None,
-                # tol=float(opts.pixel_tol),
+                subtract = subtract, None,
+                **({"mod_data": incol, "mod_data_axes": incol_dims} if incol is not None else {}),
+                noise=noise, None,
+                tol=float(opts.pixel_tol), None,
                 dtype=ds.DATA.data.dtype,
                 concatenate=True
                 )
