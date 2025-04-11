@@ -19,6 +19,11 @@ cabs:
         dtype: Union[File, List[File]]
         required: no
         abbreviation: sf
+      pol-basis:
+        info: Polarization basis for the simulation. The default is circular polarization.
+        dtype: str
+        default: linear
+        choices: ['linear', 'circular']
       pixel-tol:
         info: minimum brightness for a pixel to be considered in direct Fourier transform
         dtype: float
