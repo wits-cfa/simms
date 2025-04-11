@@ -114,7 +114,7 @@ def runit(**kwargs):
                 )      
         
         # read MS (also computes noise)
-        ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr, noise, incol, incol_dims = read_ms(ms, 
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, _, ncorr, noise, incol, incol_dims = read_ms(ms, 
                                                                                          opts.spwid, 
                                                                                          opts.field_id, 
                                                                                          chunks, 
@@ -175,7 +175,7 @@ def runit(**kwargs):
             raise ParameterError("FITS file/directory does not exist")
         
         # read MS (also computes noise)
-        ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr, noise, incol, incol_dims = read_ms(ms, 
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, df, ncorr, noise, incol, incol_dims = read_ms(ms, 
                                                                                          opts.spwid, 
                                                                                          opts.field_id, 
                                                                                          chunks, 
@@ -184,7 +184,7 @@ def runit(**kwargs):
                                                                                         )
         
         # process FITS sky model
-        image, lm = process_fits_skymodel(sf, ra0, dec0, freqs, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
+        image, lm = process_fits_skymodel(sf, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
         
         allvis = []
         for ds in ms_dsl:

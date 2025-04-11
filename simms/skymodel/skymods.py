@@ -227,8 +227,8 @@ def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, 
     return l_coords, m_coords, delta_l, delta_m
     
 
-def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray, 
-                          ncorr: int, basis: str, tol: float=1e-6, stokes: int = 0):
+def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
+                          ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-6, stokes: int = 0):
     """
     Processes FITS skymodel into DFT input
     Args:
@@ -236,6 +236,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         ra0:                     RA of phase-tracking centre in radians
         dec0:                   Dec of phase-tracking centre in radians
         chan_freqs:         MS frequencies
+        ms_delta_nu:     MS channel width
         ncorr:             number of correlations
         basis:             polarisation basis ("linear" or "circular")
         tol:                tolerance for pixel brightness
@@ -308,7 +309,6 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             ref_freq = header[f"CRVAL{freq_axis}"]
             
             # computes edges of FITS and MS frequency axes
-            ms_delta_nu = chan_freqs[1] - chan_freqs[0]
             ms_start_freq = chan_freqs[0] - 0.5*(ms_delta_nu)
             ms_end_freq = chan_freqs[-1] + 0.5*(ms_delta_nu)
             
@@ -653,8 +653,9 @@ def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, sefd: float, input
     chan_freqs = spw_ds.CHAN_FREQ.data[spw_id].compute()
     nrow, nchan, ncorr = ms_dsl[0].DATA.data.shape
     
+    df = spw_ds.CHAN_WIDTH.data[spw_id][0].compute()
+    
     if sefd:
-        df = spw_ds.CHAN_WIDTH.data[spw_id][0].compute()
         dt = ms_dsl[0].EXPOSURE.data[0].compute()
         noise = sefd / np.sqrt(2*dt*df)
     else:
@@ -667,4 +668,4 @@ def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, sefd: float, input
         input_column_data = None
         input_column_dims = None
     
-    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, ncorr, noise, input_column_data, input_column_dims
+    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, df, ncorr, noise, input_column_data, input_column_dims
