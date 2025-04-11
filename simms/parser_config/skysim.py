@@ -194,19 +194,19 @@ def runit(**kwargs):
                 image, ("npix", "chan", "corr"),
                 ds.UVW.data, ("row", "uvw"),
                 lm, ("npix", "lm"),
-                freqs, ("chan",),
+                freqs, ("chan",), 
                 sparsity, None,
-                n_pix_l = n_pix_l, None,
-                n_pix_m = n_pix_m, None,
-                delta_l = delta_l, None,
-                delta_m = delta_m, None,
-                subtract = subtract, None,
+                n_pix_l = n_pix_l,
+                n_pix_m = n_pix_m, 
+                delta_l = delta_l,
+                delta_m = delta_m,
+                subtract = opts.mode == "subtract",
                 **({"mod_data": incol, "mod_data_axes": incol_dims} if incol is not None else {}),
-                noise=noise, None,
-                tol=float(opts.pixel_tol), None,
+                noise = noise,
+                tol=float(opts.pixel_tol),
                 dtype=ds.DATA.data.dtype,
                 concatenate=True
-                )
+            )
             
             allvis.append(simvis)
         
