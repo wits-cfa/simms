@@ -345,8 +345,6 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                     model_cube = skymodel
             
             else: # singleton spectral axis
-                freq = header[f"CRVAL{freq_axis}"]
-                
                 # raise error if frequency is not in bounds of MS channel frequencies
                 if fits_start_freq < ms_start_freq or fits_end_freq > ms_end_freq:    
                     raise SkymodelError("FITS image frequency range does not fall in MS channel frequency range.")
@@ -449,8 +447,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     # TODO: decide whether image is sparse enough for DFT, else use FFT
     sparsity = 1 - (non_zero_intensities.size/intensities.size)
     
-    # return non_zero_intensities, non_zero_lm, sparsity, delta_l, delta_m
-    return non_zero_intensities, non_zero_lm
+    return non_zero_intensities, non_zero_lm, sparsity, n_pix_l, n_pix_m, delta_l, delta_m
 
 
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, sparsity: bool, 

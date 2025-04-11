@@ -184,7 +184,7 @@ def runit(**kwargs):
                                                                                         )
         
         # process FITS sky model
-        image, lm = process_fits_skymodel(sf, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
+        image, lm, sparsity, n_pix_l, n_pix_m, delta_l, delta_m = process_fits_skymodel(sf, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
         
         allvis = []
         for ds in ms_dsl:
@@ -194,9 +194,15 @@ def runit(**kwargs):
                 ds.UVW.data, ("row", "uvw"),
                 lm, ("npix", "lm"),
                 freqs, ("chan",),
+                sparsity, None,
+                npix_l = n_pix_l, None,
+                npix_m = n_pix_m, None,
+                delta_l = delta_l, None,
+                delta_m = delta_m, None,
                 opts.mode == "subtract", None,
                 incol, incol_dims,
                 noise, None,
+                # tol=float(opts.pixel_tol),
                 dtype=ds.DATA.data.dtype,
                 concatenate=True
                 )
