@@ -185,7 +185,7 @@ def makesources(data, freqs, ra0, dec0):
 
 
 def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str,
-                mode: Optional[str] = None, mod_data: Optional[np.ndarray] = None, noise: Optional[float] = None):
+                mode: Union[None, str], mod_data: Union[None, np.ndarray], noise: Optional[float] = None):
     """
     Computes visibilities
 
@@ -365,7 +365,7 @@ def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, 
         x_pix_0, y_pix_0 = wcs.world_to_pixel_values(pc.ra, pc.dec) # get pixel coordinates of phase centre
 
     # get pixel scale
-    delta_l, delta_m = wcs.wcs.cdelt[x_index], wcs.wcs.cdelt[wcs.wcs.lng]
+    delta_l, delta_m = wcs.wcs.cdelt[x_index], wcs.wcs.cdelt[y_index]
     
     if wcs.wcs.cunit[x_index] == wcs.wcs.cunit[y_index]:
         if wcs.wcs.cunit[x_index] in ["RAD", "rad"] and wcs.wcs.cunit[y_index] in ["RAD", "rad"]:
@@ -593,7 +593,8 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr) # reshape image for compatibility with im_to_vis
     
     # set up coordinates for DFT
-    ll, mm = np.meshgrid(l_coords, m_coords)
+    # ll, mm = np.meshgrid(l_coords, m_coords)
+    ll, mm = np.meshgrid(m_coords, l_coords)
     lm = np.vstack((ll.ravel(), mm.ravel())).T
     
     # get only pixels with brightness > tol
@@ -609,10 +610,11 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     return non_zero_intensities, non_zero_lm, sparsity, n_pix_l, n_pix_m, delta_l, delta_m
     
     
-def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, sparsity: bool, 
-                        n_pix_l: Optional[int]=None, n_pix_m: Optional[int]=None, delta_l: Optional[int]=None, 
-                        delta_m: Optional[int]=None, tol: Optional[float]=1e-9, nthreads: Optional[int]=1,
-                        mode: Optional[str] = None, mod_data: Optional[np.ndarray] = None, noise: Optional[float] = None):
+def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, sparsity: bool,
+                        mode: Union[None, str], mod_data: Union[None, np.ndarray], n_pix_l: Optional[int]=None, 
+                        n_pix_m: Optional[int]=None, delta_l: Optional[int]=None, delta_m: Optional[int]=None, 
+                        tol: Optional[float]=1e-9, nthreads: Optional[int]=1, 
+                        noise: Optional[float] = None):
     """
     Augmented version of im_to_vis
     Args:
