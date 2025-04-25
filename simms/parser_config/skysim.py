@@ -146,6 +146,7 @@ def runit(**kwargs):
                                 freqs, ("chan",),
                                 ncorr, None,
                                 polarisation, None,
+                                opts.pol_basis, None,
                                 new_axes={"corr": ncorr},
                                 dtype=ds.DATA.data.dtype,
                                 concatenate=True,
@@ -205,20 +206,19 @@ def runit(**kwargs):
             )
             
             allvis.append(simvis)
-        
-      
+         
     else:
         raise ParameterError("No sky model specified. Please provide either a catalogue or a FITS sky model.")
 
-    if opts.noise or opts.mode:
+    if noise or opts.mode != 'sim':
         with TqdmCallback(desc="compute visibilities"):
             allvis = da.compute(*allvis)
             allvis = np.concatenate(allvis, axis=0)
 
-        if opts.noise:
-            allvis = add_noise(allvis, opts.noise)
+        if noise:
+            allvis = add_noise(allvis, noise)
         
-        if opts.mode:
+        if opts.mode in ['subtract', 'add']:
             allvis = add_to_column(allvis, incol, opts.mode)
 
     writes = []

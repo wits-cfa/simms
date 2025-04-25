@@ -600,15 +600,20 @@ def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: in
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
     
+    add_noise(vis, noise)
+    
+    
     return vis
 
 
 def add_noise(vis, noise):
-    vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
-    return vis
-
+    if noise:
+        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
+    else:
+        pass
 
 def add_to_column(vis, mod_data, mode):
+    if mode in ['subtract', ]
     vis = mod_data - vis if mode == 'subtract' else vis + mod_data
     return vis
 
