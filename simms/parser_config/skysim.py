@@ -147,6 +147,9 @@ def runit(**kwargs):
                                 ncorr, None,
                                 polarisation, None,
                                 opts.pol_basis, None,
+                                mode=opts.mode,
+                                **({"mod_data": incol, "mod_data_axes": incol_dims} if incol is not None else {}),
+                                noise=noise,
                                 new_axes={"corr": ncorr},
                                 dtype=ds.DATA.data.dtype,
                                 concatenate=True,
@@ -196,6 +199,9 @@ def runit(**kwargs):
                 lm, ("npix", "lm"),
                 freqs, ("chan",), 
                 sparsity, None,
+                mode=opts.mode,
+                **({"mod_data": incol, "mod_data_axes": incol_dims} if incol is not None else {}),
+                noise=noise,
                 n_pix_l = n_pix_l,
                 n_pix_m = n_pix_m, 
                 delta_l = delta_l,
@@ -210,17 +216,6 @@ def runit(**kwargs):
     else:
         raise ParameterError("No sky model specified. Please provide either a catalogue or a FITS sky model.")
 
-    if noise or opts.mode != 'sim':
-        with TqdmCallback(desc="compute visibilities"):
-            allvis = da.compute(*allvis)
-            allvis = np.concatenate(allvis, axis=0)
-
-        if noise:
-            allvis = add_noise(allvis, noise)
-        
-        if opts.mode in ['subtract', 'add']:
-            allvis = add_to_column(allvis, incol, opts.mode)
-
     writes = []
     for i, ds in enumerate(ms_dsl):
         ms_dsl[i] = ds.assign(**{
@@ -230,5 +225,5 @@ def runit(**kwargs):
     
         writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
         
-    with TqdmCallback(desc="compute"):
+    with TqdmCallback(desc="Compute and write..."):
         da.compute(writes)

@@ -22,7 +22,70 @@ from simms.skymodel.converters import (
     radec2lm
 )
 
+
 log = get_logger(BIN.skysim)
+
+
+def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, sefd: float, input_column: str):
+    """
+    Reads MS info
+    Args:
+        ms: MS file
+        spw_id: spectral window ID
+        field_id: field ID
+        chunks: dask chunking strategy
+        sefd: system equivalent flux density; used if return_noise is True
+        input_column: whether to read a column for manipulation
+    Returns:
+        ms_dsl: xarray dataset list
+        ra0: RA of phase-tracking centre in radians
+        dec0: Dec of phase-tracking centre in radians
+        chan_freqs: MS channel frequencies
+        nrows: number of rows
+        nchan: number of channels
+        ncorr: number of correlations
+        noise: RMS noise
+        input_column_data: data from input column
+    """
+    ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks=chunks)
+    spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
+    field_ds = xds_from_table(f"{ms}::FIELD")[0]
+    
+    radec0 = field_ds.PHASE_DIR.data[field_id].compute()
+    ra0, dec0 = radec0[0][0], radec0[0][1]
+    chan_freqs = spw_ds.CHAN_FREQ.data[spw_id].compute()
+    nrow, nchan, ncorr = ms_dsl[0].DATA.data.shape
+    
+    df = spw_ds.CHAN_WIDTH.data[spw_id][0].compute()
+    
+    if sefd:
+        dt = ms_dsl[0].EXPOSURE.data[0].compute()
+        noise = sefd / np.sqrt(2*dt*df)
+    else:
+        noise = None
+        
+    if input_column:
+        input_column_data =  getattr(ms_dsl[0], input_column).data
+        input_column_dims = ("row", "chan", "corr")
+    else:
+        input_column_data = None
+        input_column_dims = None
+    
+    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, df, ncorr, noise, input_column_data, input_column_dims
+
+
+def add_noise(vis, noise):
+    if noise:
+        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
+    else:
+        pass
+    
+
+def add_to_column(vis, mod_data, mode):
+    if mode in ['subtract', 'add']
+        vis = mod_data - vis if mode == 'subtract' else vis + mod_data
+    else:
+        pass
 
 
 class Source:
@@ -84,6 +147,7 @@ class Spectrum:
             
             return np.stack(spectrum, axis=0)
 
+
 def makesources(data, freqs, ra0, dec0):
     num_sources = len(data['name'][1])
     
@@ -118,6 +182,100 @@ def makesources(data, freqs, ra0, dec0):
         sources.append(source)
         
     return sources
+
+
+def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str,
+                mode: Optional[str] = None, mod_data: Optional[np.ndarray] = None, noise: Optional[float] = None):
+    """
+    Computes visibilities
+
+    Args:
+        srcs (list):                List of Source objects
+        uvw (numpy.ndarray):        Array of shape (3, nrows) containing the UVW coordinates
+        freqs (numpy.ndarray):      Array of shape (nchan,) containing the frequencies
+        ncorr (int):                Number of correlations
+        polarisation (bool):        True if polarisation information is present, False otherwise
+        basis (str):                Polarisation basis ("linear" or "circular")
+        mod_data (numpy.ndarray):   Array of shape (nrows, nchan, ncorr) containing the model data 
+            to/from which computed visibilities should be added/subtracted
+        noise (float):              RMS noise
+        subtract (bool):            True if visibilities should be subtracted from the model data, False otherwise
+
+    Returns:
+        vis (numpy.ndarray):        Visibility array of shape (nrows, nchan, ncorr)
+    """
+
+    wavs = 2.99e8 / freqs
+    uvw_scaled = uvw.T[...,np.newaxis] / wavs
+    
+    # helper function to calculate phase factor
+    def calculate_phase_factor(source, uvw_scaled):
+        el, em = source.l, source.m
+        n_term = np.sqrt(1 - el*el - em*em) - 1
+        arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
+        
+        if source.emaj in [None, "null"] and source.emin in [None, "null"]:
+            # point source
+            return np.exp(-2 * np.pi * 1j * arg)
+        else:
+            # extended source
+            ell = source.emaj * np.sin(source.pa)
+            emm = source.emaj * np.cos(source.pa)
+            ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
+            
+            fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
+            fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
+            
+            shape_phase = fu1 * fu1 + fv1 * fv1
+            return np.exp(-2 *np.pi * 1j * arg - shape_phase)
+    
+    # if polarisation is detected, we need to compute different correlations separately
+    if polarisation:
+        xx, yy = 0j, 0j
+        if ncorr==2: # if ncorr is 2, we only need compute XX and YY correlations
+            for source in srcs:
+                phase_factor = calculate_phase_factor(source, uvw_scaled)
+                source_xx, source_yy = compute_brightness_matrix(source.spectrum, 'diagonal', basis)
+                xx += source_xx * phase_factor
+                yy += source_yy * phase_factor
+                
+            vis = np.stack([xx, yy], axis=2)
+            
+        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
+            xy, yx = 0j, 0j
+            for source in srcs:
+                phase_factor = calculate_phase_factor(source, uvw_scaled)
+                source_xx, source_xy, source_yx, source_yy = compute_brightness_matrix(source.spectrum, 'all', basis)
+                xx += source_xx * phase_factor
+                xy += source_xy * phase_factor
+                yx += source_yx * phase_factor
+                yy += source_yy * phase_factor
+            
+            vis = np.stack([xx, xy, yx, yy], axis=2)
+        
+        else:
+            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+    
+    # if no polarisation is detected, we only need compute XX and duplicate to YY     
+    else:
+        vis = 0j    
+        for source in srcs:
+            phase_factor = calculate_phase_factor(source, uvw_scaled)
+            vis += source.spectrum * phase_factor
+            
+        if ncorr == 2:
+            vis = np.stack([vis, vis], axis=2)
+        elif ncorr == 4:
+            vis = np.stack([vis, np.empty_like(vis), np.empty_like(vis), vis], axis=2)
+        else:
+            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+    
+    # add noise
+    add_noise(vis, noise)
+    # do addition/subtraction of model data
+    add_to_column(vis, mod_data, mode)
+    
+    return vis
 
 
 def check_var_axis(header, var: str):
@@ -449,11 +607,12 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     sparsity = 1 - (non_zero_intensities.size/intensities.size)
     
     return non_zero_intensities, non_zero_lm, sparsity, n_pix_l, n_pix_m, delta_l, delta_m
-
-
+    
+    
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, sparsity: bool, 
                         n_pix_l: Optional[int]=None, n_pix_m: Optional[int]=None, delta_l: Optional[int]=None, 
-                        delta_m: Optional[int]=None, tol: Optional[float]=1e-9, nthreads: Optional[int]=1):
+                        delta_m: Optional[int]=None, tol: Optional[float]=1e-9, nthreads: Optional[int]=1,
+                        mode: Optional[str] = None, mod_data: Optional[np.ndarray] = None, noise: Optional[float] = None):
     """
     Augmented version of im_to_vis
     Args:
@@ -485,7 +644,13 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
             vis[:, :, corr] = fft_im_to_vis(uvw, chan_freqs, image[corr], freq_bin_idx, freq_bin_counts, delta_l, 
                                             celly=delta_m, epsilon=tol, nthreads=nthreads)
     
+    # add noise
+    add_noise(vis, noise)
+    # do addition/subtraction of model data
+    add_to_column(vis, mod_data, mode)
+    
     return vis
+
 
 def compute_brightness_matrix(spectrum: np.ndarray, elements: str, basis: str):
     """
@@ -514,154 +679,3 @@ def compute_brightness_matrix(spectrum: np.ndarray, elements: str, basis: str):
                 spectrum[order[0], :] - spectrum[order[1], :])
     else:
         raise ValueError(f"Unrecognised elements '{elements}'. Use 'diagonal' or 'all'.")
-
-
-def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str):
-    """
-    Computes visibilities
-
-    Args:
-        srcs (list):                List of Source objects
-        uvw (numpy.ndarray):        Array of shape (3, nrows) containing the UVW coordinates
-        freqs (numpy.ndarray):      Array of shape (nchan,) containing the frequencies
-        ncorr (int):                Number of correlations
-        polarisation (bool):        True if polarisation information is present, False otherwise
-        basis (str):                Polarisation basis ("linear" or "circular")
-        mod_data (numpy.ndarray):   Array of shape (nrows, nchan, ncorr) containing the model data 
-            to/from which computed visibilities should be added/subtracted
-        noise (float):              RMS noise
-        subtract (bool):            True if visibilities should be subtracted from the model data, False otherwise
-
-    Returns:
-        vis (numpy.ndarray):        Visibility array of shape (nrows, nchan, ncorr)
-    """
-
-    wavs = 2.99e8 / freqs
-    uvw_scaled = uvw.T[...,np.newaxis] / wavs
-    
-    # helper function to calculate phase factor
-    def calculate_phase_factor(source, uvw_scaled):
-        el, em = source.l, source.m
-        n_term = np.sqrt(1 - el*el - em*em) - 1
-        arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
-        
-        if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-            # point source
-            return np.exp(-2 * np.pi * 1j * arg)
-        else:
-            # extended source
-            ell = source.emaj * np.sin(source.pa)
-            emm = source.emaj * np.cos(source.pa)
-            ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
-            
-            fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
-            fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
-            
-            shape_phase = fu1 * fu1 + fv1 * fv1
-            return np.exp(-2 *np.pi * 1j * arg - shape_phase)
-    
-    # if polarisation is detected, we need to compute different correlations separately
-    if polarisation:
-        xx, yy = 0j, 0j
-        if ncorr==2: # if ncorr is 2, we only need compute XX and YY correlations
-            for source in srcs:
-                phase_factor = calculate_phase_factor(source, uvw_scaled)
-                source_xx, source_yy = compute_brightness_matrix(source.spectrum, 'diagonal', basis)
-                xx += source_xx * phase_factor
-                yy += source_yy * phase_factor
-                
-            vis = np.stack([xx, yy], axis=2)
-            
-        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
-            xy, yx = 0j, 0j
-            for source in srcs:
-                phase_factor = calculate_phase_factor(source, uvw_scaled)
-                source_xx, source_xy, source_yx, source_yy = compute_brightness_matrix(source.spectrum, 'all', basis)
-                xx += source_xx * phase_factor
-                xy += source_xy * phase_factor
-                yx += source_yx * phase_factor
-                yy += source_yy * phase_factor
-            
-            vis = np.stack([xx, xy, yx, yy], axis=2)
-        
-        else:
-            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
-    
-    # if no polarisation is detected, we only need compute XX and duplicate to YY     
-    else:
-        vis = 0j    
-        for source in srcs:
-            phase_factor = calculate_phase_factor(source, uvw_scaled)
-            vis += source.spectrum * phase_factor
-            
-        if ncorr == 2:
-            vis = np.stack([vis, vis], axis=2)
-        elif ncorr == 4:
-            vis = np.stack([vis, np.empty_like(vis), np.empty_like(vis), vis], axis=2)
-        else:
-            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
-    
-    add_noise(vis, noise)
-    
-    
-    return vis
-
-
-def add_noise(vis, noise):
-    if noise:
-        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
-    else:
-        pass
-
-def add_to_column(vis, mod_data, mode):
-    if mode in ['subtract', ]
-    vis = mod_data - vis if mode == 'subtract' else vis + mod_data
-    return vis
-
-
-def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, sefd: float, input_column: str):
-    """
-    Reads MS info
-    Args:
-        ms: MS file
-        spw_id: spectral window ID
-        field_id: field ID
-        chunks: dask chunking strategy
-        sefd: system equivalent flux density; used if return_noise is True
-        input_column: whether to read a column for manipulation
-    Returns:
-        ms_dsl: xarray dataset list
-        ra0: RA of phase-tracking centre in radians
-        dec0: Dec of phase-tracking centre in radians
-        chan_freqs: MS channel frequencies
-        nrows: number of rows
-        nchan: number of channels
-        ncorr: number of correlations
-        noise: RMS noise
-        input_column_data: data from input column
-    """
-    ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks=chunks)
-    spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
-    field_ds = xds_from_table(f"{ms}::FIELD")[0]
-    
-    radec0 = field_ds.PHASE_DIR.data[field_id].compute()
-    ra0, dec0 = radec0[0][0], radec0[0][1]
-    chan_freqs = spw_ds.CHAN_FREQ.data[spw_id].compute()
-    nrow, nchan, ncorr = ms_dsl[0].DATA.data.shape
-    
-    df = spw_ds.CHAN_WIDTH.data[spw_id][0].compute()
-    
-    if sefd:
-        dt = ms_dsl[0].EXPOSURE.data[0].compute()
-        noise = sefd / np.sqrt(2*dt*df)
-    else:
-        noise = None
-        
-    if input_column:
-        input_column_data =  getattr(ms_dsl[0], input_column).data
-        input_column_dims = ("row", "chan", "corr")
-    else:
-        input_column_data = None
-        input_column_dims = None
-    
-    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, df, ncorr, noise, input_column_data, input_column_dims
