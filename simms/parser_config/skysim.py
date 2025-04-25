@@ -13,7 +13,9 @@ from simms.skymodel.skymods import (
     makesources, 
     computevis,
     process_fits_skymodel,
-    augmented_im_to_vis
+    augmented_im_to_vis,
+    add_to_column,
+    add_noise
 )
 import numpy as np
 from tqdm.dask import TqdmCallback
@@ -144,9 +146,6 @@ def runit(**kwargs):
                                 freqs, ("chan",),
                                 ncorr, None,
                                 polarisation, None,
-                                incol, None,
-                                noise, None,
-                                opts.mode == "subtract", None,
                                 new_axes={"corr": ncorr},
                                 dtype=ds.DATA.data.dtype,
                                 concatenate=True,
@@ -187,7 +186,7 @@ def runit(**kwargs):
         image, lm, sparsity, n_pix_l, n_pix_m, delta_l, delta_m = process_fits_skymodel(fs, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
         
         allvis = []
-        subtract = opts.mode == "subtract"
+    
         for ds in ms_dsl:
             simvis = da.blockwise(
                 augmented_im_to_vis, ("row", "chan", "corr"),
@@ -200,9 +199,6 @@ def runit(**kwargs):
                 n_pix_m = n_pix_m, 
                 delta_l = delta_l,
                 delta_m = delta_m,
-                subtract = opts.mode == "subtract",
-                **({"mod_data": incol, "mod_data_axes": incol_dims} if incol is not None else {}),
-                noise = noise,
                 tol=float(opts.pixel_tol),
                 dtype=ds.DATA.data.dtype,
                 concatenate=True
@@ -210,10 +206,21 @@ def runit(**kwargs):
             
             allvis.append(simvis)
         
-        
+      
     else:
         raise ParameterError("No sky model specified. Please provide either a catalogue or a FITS sky model.")
-                        
+
+    if opts.noise or opts.mode:
+        with TqdmCallback(desc="compute visibilities"):
+            allvis = da.compute(*allvis)
+            allvis = np.concatenate(allvis, axis=0)
+
+        if opts.noise:
+            allvis = add_noise(allvis, opts.noise)
+        
+        if opts.mode:
+            allvis = add_to_column(allvis, incol, opts.mode)
+
     writes = []
     for i, ds in enumerate(ms_dsl):
         ms_dsl[i] = ds.assign(**{

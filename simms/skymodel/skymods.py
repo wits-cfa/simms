@@ -452,8 +452,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
 
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, sparsity: bool, 
                         n_pix_l: Optional[int]=None, n_pix_m: Optional[int]=None, delta_l: Optional[int]=None, 
-                        delta_m: Optional[int]=None, subtract: Optional[bool]=False, mod_data: Optional[np.ndarray]=None,
-                        noise: Optional[float]=None, tol: Optional[float]=1e-9, nthreads: Optional[int]=1):
+                        delta_m: Optional[int]=None, tol: Optional[float]=1e-9, nthreads: Optional[int]=1):
     """
     Augmented version of im_to_vis
     Args:
@@ -484,17 +483,8 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
         for corr in image.shape[2]:
             vis[:, :, corr] = fft_im_to_vis(uvw, chan_freqs, image[corr], freq_bin_idx, freq_bin_counts, delta_l, 
                                             celly=delta_m, epsilon=tol, nthreads=nthreads)
-        
-    # add noise
-    if noise:
-        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
     
-    # subtract visibilities
-    if mod_data:
-        vis = vis - mod_data if subtract else vis + mod_data
-        
     return vis
-
 
 def compute_brightness_matrix(spectrum: np.ndarray, elements: str, basis: str):
     """
@@ -525,8 +515,7 @@ def compute_brightness_matrix(spectrum: np.ndarray, elements: str, basis: str):
         raise ValueError(f"Unrecognised elements '{elements}'. Use 'diagonal' or 'all'.")
 
 
-def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str, 
-               mod_data: Optional[np.ndarray]=None, noise: Optional[float]=None, subtract: Optional[bool]=False):
+def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str):
     """
     Computes visibilities
 
@@ -611,12 +600,16 @@ def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: in
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
     
-    if noise:
-        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
-    
-    if isinstance(mod_data, np.ndarray):
-        vis = vis - mod_data if subtract else vis + mod_data
-        
+    return vis
+
+
+def add_noise(vis, noise):
+    vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
+    return vis
+
+
+def add_to_column(vis, mod_data, mode):
+    vis = mod_data - vis if mode == 'subtract' else vis + mod_data
     return vis
 
 
