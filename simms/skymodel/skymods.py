@@ -3,6 +3,7 @@ from scabha.basetypes import File, MS
 from simms import BIN, get_logger
 from simms.utilities import FITSSkymodelError as SkymodelError
 from simms.skymodel.source_factory import singlegauss_1d, contspec
+from simms.skymodel.converters import radec2lm
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from astropy.io import fits
@@ -82,7 +83,7 @@ def add_noise(vis, noise):
     
 
 def add_to_column(vis, mod_data, mode):
-    if mode in ['subtract', 'add']
+    if mode in ['subtract', 'add']:
         vis = mod_data - vis if mode == 'subtract' else vis + mod_data
     else:
         pass
@@ -297,92 +298,52 @@ def check_var_axis(header, var: str):
     raise SkymodelError(f"Could not find axis with CTYPE {var.upper()} or starting with CTYPE {var.upper()}")
 
 
-# def check_data_axis_ordering(header, required_axes: List[str]):
-#     """
-#     Finds the indices of the required axes in the data array
-#     Args:
-#         - header: FITS header
-#         - required_axes: list of required axes
-#     Returns:
-#         - data_axis_indices: array of axis indices in the data array in order of required_axes
-#     """
-#     naxis = header['NAXIS']
-#     data_axis_indices = {}
-    
-#     for axis in required_axes:
-#         axis_num = check_var_axis(header, axis)
-#         data_axis_indices[axis] = naxis - int(axis_num)
-    
-#     return data_axis_indices
-
-
-# def check_header_axis_ordering(header, required_axes: List[str]):
-#     """
-#     Finds the indices of the required axes in the header
-#     Args:
-#         - header: FITS header
-#         - required_axes: list of required axes
-#     """
-#     header_axis_indices = np.array([], dtype=int)
-    
-#     for axis in required_axes:
-#         axis_num = check_var_axis(header, axis)
-#         header_axis_indices = np.append(header_axis_indices, int(axis_num))
-        
-#     return header_axis_indices
-
-
-def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, spectral_axis: Optional[bool]=False):
+def compute_lm_coords(header, phase_centre: np.ndarray, img_dims: np.ndarray):
     """
-    Calculates pixel (l, m) coordinates
+    Calculates pixel (RA, Dec) coordinates
     Args:
-        wcs (WCS): WCS object (axes ordering: longitude, latitude, spectral)
+        header (FITS header): FITS header
         phase_centre (np.ndarray): phase centre coordinates
-        ra (np.ndarray): RA coordinates of pixels
-        dec (np.ndarray): Dec coordinates of pixels
-        img_dims (np.ndarray): image l and m dimensions
-        spectral_axis (bool): True if spectral axis is present, False otherwise
-    Returns:
-        l (np.ndarray): l coordinates
-        m (np.ndarray): m coordinates
+        img_dims (np.ndarray): image x and y dimension sizes
     """
-    ra0, dec0 = phase_centre
-    n_pix_l, n_pix_m = img_dims
-    x_index, y_index = wcs.wcs.lng, wcs.wcs.lat
-    
-    if wcs.wcs.radesys:
-        frame = wcs.wcs.radesys.lower() # get frame from header
-    else:
-        log.warning("No RA/Dec system found in header. Assuming ICRS.")
-        frame = 'icrs'
-        
-    pc = SkyCoord(ra0, dec0, frame=frame, unit='rad') # create SkyCoord object for phase centre
+    ra_axis = check_var_axis(header, "RA")
+    dec_axis = check_var_axis(header, "DEC")
     
     # get image dimensions
-    if spectral_axis:
-        x_pix_0, y_pix_0, _ = wcs.world_to_pixel_values(pc.ra, pc.dec, 0) # get pixel coordinates of phase centre
-    else:
-        x_pix_0, y_pix_0 = wcs.world_to_pixel_values(pc.ra, pc.dec) # get pixel coordinates of phase centre
-
-    # get pixel scale
-    delta_l, delta_m = wcs.wcs.cdelt[x_index], wcs.wcs.cdelt[y_index]
+    n_ra = img_dims[0]
+    n_dec = img_dims[1]
     
-    if wcs.wcs.cunit[x_index] == wcs.wcs.cunit[y_index]:
-        if wcs.wcs.cunit[x_index] in ["RAD", "rad"] and wcs.wcs.cunit[y_index] in ["RAD", "rad"]:
+    # get pixel scale
+    delta_ra = header[f"CDELT{ra_axis}"]
+    delta_dec = header[f"CDELT{dec_axis}"]
+    
+    # get reference pixel info
+    refpix_ra = header[f"CRPIX{ra_axis}"]
+    refpix_dec = header[f"CRPIX{dec_axis}"]
+    ref_ra = header[f"CRVAL{ra_axis}"]
+    ref_dec = header[f"CRVAL{dec_axis}"]
+    
+    if header[f"CUNIT{ra_axis}"] == header[f"CUNIT{dec_axis}"]:
+        if header[f"CUNIT{ra_axis}"] in ["DEG", "deg"]:
+            ref_ra = np.deg2rad(ref_ra)
+            ref_dec = np.deg2rad(ref_dec)
+            delta_ra = np.deg2rad(delta_ra)
+            delta_dec = np.deg2rad(delta_dec)
+        elif header[f"CUNIT{ra_axis}"] in ["RAD", "rad"]:
             pass
-        elif wcs.wcs.cunit[x_index] in ["DEG", "deg"] and wcs.wcs.cunit[y_index] in ["DEG", "deg"]:
-            delta_l = np.deg2rad(delta_l)
-            delta_m = np.deg2rad(delta_m)
         else:
-            raise SkymodelError("RA and Dec units must be in radians or degrees")
+            raise SkymodelError("RA and Dec units must be in degrees or radians")
     else:
         raise SkymodelError("RA and Dec units must be the same")
     
-    # calculate l, m coordinates
-    l_coords = np.sort(np.arange(1 - x_pix_0, 1 - x_pix_0 + n_pix_l) * delta_l)
-    m_coords = np.arange(1 - y_pix_0, 1 - y_pix_0 + n_pix_m) * delta_m    
+    # calculate pixel (RA, Dec) coordinates
+    ra_coords = ref_ra + np.arange(1 - refpix_ra, 1 - refpix_ra + n_ra) * delta_ra
+    dec_coords = ref_dec + np.arange(1 - refpix_dec, 1 - refpix_dec + n_dec) * delta_dec
     
-    return l_coords, m_coords, delta_l, delta_m
+    # calculate pixel (l, m) coordinates
+    l_coords, m_coords = radec2lm(phase_centre, ra_coords, dec_coords)
+    
+    return l_coords, m_coords, delta_ra, delta_dec
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
@@ -408,6 +369,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     if not isinstance(input_fitsimages, list):
         input_fitsimages = [input_fitsimages]
     
+    phase_centre = np.array([ra0, dec0])
     nchan = chan_freqs.size
     
     model_cubes = []
@@ -477,7 +439,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             # if spectral axis is not singleton
             if n_freqs > 1:
                 # construct frequency axis
-                freqs = ref_freq + np.arange(1 - refpix_nu, 1 - refpix_nu + n_freqs) * fits_delta_nu # calculate frequencies
+                freqs = ref_freq + np.arange(1 - refpix_nu, 1 - refpix_nu + n_freqs) * fits_delta_nu
                 
                 if ms_start_freq < freqs[0] or ms_end_freq > freqs[-1]:
                     raise SkymodelError("Some MS frequencies are out of bounds of FITS image frequencies. "
@@ -490,7 +452,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 n_pix_l, n_pix_m, _ = skymodel.shape
                 
                 # calculate pixel (l, m) coordinates
-                l_coords, m_coords, delta_l, delta_m = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_l, n_pix_m]), spectral_axis=True)
+                l_coords, m_coords, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, np.array([n_pix_l, n_pix_m]))
                 
                 # reproject FITS cube to MS frequencies
                 if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
@@ -516,7 +478,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 n_pix_l, n_pix_m = skymodel.shape
                 
                 # calculate pixel (l, m) coordinates
-                l_coords, m_coords, delta_l, delta_m = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_l, n_pix_m]), spectral_axis=True)
+                l_coords, m_coords, delta_ra, delta_dec = compute_lm_coords(wcs, phase_centre, np.array([n_pix_l, n_pix_m]))
 
                 freqs = chan_freqs
                 # repeat the image along the frequency axis
@@ -531,7 +493,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             n_pix_l, n_pix_m = skymodel.shape
             
             # calculate pixel (l, m) coordinates
-            l_coords, m_coords, delta_l, delta_m = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_l, n_pix_m]))
+            l_coords, m_coords, delta_ra, delta_dec = compute_lm_coords(wcs, phase_centre, np.array([n_pix_l, n_pix_m]))
         
             freqs = chan_freqs
             # repeat the image along the frequency axis
@@ -607,12 +569,12 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     # TODO: decide whether image is sparse enough for DFT, else use FFT
     sparsity = 1 - (non_zero_intensities.size/intensities.size)
     
-    return non_zero_intensities, non_zero_lm, sparsity, n_pix_l, n_pix_m, delta_l, delta_m
+    return non_zero_intensities, non_zero_lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec
     
     
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, sparsity: bool,
                         mode: Union[None, str], mod_data: Union[None, np.ndarray], n_pix_l: Optional[int]=None, 
-                        n_pix_m: Optional[int]=None, delta_l: Optional[int]=None, delta_m: Optional[int]=None, 
+                        n_pix_m: Optional[int]=None, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None, 
                         tol: Optional[float]=1e-9, nthreads: Optional[int]=1, 
                         noise: Optional[float] = None):
     """
@@ -643,8 +605,8 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
         freq_bin_counts = np.ones(nchan)
         # predict visibilities
         for corr in image.shape[2]:
-            vis[:, :, corr] = fft_im_to_vis(uvw, chan_freqs, image[corr], freq_bin_idx, freq_bin_counts, delta_l, 
-                                            celly=delta_m, epsilon=tol, nthreads=nthreads)
+            vis[:, :, corr] = fft_im_to_vis(uvw, chan_freqs, image[corr], freq_bin_idx, freq_bin_counts, delta_ra, 
+                                            celly=delta_dec, epsilon=tol, nthreads=nthreads)
     
     # add noise
     add_noise(vis, noise)
