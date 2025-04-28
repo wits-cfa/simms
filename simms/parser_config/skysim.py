@@ -187,7 +187,7 @@ def runit(**kwargs):
                                                                                         )
         
         # process FITS sky model
-        image, lm, sparsity, n_pix_l, n_pix_m, delta_l, delta_m = process_fits_skymodel(fs, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
+        image, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(fs, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
         
         allvis = []
     
@@ -204,8 +204,8 @@ def runit(**kwargs):
                 noise=noise,
                 n_pix_l = n_pix_l,
                 n_pix_m = n_pix_m, 
-                delta_l = delta_l,
-                delta_m = delta_m,
+                delta_ra = delta_ra,
+                delta_dec = delta_dec,
                 tol=float(opts.pixel_tol),
                 dtype=ds.DATA.data.dtype,
                 concatenate=True

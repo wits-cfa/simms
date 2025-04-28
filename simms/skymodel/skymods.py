@@ -3,7 +3,7 @@ from scabha.basetypes import File, MS
 from simms import BIN, get_logger
 from simms.utilities import FITSSkymodelError as SkymodelError
 from simms.skymodel.source_factory import singlegauss_1d, contspec
-from simms.skymodel.converters import radec2lm
+from numba import njit, prange
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from astropy.io import fits
@@ -102,7 +102,7 @@ class Source:
         self.pa = convert2rad(pa)
 
     def set_lm(self, ra0, dec0):
-        self.l, self.m = radec2lm(np.array([ra0, dec0]), self.ra, self.dec)
+        self.l, self.m = radec2lm(ra0, dec0, self.ra, self.dec)
     
     @property
     def is_point(self):
@@ -298,7 +298,24 @@ def check_var_axis(header, var: str):
     raise SkymodelError(f"Could not find axis with CTYPE {var.upper()} or starting with CTYPE {var.upper()}")
 
 
-def compute_lm_coords(header, phase_centre: np.ndarray, img_dims: np.ndarray):
+@njit(parallel=True)
+def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.ndarray):
+    """
+    Calculates pixel (l, m) coordinates. Returns sth akin to a 2D meshgrid
+    """
+    n_pix_l = len(ra_coords)
+    n_pix_m = len(dec_coords)
+    lm = np.zeros((n_pix_l, n_pix_m, 2), dtype=np.float64)
+    for i in prange(len(ra_coords)):
+        for j in range(len(dec_coords)):
+            l, m = radec2lm(ra0, dec0, ra_coords[i], dec_coords[j])
+            lm[i, j, 0] = l
+            lm[i, j, 1] = m
+    
+    return lm.reshape(n_pix_l * n_pix_m, 2)
+
+
+def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float):
     """
     Calculates pixel (RA, Dec) coordinates
     Args:
@@ -308,10 +325,6 @@ def compute_lm_coords(header, phase_centre: np.ndarray, img_dims: np.ndarray):
     """
     ra_axis = check_var_axis(header, "RA")
     dec_axis = check_var_axis(header, "DEC")
-    
-    # get image dimensions
-    n_ra = img_dims[0]
-    n_dec = img_dims[1]
     
     # get pixel scale
     delta_ra = header[f"CDELT{ra_axis}"]
@@ -341,9 +354,10 @@ def compute_lm_coords(header, phase_centre: np.ndarray, img_dims: np.ndarray):
     dec_coords = ref_dec + np.arange(1 - refpix_dec, 1 - refpix_dec + n_dec) * delta_dec
     
     # calculate pixel (l, m) coordinates
-    l_coords, m_coords = radec2lm(phase_centre, ra_coords, dec_coords)
+    ra0, dec0 = phase_centre
+    lm = pix_radec2lm(ra0, dec0, ra_coords, dec_coords)
     
-    return l_coords, m_coords, delta_ra, delta_dec
+    return lm, delta_ra, delta_dec
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
@@ -452,7 +466,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 n_pix_l, n_pix_m, _ = skymodel.shape
                 
                 # calculate pixel (l, m) coordinates
-                l_coords, m_coords, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, np.array([n_pix_l, n_pix_m]))
+                lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m)
                 
                 # reproject FITS cube to MS frequencies
                 if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
@@ -478,7 +492,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 n_pix_l, n_pix_m = skymodel.shape
                 
                 # calculate pixel (l, m) coordinates
-                l_coords, m_coords, delta_ra, delta_dec = compute_lm_coords(wcs, phase_centre, np.array([n_pix_l, n_pix_m]))
+                lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m)
 
                 freqs = chan_freqs
                 # repeat the image along the frequency axis
@@ -493,7 +507,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             n_pix_l, n_pix_m = skymodel.shape
             
             # calculate pixel (l, m) coordinates
-            l_coords, m_coords, delta_ra, delta_dec = compute_lm_coords(wcs, phase_centre, np.array([n_pix_l, n_pix_m]))
+            lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m)
         
             freqs = chan_freqs
             # repeat the image along the frequency axis
@@ -554,11 +568,6 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         
     intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr) # reshape image for compatibility with im_to_vis
     
-    # set up coordinates for DFT
-    # ll, mm = np.meshgrid(l_coords, m_coords)
-    ll, mm = np.meshgrid(m_coords, l_coords)
-    lm = np.vstack((ll.ravel(), mm.ravel())).T
-    
     # get only pixels with brightness > tol
     tol_mask = np.any(np.abs(intensities) > tol, axis=(1, 2))
     non_zero_intensities = intensities[tol_mask]
@@ -566,7 +575,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         raise SkymodelError("No pixels with brightness > tol found in FITS sky model.")
     non_zero_lm = lm[tol_mask]
     
-    # TODO: decide whether image is sparse enough for DFT, else use FFT
+    # decide whether image is sparse enough for DFT
     sparsity = 1 - (non_zero_intensities.size/intensities.size)
     
     return non_zero_intensities, non_zero_lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec
@@ -593,10 +602,13 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
     """
     _, nchan, ncorr = image.shape
     
+    # if sparse, use DFT
     if sparsity >= 0.8:
         log.info("Image is sparse enough for DFT. Using DFT.")
         # predict visibilities
         vis = dft_im_to_vis(image, uvw, lm, chan_freqs)
+    
+    # else, use FFT
     else:
         log.info("Image is too dense for DFT. Using FFT.")
         image = image.reshape(ncorr, nchan, n_pix_l, n_pix_m)
