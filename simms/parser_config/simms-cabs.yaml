@@ -92,6 +92,10 @@ cabs:
         metavar: '[TIME ZONE,][DD/MM/YYYY,],HH:MM:SS'
         dtype: str
         abbreviation: st
+      startha:
+        info: Hour angle at start of observation. Can be used instead of date.
+        dtype: float
+        abbreviation: sha
       dtime:
         info: Integration/exposure time in seconds.
         dtype: float

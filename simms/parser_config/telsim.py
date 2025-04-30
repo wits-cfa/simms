@@ -39,7 +39,8 @@ def runit(**kwargs):
     rowchunks = opts.rowchunks
     sefd = opts.sefd
     column = opts.column
+    startha = opts.startha
     generate_ms.create_ms(msname, telescope, direction, dtime,
                           ntimes, startfreq, dfreq, nchan,
                           correlations, rowchunks,
-                          sefd, column, starttime)
+                          sefd, column, starttime,startha)

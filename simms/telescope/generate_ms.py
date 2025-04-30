@@ -2,7 +2,6 @@ import os
 import shutil
 from itertools import combinations
 from typing import List, Union
-
 import dask
 import dask.array as da
 import daskms
@@ -49,6 +48,7 @@ def create_ms(
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
     horizon_limit: Union[float, str] = None,
+    antenna_limit: Union[float,str] = None
 ):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
