@@ -71,7 +71,7 @@ def convert2float(string, null_value=None):
     return numfloat
 
 @njit
-def radec2lm(ra0, dec0, ra: Union[float, np.ndarray], dec: Union[float, np.ndarray]):
+def radec2lm(ra0: float, dec0: float, ra: Union[float, np.ndarray], dec: Union[float, np.ndarray]):
     """
     Convert RA and Dec to l and m coordinates.
     Args:

@@ -106,7 +106,6 @@ class Source:
     
     @property
     def is_point(self):
-        
         return self.emaj in  ('null',None) and self.emin in (None, 'null') 
 
             
@@ -315,6 +314,7 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
     return lm.reshape(n_pix_l * n_pix_m, 2)
 
 
+# TODO: consider assuming degrees for RA and Dec if no units are given
 def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float):
     """
     Calculates pixel (RA, Dec) coordinates
@@ -350,14 +350,18 @@ def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: floa
         raise SkymodelError("RA and Dec units must be the same")
     
     # calculate pixel (RA, Dec) coordinates
-    ra_coords = ref_ra + np.arange(1 - refpix_ra, 1 - refpix_ra + n_ra) * delta_ra
-    dec_coords = ref_dec + np.arange(1 - refpix_dec, 1 - refpix_dec + n_dec) * delta_dec
+    ra_coords = ref_ra + (np.arange(1, n_ra + 1) - refpix_ra)  * delta_ra
+    dec_coords = ref_dec + (np.arange(1, n_dec + 1) - refpix_dec) * delta_dec
     
     # calculate pixel (l, m) coordinates
     ra0, dec0 = phase_centre
     lm = pix_radec2lm(ra0, dec0, ra_coords, dec_coords)
     
     return lm, delta_ra, delta_dec
+
+
+def interpolate_fits_cube(lm: np.ndarray, chan_freqs: np.ndarray, skymodel):
+    pass
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
@@ -453,9 +457,9 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             # if spectral axis is not singleton
             if n_freqs > 1:
                 # construct frequency axis
-                freqs = ref_freq + np.arange(1 - refpix_nu, 1 - refpix_nu + n_freqs) * fits_delta_nu
+                freqs = ref_freq + (np.arange(1, n_freqs + 1) - refpix_nu) * fits_delta_nu
                 
-                if ms_start_freq < freqs[0] or ms_end_freq > freqs[-1]:
+                if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
                     raise SkymodelError("Some MS frequencies are out of bounds of FITS image frequencies. "
                                         "Cannot interpolate FITS image onto MS frequency grid.")
                 
@@ -465,17 +469,11 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 # get image shape
                 n_pix_l, n_pix_m, _ = skymodel.shape
                 
-                # calculate pixel (l, m) coordinates
-                lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m)
-                
                 # reproject FITS cube to MS frequencies
+                # TODO: implement interpolation of FITS cube to MS channel frequencies
                 if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
-                    log.warning("Interpolating FITS cube onto MS channel frequency grid. This uses a lot of memory.")
-                    # interpolate FITS cube
-                    fits_interp = RegularGridInterpolator((l_coords, m_coords, freqs), skymodel)
-                    ll, mm, vv = np.meshgrid(l_coords, m_coords, chan_freqs, indexing="ij")
-                    lmv = np.vstack((ll.ravel(), mm.ravel(), vv.ravel())).T
-                    model_cube = fits_interp(lmv).reshape(n_pix_l, n_pix_m, nchan)
+                    raise SkymodelError("Interpolation of FITS cube to MS channel frequencies not implemented yet.")
+                    
                 else:
                     model_cube = skymodel
             
@@ -490,9 +488,6 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 
                 # get image shape
                 n_pix_l, n_pix_m = skymodel.shape
-                
-                # calculate pixel (l, m) coordinates
-                lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m)
 
                 freqs = chan_freqs
                 # repeat the image along the frequency axis
@@ -504,10 +499,9 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             wcs = WCS(header, naxis=['longitude', 'latitude'])
             # reshape FITS data to (n_pix_l, n_pix_m)
             skymodel = np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec")))
-            n_pix_l, n_pix_m = skymodel.shape
             
-            # calculate pixel (l, m) coordinates
-            lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m)
+            # get image shape
+            n_pix_l, n_pix_m = skymodel.shape
         
             freqs = chan_freqs
             # repeat the image along the frequency axis
@@ -568,6 +562,9 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         
     intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr) # reshape image for compatibility with im_to_vis
     
+    # calculate pixel (l, m) coordinates
+    lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m)
+    
     # get only pixels with brightness > tol
     tol_mask = np.any(np.abs(intensities) > tol, axis=(1, 2))
     non_zero_intensities = intensities[tol_mask]
@@ -581,7 +578,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     return non_zero_intensities, non_zero_lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec
     
     
-def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, sparsity: bool,
+def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, use_dft: bool,
                         mode: Union[None, str], mod_data: Union[None, np.ndarray], n_pix_l: Optional[int]=None, 
                         n_pix_m: Optional[int]=None, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None, 
                         tol: Optional[float]=1e-9, nthreads: Optional[int]=1, 
@@ -603,8 +600,7 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
     _, nchan, ncorr = image.shape
     
     # if sparse, use DFT
-    if sparsity >= 0.8:
-        log.info("Image is sparse enough for DFT. Using DFT.")
+    if use_dft:
         # predict visibilities
         vis = dft_im_to_vis(image, uvw, lm, chan_freqs)
     

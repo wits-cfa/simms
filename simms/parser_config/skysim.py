@@ -189,6 +189,12 @@ def runit(**kwargs):
         # process FITS sky model
         image, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(fs, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
         
+        if sparsity >= 0.8:
+            log.info("Image is sparse enough for DFT. Using DFT.")
+            use_dft = True
+        else:
+            log.info("Image is too dense for DFT. Using FFT.")
+            
         allvis = []
     
         for ds in ms_dsl:
@@ -198,7 +204,7 @@ def runit(**kwargs):
                 ds.UVW.data, ("row", "uvw"),
                 lm, ("npix", "lm"),
                 freqs, ("chan",), 
-                sparsity, None,
+                use_dft, None,
                 opts.mode, None,
                 incol, incol_dims,
                 noise=noise,
