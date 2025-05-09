@@ -184,7 +184,7 @@ def makesources(data, freqs, ra0, dec0):
     return sources
 
 
-def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str,
+def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str,
                 mode: Union[None, str], mod_data: Union[None, np.ndarray], noise: Optional[float] = None):
     """
     Computes visibilities
@@ -216,7 +216,7 @@ def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: in
         
         if source.emaj in [None, "null"] and source.emin in [None, "null"]:
             # point source
-            return np.exp(-2 * np.pi * 1j * arg)
+            return np.exp(2 * np.pi * 1j * arg)
         else:
             # extended source
             ell = source.emaj * np.sin(source.pa)
@@ -227,7 +227,7 @@ def computevis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: in
             fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
             
             shape_phase = fu1 * fu1 + fv1 * fv1
-            return np.exp(-2 *np.pi * 1j * arg - shape_phase)
+            return np.exp(2 *np.pi * 1j * arg - shape_phase)
     
     # if polarisation is detected, we need to compute different correlations separately
     if polarisation:
@@ -314,14 +314,14 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
     return lm.reshape(n_pix_l * n_pix_m, 2)
 
 
-# TODO: consider assuming degrees for RA and Dec if no units are given
-def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float):
+def compute_radec_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float):
     """
     Calculates pixel (RA, Dec) coordinates
     Args:
         header (FITS header): FITS header
         phase_centre (np.ndarray): phase centre coordinates
-        img_dims (np.ndarray): image x and y dimension sizes
+        n_ra (float): number of RA pixels
+        n_dec (float): number of Dec pixels
     """
     ra_axis = check_var_axis(header, "RA")
     dec_axis = check_var_axis(header, "DEC")
@@ -353,15 +353,23 @@ def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: floa
     ra_coords = ref_ra + (np.arange(1, n_ra + 1) - refpix_ra)  * delta_ra
     dec_coords = ref_dec + (np.arange(1, n_dec + 1) - refpix_dec) * delta_dec
     
+    return ra_coords, delta_ra, dec_coords, delta_dec
+
+
+# TODO: consider assuming degrees for RA and Dec if no units are given
+def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_coords: Optional[np.ndarray]=None,
+                      delta_ra: Optional[float]=None, dec_coords: Optional[np.ndarray]=None, delta_dec: Optional[float]=None):
+    """
+    Calculates pixel (l, m) coordinates
+    """
+    if not isinstance(ra_coords, np.ndarray) or not isinstance(dec_coords, np.ndarray):
+        ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, phase_centre, n_ra, n_dec)
+    
     # calculate pixel (l, m) coordinates
     ra0, dec0 = phase_centre
     lm = pix_radec2lm(ra0, dec0, ra_coords, dec_coords)
     
     return lm, delta_ra, delta_dec
-
-
-def interpolate_fits_cube(lm: np.ndarray, chan_freqs: np.ndarray, skymodel):
-    pass
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
@@ -391,6 +399,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     nchan = chan_freqs.size
     
     model_cubes = []
+    ra_coords, delta_ra, dec_coords, delta_dec = None, None, None, None
     for fits_image in input_fitsimages:
         # get header and data
         with fits.open(fits_image) as hdulist:
@@ -427,10 +436,10 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             
             skymodel = hdulist[0].data[tuple(data_slice)]
         
-        # if not wcs.has_celestial:
-        #     raise SkymodelError("FITS image does not have or has unrecognised celestial coordinates")
         # # TODO (Mika, Senkhosi): assume image in l-m coords already if no celestial coords
         # # Would this mean the lengths of CTYPE and CRVAL are not the same? Is that even possible?
+        if 'ra' not in dims or 'dec' not in dims:
+            raise SkymodelError("FITS image does not have or has unrecognised RA/Dec coordinates")
         
         # spectral axis exists
         if "freq" in dims:
@@ -472,7 +481,13 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 # reproject FITS cube to MS frequencies
                 # TODO: implement interpolation of FITS cube to MS channel frequencies
                 if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
-                    raise SkymodelError("Interpolation of FITS cube to MS channel frequencies not implemented yet.")
+                    # interpolate FITS cube
+                    log.warning("Interpolating FITS cube onto MS channel frequency grid. This uses a lot of memory.")
+                    ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, phase_centre, n_pix_l, n_pix_m)
+                    fits_interp = RegularGridInterpolator((ra_coords, dec_coords, freqs), skymodel)
+                    ra, dec, vv = np.meshgrid(ra_coords, dec_coords, chan_freqs, indexing="ij")
+                    radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
+                    model_cube = fits_interp(radecv).reshape(n_pix_l, n_pix_m, nchan)
                     
                 else:
                     model_cube = skymodel
@@ -563,7 +578,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr) # reshape image for compatibility with im_to_vis
     
     # calculate pixel (l, m) coordinates
-    lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m)
+    lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
     
     # get only pixels with brightness > tol
     tol_mask = np.any(np.abs(intensities) > tol, axis=(1, 2))
@@ -602,7 +617,7 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
     # if sparse, use DFT
     if use_dft:
         # predict visibilities
-        vis = dft_im_to_vis(image, uvw, lm, chan_freqs)
+        vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='casa')
     
     # else, use FFT
     else:

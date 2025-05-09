@@ -11,7 +11,7 @@ from simms.utilities import CatalogueError, isnummber, ParameterError
 from simms.skymodel.skymods import (
     read_ms, 
     makesources, 
-    computevis,
+    compute_vis,
     process_fits_skymodel,
     augmented_im_to_vis,
     add_to_column,
@@ -140,14 +140,14 @@ def runit(**kwargs):
             log.warning("Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
 
         for ds in ms_dsl:
-            simvis = da.blockwise(computevis, ("row", "chan", "corr"),
+            simvis = da.blockwise(compute_vis, ("row", "chan", "corr"),
                                 sources, ("source",),
                                 ds.UVW.data, ("row", "uvw"),
                                 freqs, ("chan",),
                                 ncorr, None,
                                 polarisation, None,
                                 opts.pol_basis, None,
-                                opts.mode,
+                                opts.mode, None,
                                 incol, incol_dims,
                                 noise=noise,
                                 new_axes={"corr": ncorr},
@@ -231,5 +231,5 @@ def runit(**kwargs):
     
         writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
         
-    with TqdmCallback(desc="Compute and write..."):
+    with TqdmCallback(desc="Computing and writing visibilities..."):
         da.compute(writes)

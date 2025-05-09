@@ -1,6 +1,6 @@
 import unittest
 import os
-from simms.skymodel.skymods import Source, Spectrum, computevis 
+from simms.skymodel.skymods import Source, Spectrum, compute_vis 
 from simms.telescope.array_utilities import Array
 import numpy as np
 
@@ -31,7 +31,7 @@ class TestComputeVis(unittest.TestCase):
         self.source.set_lm(self.source.ra, self.source.dec) # assuming the source is at phase centre
     
     
-    def test_computevis_stokes_I_only(self):
+    def test_compute_vis_stokes_I_only(self):
         """
         Test that it stills works when only Stokes I is provided.
         Validates:
@@ -60,7 +60,7 @@ class TestComputeVis(unittest.TestCase):
         sources = [self.source]
         
         ncorr = 2
-        vis = computevis(sources, self.uvw, self.freqs, ncorr, False)
+        vis = compute_vis(sources, self.uvw, self.freqs, ncorr, False, 'linear', None, None)
         
         nrow = self.uvw.shape[0]
         nchan = self.freqs.size
@@ -70,7 +70,7 @@ class TestComputeVis(unittest.TestCase):
         np.testing.assert_allclose(vis[:, :, 1], 1.0, atol=1e-6) # check that YY = I = 1
     
         ncorr = 4
-        vis = computevis(sources, self.uvw, self.freqs, ncorr, False)
+        vis = compute_vis(sources, self.uvw, self.freqs, ncorr, False, 'linear', None, None)
         
         self.assertEqual(vis.shape, (nrow, nchan, ncorr))
         np.testing.assert_allclose(vis[:, :, 0], 1.0, atol=1e-6) # check that XX = I = 1
@@ -79,9 +79,9 @@ class TestComputeVis(unittest.TestCase):
         np.testing.assert_allclose(vis[:, :, 3], 1.0, atol=1e-6) # check that YY = I = 1
         
     
-    def test_computevis_I_and_Q_2_corrs(self):
+    def test_compute_vis_I_and_Q_2_corrs(self):
         """
-        Test computevis with ncorr == 2 and only Stokes I and Q provided.
+        Test compute_vis with ncorr == 2 and only Stokes I and Q provided.
         Validates:
         - Output shape of visibilities
         - XX = I + Q
@@ -106,7 +106,7 @@ class TestComputeVis(unittest.TestCase):
         self.source.spectrum = spectrum.make_spectrum(self.freqs)
         sources = [self.source]
         
-        vis = computevis(sources, self.uvw, self.freqs, ncorr, True)
+        vis = compute_vis(sources, self.uvw, self.freqs, ncorr, True, 'linear', None, None)
         
         nrow = self.uvw.shape[0]
         nchan = self.freqs.size
@@ -116,9 +116,9 @@ class TestComputeVis(unittest.TestCase):
         np.testing.assert_allclose(vis[:, :, 1], 0.0, atol=1e-6) # check that YY = I - Q = 0
 
     
-    def test_computevis_I_and_Q_4_corrs(self):
+    def test_compute_vis_I_and_Q_4_corrs(self):
         """
-        Test computevis with ncorr == 4 and only Stokes I and Q provided.
+        Test compute_vis with ncorr == 4 and only Stokes I and Q provided.
         Validates:
         - Output shape of visibilities
         - XX = I + Q
@@ -145,7 +145,7 @@ class TestComputeVis(unittest.TestCase):
         self.source.spectrum = spectrum.make_spectrum(self.freqs)
         sources = [self.source]
         
-        vis = computevis(sources, self.uvw, self.freqs, ncorr, True)
+        vis = compute_vis(sources, self.uvw, self.freqs, ncorr, True, 'linear', None, None)
         
         nrow = self.uvw.shape[0]
         nchan = self.freqs.size
@@ -157,9 +157,9 @@ class TestComputeVis(unittest.TestCase):
         np.testing.assert_allclose(vis[:, :, 3], 0.0, atol=1e-6) # check that YY = I - Q = 0
         
     
-    def test_computevis_all_stokes_4_corrs(self):
+    def test_compute_vis_all_stokes_4_corrs(self):
         """
-        Test computevis with ncorr == 4 and Stokes I, Q, U and V provided.
+        Test compute_vis with ncorr == 4 and Stokes I, Q, U and V provided.
         Validates:
         - Output shape of visibilities
         - XX = I + Q
@@ -188,7 +188,7 @@ class TestComputeVis(unittest.TestCase):
         self.source.spectrum = spectrum.make_spectrum(self.freqs)
         sources = [self.source]
         
-        vis = computevis(sources, self.uvw, self.freqs, ncorr, True)
+        vis = compute_vis(sources, self.uvw, self.freqs, ncorr, True, 'linear', None, None)
         
         nrow = self.uvw.shape[0]
         nchan = self.freqs.size

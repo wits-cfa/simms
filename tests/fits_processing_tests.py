@@ -182,52 +182,52 @@ class TestFITSProcessing(unittest.TestCase):
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
 
-    # TODO: Uncomment this test when the frequency interpolation is implemented                
-    # def test_stokes_I_with_freq_interp_processing(self):
-    #     """
-    #     Tests if Stokes I only FITS file is processed correctly with frequencies not matching MS channel frequencies
-    #     Validates:
-    #         - output intensities shape
-    #         - output intensities values
-    #     """
+             
+    def test_stokes_I_with_freq_interp_processing(self):
+        """
+        Tests if Stokes I only FITS file is processed correctly with frequencies not matching MS channel frequencies
+        Validates:
+            - output intensities shape
+            - output intensities values
+        """
 
-    #     # we make the FITS frequencies [0.5e9, 1.5e9, 2.5e9, 3.5e9]
+        # we make the FITS frequencies [0.5e9, 1.5e9, 2.5e9, 3.5e9]
         
-    #     # create a FITS file with Stokes I only
-    #     wcs = WCS(naxis=3)
-    #     wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
-    #     wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, 1e9]) # pixel scale in deg
-    #     wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
-    #     wcs.wcs.crval = [0, 0, self.chan_freqs[0] - 0.5e9] # reference pixel RA and Dec in deg
+        # create a FITS file with Stokes I only
+        wcs = WCS(naxis=3)
+        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, 1e9]) # pixel scale in deg
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
+        wcs.wcs.crval = [0, 0, self.chan_freqs[0] - 0.5e9] # reference pixel RA and Dec in deg
         
-    #     # make header
-    #     header = wcs.to_header()
-    #     header['BUNIT'] = 'Jy'
+        # make header
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy'
         
-    #     # make image
-    #     image = np.zeros((4, self.img_size, self.img_size))
-    #     image[:, self.img_size//2, self.img_size//2] = 1.0
+        # make image
+        image = np.zeros((4, self.img_size, self.img_size))
+        image[:, self.img_size//2, self.img_size//2] = 1.0
         
-    #     # write to FITS file
-    #     hdu = fits.PrimaryHDU(image, header=header)
-    #     test_filename = f'test_{uuid.uuid4()}.fits'
-    #     self.test_files.append(test_filename)
-    #     hdu.writeto(test_filename, overwrite=True)
+        # write to FITS file
+        hdu = fits.PrimaryHDU(image, header=header)
+        test_filename = f'test_{uuid.uuid4()}.fits'
+        self.test_files.append(test_filename)
+        hdu.writeto(test_filename, overwrite=True)
         
-    #     log.setLevel(logging.ERROR) # suppress warning messages
-    #     # process the FITS file
-    #     intensities, _, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        log.setLevel(logging.ERROR) # suppress warning messages
+        # process the FITS file
+        intensities, _, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
-    #     # create expected intensities
-    #     expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
-    #     expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
-    #     expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
-    #     non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
-    #     expected_intensities = expected_intensities[non_zero_mask]
+        # create expected intensities
+        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
+        expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
+        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
         
-    #     # compare the intensities with the original image
-    #     assert intensities.shape == expected_intensities.shape
-    #     assert np.allclose(intensities, expected_intensities)
+        # compare the intensities with the original image
+        assert intensities.shape == expected_intensities.shape
+        assert np.allclose(intensities, expected_intensities)
         
         
     def test_stokes_I_processing_with_interp_bounds_error(self):
