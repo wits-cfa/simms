@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Union
 import ephem
 import numpy as np
+from astropy.time import Time
 from casacore.measures import measures
 from casacore import quanta as qa
 from casacore.measures import dq
@@ -59,7 +60,7 @@ class Array:
 
         else:
             fname = self.layout.get(self.layoutname)
-        
+        print(f"fname: {fname}")
         info = OmegaConf.load(fname)
         if vla:
             self.antlocations = np.array(info["antlocations"][self.layout])
@@ -204,9 +205,7 @@ class Array:
 
         # xyz coordinates of the array
         positions_global, _ = self.geodetic2global()
-        # with open("kat7.itrf.txt", 'w') as file:
-        #     line = f"{positions_global}"
-        #     file.write(line)
+        
 
 
         # get the array centre info
@@ -238,7 +237,7 @@ class Array:
         # ih0 -= (tot_ha + dt_ha)/2
         # h0 = np.linspace(0, tot_ha, ntimes) - ih0
         # print(f"{h0[::25]}, ih0:{ih0}  tot_ha:{np.rad2deg(tot_ha)/15}") 
-        from astropy.time import Time
+        
         if not start_time:
             date = datetime.now()
             start_time = date.strftime("%Y/%m/%d %H:%M:%S")
@@ -255,16 +254,26 @@ class Array:
 
         time_entries = np.arange(start_time_sec, start_time_sec+total_time, dtime)
         
-        ih0 = start_day.sidereal_time(kind="mean", longitude=f"{longitude}rad").rad - ra - np.pi
-
+        lst = start_day.sidereal_time(kind="mean", longitude=f"{longitude}rad")
+        
+        # import pdb; pdb.set_trace()
+        start_day_rads = start_day.to_value("mjd")%1 
+        start_day_rads *= 24*15*np.pi/180
+        offset = lst.to_value("rad")  - start_day_rads
+       
+        
+        ih0 = lst.rad
+        if ih0 > 0:
+            ih0 += np.pi
         
         total_time_rad = np.deg2rad(total_time/3600*15) 
-        h0 = np.linspace(ih0, ih0 + total_time_rad, ntimes) + dt_ha/2
-
+        h0 = ih0 - offset + np.linspace(-total_time_rad/2, total_time_rad/2, ntimes)
+        
+        
         
         
         # Transformation matrix
-        # import pdb; pdb.set_trace()
+        
         dec = np.ones(ntimes) * dec
         transform_matrix = np.array(
             [
