@@ -3,12 +3,15 @@ from scabha.basetypes import File, MS
 from simms import BIN, get_logger
 from simms.utilities import FITSSkymodelError as SkymodelError
 from simms.skymodel.source_factory import singlegauss_1d, contspec
+from numba import njit, prange
 import numpy as np
+from scipy.interpolate import RegularGridInterpolator
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from daskms import xds_from_ms, xds_from_table
-from africanus.dft import im_to_vis
+from africanus.dft import im_to_vis as dft_im_to_vis
+from africanus.gridding.wgridder import model as fft_im_to_vis
 from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
     convert2float, 
@@ -20,7 +23,70 @@ from simms.skymodel.converters import (
     radec2lm
 )
 
+
 log = get_logger(BIN.skysim)
+
+
+def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, sefd: float, input_column: str):
+    """
+    Reads MS info
+    Args:
+        ms: MS file
+        spw_id: spectral window ID
+        field_id: field ID
+        chunks: dask chunking strategy
+        sefd: system equivalent flux density; used if return_noise is True
+        input_column: whether to read a column for manipulation
+    Returns:
+        ms_dsl: xarray dataset list
+        ra0: RA of phase-tracking centre in radians
+        dec0: Dec of phase-tracking centre in radians
+        chan_freqs: MS channel frequencies
+        nrows: number of rows
+        nchan: number of channels
+        ncorr: number of correlations
+        noise: RMS noise
+        input_column_data: data from input column
+    """
+    ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks=chunks)
+    spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
+    field_ds = xds_from_table(f"{ms}::FIELD")[0]
+    
+    radec0 = field_ds.PHASE_DIR.data[field_id].compute()
+    ra0, dec0 = radec0[0][0], radec0[0][1]
+    chan_freqs = spw_ds.CHAN_FREQ.data[spw_id].compute()
+    nrow, nchan, ncorr = ms_dsl[0].DATA.data.shape
+    
+    df = spw_ds.CHAN_WIDTH.data[spw_id][0].compute()
+    
+    if sefd:
+        dt = ms_dsl[0].EXPOSURE.data[0].compute()
+        noise = sefd / np.sqrt(2*dt*df)
+    else:
+        noise = None
+        
+    if input_column:
+        input_column_data =  getattr(ms_dsl[0], input_column).data
+        input_column_dims = ("row", "chan", "corr")
+    else:
+        input_column_data = None
+        input_column_dims = None
+    
+    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, df, ncorr, noise, input_column_data, input_column_dims
+
+
+def add_noise(vis, noise):
+    if noise:
+        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
+    else:
+        pass
+    
+
+def add_to_column(vis, mod_data, mode):
+    if mode in ['subtract', 'add']:
+        vis = mod_data - vis if mode == 'subtract' else vis + mod_data
+    else:
+        pass
 
 
 class Source:
@@ -36,11 +102,10 @@ class Source:
         self.pa = convert2rad(pa)
 
     def set_lm(self, ra0, dec0):
-        self.l, self.m = radec2lm(np.array([ra0, dec0]), self.ra, self.dec)
+        self.l, self.m = radec2lm(ra0, dec0, self.ra, self.dec)
     
     @property
     def is_point(self):
-        
         return self.emaj in  ('null',None) and self.emin in (None, 'null') 
 
             
@@ -82,6 +147,7 @@ class Spectrum:
             
             return np.stack(spectrum, axis=0)
 
+
 def makesources(data, freqs, ra0, dec0):
     num_sources = len(data['name'][1])
     
@@ -118,6 +184,100 @@ def makesources(data, freqs, ra0, dec0):
     return sources
 
 
+def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str,
+                mode: Union[None, str], mod_data: Union[None, np.ndarray], noise: Optional[float] = None):
+    """
+    Computes visibilities
+
+    Args:
+        srcs (list):                List of Source objects
+        uvw (numpy.ndarray):        Array of shape (3, nrows) containing the UVW coordinates
+        freqs (numpy.ndarray):      Array of shape (nchan,) containing the frequencies
+        ncorr (int):                Number of correlations
+        polarisation (bool):        True if polarisation information is present, False otherwise
+        basis (str):                Polarisation basis ("linear" or "circular")
+        mod_data (numpy.ndarray):   Array of shape (nrows, nchan, ncorr) containing the model data 
+            to/from which computed visibilities should be added/subtracted
+        noise (float):              RMS noise
+        subtract (bool):            True if visibilities should be subtracted from the model data, False otherwise
+
+    Returns:
+        vis (numpy.ndarray):        Visibility array of shape (nrows, nchan, ncorr)
+    """
+
+    wavs = 2.99e8 / freqs
+    uvw_scaled = uvw.T[...,np.newaxis] / wavs
+    
+    # helper function to calculate phase factor
+    def calculate_phase_factor(source, uvw_scaled):
+        el, em = source.l, source.m
+        n_term = np.sqrt(1 - el*el - em*em) - 1
+        arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
+        
+        if source.emaj in [None, "null"] and source.emin in [None, "null"]:
+            # point source
+            return np.exp(2 * np.pi * 1j * arg)
+        else:
+            # extended source
+            ell = source.emaj * np.sin(source.pa)
+            emm = source.emaj * np.cos(source.pa)
+            ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
+            
+            fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
+            fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
+            
+            shape_phase = fu1 * fu1 + fv1 * fv1
+            return np.exp(2 *np.pi * 1j * arg - shape_phase)
+    
+    # if polarisation is detected, we need to compute different correlations separately
+    if polarisation:
+        xx, yy = 0j, 0j
+        if ncorr==2: # if ncorr is 2, we only need compute XX and YY correlations
+            for source in srcs:
+                phase_factor = calculate_phase_factor(source, uvw_scaled)
+                source_xx, source_yy = compute_brightness_matrix(source.spectrum, 'diagonal', basis)
+                xx += source_xx * phase_factor
+                yy += source_yy * phase_factor
+                
+            vis = np.stack([xx, yy], axis=2)
+            
+        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
+            xy, yx = 0j, 0j
+            for source in srcs:
+                phase_factor = calculate_phase_factor(source, uvw_scaled)
+                source_xx, source_xy, source_yx, source_yy = compute_brightness_matrix(source.spectrum, 'all', basis)
+                xx += source_xx * phase_factor
+                xy += source_xy * phase_factor
+                yx += source_yx * phase_factor
+                yy += source_yy * phase_factor
+            
+            vis = np.stack([xx, xy, yx, yy], axis=2)
+        
+        else:
+            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+    
+    # if no polarisation is detected, we only need compute XX and duplicate to YY     
+    else:
+        vis = 0j    
+        for source in srcs:
+            phase_factor = calculate_phase_factor(source, uvw_scaled)
+            vis += source.spectrum * phase_factor
+            
+        if ncorr == 2:
+            vis = np.stack([vis, vis], axis=2)
+        elif ncorr == 4:
+            vis = np.stack([vis, np.empty_like(vis), np.empty_like(vis), vis], axis=2)
+        else:
+            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+    
+    # add noise
+    add_noise(vis, noise)
+    # do addition/subtraction of model data
+    add_to_column(vis, mod_data, mode)
+    
+    return vis
+
+
 def check_var_axis(header, var: str):
     """
     Finds the axis number of the variable in the FITS header
@@ -137,111 +297,83 @@ def check_var_axis(header, var: str):
     raise SkymodelError(f"Could not find axis with CTYPE {var.upper()} or starting with CTYPE {var.upper()}")
 
 
-def check_data_axis_ordering(header, required_axes: List[str]):
+@njit(parallel=True)
+def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.ndarray):
     """
-    Finds the indices of the required axes in the data array
-    Args:
-        - header: FITS header
-        - required_axes: list of required axes
-    Returns:
-        - data_axis_indices: array of axis indices in the data array in order of required_axes
+    Calculates pixel (l, m) coordinates. Returns sth akin to a 2D meshgrid
     """
-    naxis = header['NAXIS']
-    data_axis_indices = {}
+    n_pix_l = len(ra_coords)
+    n_pix_m = len(dec_coords)
+    lm = np.zeros((n_pix_l, n_pix_m, 2), dtype=np.float64)
+    for i in prange(len(ra_coords)):
+        for j in range(len(dec_coords)):
+            l, m = radec2lm(ra0, dec0, ra_coords[i], dec_coords[j])
+            lm[i, j, 0] = l
+            lm[i, j, 1] = m
     
-    for axis in required_axes:
-        axis_num = check_var_axis(header, axis)
-        data_axis_indices[axis] = naxis - int(axis_num)
-    
-    return data_axis_indices
+    return lm.reshape(n_pix_l * n_pix_m, 2)
 
 
-def check_header_axis_ordering(header, required_axes: List[str]):
+def compute_radec_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float):
     """
-    Finds the indices of the required axes in the header
+    Calculates pixel (RA, Dec) coordinates
     Args:
-        - header: FITS header
-        - required_axes: list of required axes
-    """
-    header_axis_indices = np.array([], dtype=int)
-    
-    for axis in required_axes:
-        axis_num = check_var_axis(header, axis)
-        header_axis_indices = np.append(header_axis_indices, int(axis_num))
-        
-    return header_axis_indices
-
-
-def compute_lm_coords(wcs: WCS, phase_centre: np.ndarray, img_dims: np.ndarray, spectral_axis: Optional[bool]=False):
-    """
-    Calculates pixel (l, m) coordinates
-    Args:
-        wcs (WCS): WCS object
+        header (FITS header): FITS header
         phase_centre (np.ndarray): phase centre coordinates
-        ra (np.ndarray): RA coordinates of pixels
-        dec (np.ndarray): Dec coordinates of pixels
-        img_dims (np.ndarray): image l and m dimensions
-        spectral_axis (bool): True if spectral axis is present, False otherwise
-    Returns:
-        l (np.ndarray): l coordinates
-        m (np.ndarray): m coordinates
+        n_ra (float): number of RA pixels
+        n_dec (float): number of Dec pixels
     """
-    ra0, dec0 = phase_centre
-    n_pix_m, n_pix_l = img_dims
-    x_index, y_index = wcs.wcs.lng, wcs.wcs.lat
+    ra_axis = check_var_axis(header, "RA")
+    dec_axis = check_var_axis(header, "DEC")
     
-    if wcs.wcs.radesys:
-        frame = wcs.wcs.radesys.lower() # get frame from header
-    else:
-        log.warning("No RA/Dec system found in header. Assuming ICRS.")
-        frame = 'icrs'
-        
-    pc = SkyCoord(ra0, dec0, frame=frame, unit='rad') # create SkyCoord object for phase centre
-    
-    # get image dimensions
-    if spectral_axis:
-        axis_ordering = check_header_axis_ordering(wcs.to_header(), ['ra', 'dec', 'freq'])
-        if np.array_equal(axis_ordering, np.array([1, 2, 3])):
-            x_pix_0, y_pix_0, _ = wcs.world_to_pixel_values(pc.ra, pc.dec, 0) # get pixel coordinates of phase centre
-        elif np.array_equal(axis_ordering, np.array([3, 2, 1])):
-            _, y_pix_0, x_pix_0 = wcs.world_to_pixel_values(0, pc.dec, pc.ra)
-        elif np.array_equal(axis_ordering, np.array([2, 1, 3])):
-            y_pix_0, x_pix_0, _ = wcs.world_to_pixel_values(pc.dec, pc.ra, 0)
-        elif np.array_equal(axis_ordering, np.array([2, 3, 1])):
-            y_pix_0, _, x_pix_0 = wcs.world_to_pixel_values(pc.dec, 0, pc.ra)
-        elif np.array_equal(axis_ordering, np.array([1, 3, 2])):
-            x_pix_0, _, y_pix_0 = wcs.world_to_pixel_values(pc.ra, 0, pc.dec)
-        else:
-            _, x_pix_0, y_pix_0 = wcs.world_to_pixel_values(0, pc.ra, pc.dec)   
-    else:
-        axis_ordering = check_header_axis_ordering(wcs.to_header(), ['ra', 'dec'])
-        if np.array_equal(axis_ordering, np.array([1, 2])):
-            x_pix_0, y_pix_0 = wcs.world_to_pixel_values(pc.ra, pc.dec) # get pixel coordinates of phase centre
-        else:
-            y_pix_0, x_pix_0 = wcs.world_to_pixel_values(pc.dec, pc.ra)
-
     # get pixel scale
-    delta_l, delta_m = wcs.wcs.cdelt[x_index], wcs.wcs.cdelt[wcs.wcs.lng]
+    delta_ra = header[f"CDELT{ra_axis}"]
+    delta_dec = header[f"CDELT{dec_axis}"]
     
-    if wcs.wcs.cunit[y_index] == wcs.wcs.cunit[x_index]:
-        if wcs.wcs.cunit[y_index] in ["RAD", "rad"] and wcs.wcs.cunit[x_index] in ["RAD", "rad"]:
+    # get reference pixel info
+    refpix_ra = header[f"CRPIX{ra_axis}"]
+    refpix_dec = header[f"CRPIX{dec_axis}"]
+    ref_ra = header[f"CRVAL{ra_axis}"]
+    ref_dec = header[f"CRVAL{dec_axis}"]
+    
+    if header[f"CUNIT{ra_axis}"] == header[f"CUNIT{dec_axis}"]:
+        if header[f"CUNIT{ra_axis}"] in ["DEG", "deg"]:
+            ref_ra = np.deg2rad(ref_ra)
+            ref_dec = np.deg2rad(ref_dec)
+            delta_ra = np.deg2rad(delta_ra)
+            delta_dec = np.deg2rad(delta_dec)
+        elif header[f"CUNIT{ra_axis}"] in ["RAD", "rad"]:
             pass
-        elif wcs.wcs.cunit[y_index] in ["DEG", "deg"] and wcs.wcs.cunit[x_index] in ["DEG", "deg"]:
-            delta_m = np.deg2rad(delta_m)
-            delta_l = np.deg2rad(delta_l)
         else:
-            raise SkymodelError("RA and Dec units must be in radians or degrees")
+            raise SkymodelError("RA and Dec units must be in degrees or radians")
     else:
         raise SkymodelError("RA and Dec units must be the same")
     
-    # calculate l, m coordinates
-    l_coords = np.sort(np.arange(1 - x_pix_0, 1 - x_pix_0 + n_pix_l) * delta_l)
-    m_coords = np.arange(1 - y_pix_0, 1 - y_pix_0 + n_pix_m) * delta_m    
+    # calculate pixel (RA, Dec) coordinates
+    ra_coords = ref_ra + (np.arange(1, n_ra + 1) - refpix_ra)  * delta_ra
+    dec_coords = ref_dec + (np.arange(1, n_dec + 1) - refpix_dec) * delta_dec
     
-    return l_coords, m_coords
+    return ra_coords, delta_ra, dec_coords, delta_dec
+
+
+# TODO: consider assuming degrees for RA and Dec if no units are given
+def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_coords: Optional[np.ndarray]=None,
+                      delta_ra: Optional[float]=None, dec_coords: Optional[np.ndarray]=None, delta_dec: Optional[float]=None):
+    """
+    Calculates pixel (l, m) coordinates
+    """
+    if not isinstance(ra_coords, np.ndarray) or not isinstance(dec_coords, np.ndarray):
+        ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, phase_centre, n_ra, n_dec)
+    
+    # calculate pixel (l, m) coordinates
+    ra0, dec0 = phase_centre
+    lm = pix_radec2lm(ra0, dec0, ra_coords, dec_coords)
+    
+    return lm, delta_ra, delta_dec
     
 
-def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray, ncorr: int, tol: float=1e-9):
+def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
+                          ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-6, stokes: int = 0):
     """
     Processes FITS skymodel into DFT input
     Args:
@@ -249,8 +381,11 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         ra0:                     RA of phase-tracking centre in radians
         dec0:                   Dec of phase-tracking centre in radians
         chan_freqs:         MS frequencies
+        ms_delta_nu:     MS channel width
         ncorr:             number of correlations
-        polarisation:         True if polarisation information is present, False otherwise
+        basis:             polarisation basis ("linear" or "circular")
+        tol:                tolerance for pixel brightness
+        stokes:             Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V)
     Returns:
         intensities:    pixel-by-pixel brightness matrix for each channel and correlation
         lm:                 (l, m) coordinate grid for DFT
@@ -260,87 +395,132 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     if not isinstance(input_fitsimages, list):
         input_fitsimages = [input_fitsimages]
     
+    phase_centre = np.array([ra0, dec0])
     nchan = chan_freqs.size
     
     model_cubes = []
+    ra_coords, delta_ra, dec_coords, delta_dec = None, None, None, None
     for fits_image in input_fitsimages:
         # get header and data
         with fits.open(fits_image) as hdulist:
             header = hdulist[0].header
-            skymodel = np.squeeze(hdulist[0].data)
-                
-        wcs = WCS(header) # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
-        
-        if not wcs.has_celestial:
-            raise SkymodelError("FITS image does not have or has unrecognised celestial coordinates")
-        # TODO (Mika, Senkhosi): assume image in l-m coords already if no celestial coords
-        # Would this mean the lengths of CTYPE and CRVAL are not the same? Is that even possible?
-        
-        # ensure that there is no Stokes or time axis
-        if skymodel.ndim > 3:    
-            if wcs.has_temporal:
-                raise SkymodelError("FITS image has a time axis. Use separate files for time-varying models.")
-            else:            
-                raise SkymodelError("FITS image has >3 significant dimensions. Use separate files for Stokes I, Q, U, V models.")
-        
-        # read in spectral info
-        if wcs.has_spectral:
-            data_axis_indices = check_data_axis_ordering(header, ['ra', 'dec', 'freq'])
+            naxis = header['NAXIS']
+            if naxis < 2:
+                raise SkymodelError("FITS image must have at least 2 dimensions")
             
-            # reshape FITS data to (n_pix_l, n_pix_m, nchan)
-            skymodel = np.transpose(skymodel, axes=(data_axis_indices['ra'], data_axis_indices['dec'], data_axis_indices['freq']))
-            n_pix_l, n_pix_m, _ = skymodel.shape
+            # get all axis types
+            orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
             
-            # calculate pixel (l, m) coordinates
-            l_coords, m_coords = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_m, n_pix_l]), spectral_axis=True)
+            data_slice = [slice(None)] * naxis
+            dims = []
             
-            # find frequency axis
+            for i, dim in enumerate(orig_dims):
+                dim_name = dim.split("-")[0].lower()
+                # axes of interest
+                if dim_name in ["ra", "dec", "freq"]:
+                    dims.append(dim_name)
+                # axes to be ignored
+                else:
+                    # Stokes axis
+                    if dim_name == "stokes":
+                        log.warning(f"Using only Stokes parameter at index {stokes} from FITS image. Use separate files for full Stokes models.")
+                        data_slice[i] = stokes
+                    # other axes
+                    else:
+                        data_slice[i] = 0
+                        if header[f"NAXIS{i+1}"] > 1:
+                            if dim_name == "time":
+                                log.warning(f"Removing 'TIME' axis with size > 1. Using only first time stamp. Use separate files for time-varying models.")
+                            else:
+                                log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
+            
+            skymodel = hdulist[0].data[tuple(data_slice)]
+        
+        # # TODO (Mika, Senkhosi): assume image in l-m coords already if no celestial coords
+        # # Would this mean the lengths of CTYPE and CRVAL are not the same? Is that even possible?
+        if 'ra' not in dims or 'dec' not in dims:
+            raise SkymodelError("FITS image does not have or has unrecognised RA/Dec coordinates")
+        
+        # spectral axis exists
+        if "freq" in dims:
             freq_axis = check_var_axis(header, "FREQ")
-            
-            nband = header[f"NAXIS{freq_axis}"]
-            # print(nband)
+            n_freqs = header[f"NAXIS{freq_axis}"]
+            # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
+            wcs = WCS(header, naxis=['longitude', 'latitude', 'spectral'])
+
+            # get frequency info
             refpix_nu = header[f"CRPIX{freq_axis}"]
             if header[f"CUNIT{freq_axis}"] == "Hz":
-                delta_nu = header[f"CDELT{freq_axis}"]  # assumes units are Hz
+                fits_delta_nu = header[f"CDELT{freq_axis}"]  # assumes units are Hz
             else:
                 raise SkymodelError("Frequency units must be in Hz")
             ref_freq = header[f"CRVAL{freq_axis}"]
+            
+            # computes edges of FITS and MS frequency axes
+            ms_start_freq = chan_freqs[0] - 0.5*(ms_delta_nu)
+            ms_end_freq = chan_freqs[-1] + 0.5*(ms_delta_nu)
+            
+            fits_start_freq = ref_freq - (refpix_nu - 1 + 0.5) * fits_delta_nu
+            fits_end_freq = fits_start_freq  + (n_freqs * fits_delta_nu)
+            
+            # if spectral axis is not singleton
+            if n_freqs > 1:
+                # construct frequency axis
+                freqs = ref_freq + (np.arange(1, n_freqs + 1) - refpix_nu) * fits_delta_nu
+                
+                if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
+                    raise SkymodelError("Some MS frequencies are out of bounds of FITS image frequencies. "
+                                        "Cannot interpolate FITS image onto MS frequency grid.")
+                
+                # reshape FITS data to (n_pix_l, n_pix_m, nchan)
+                skymodel = np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec"), dims.index("freq")))
+                
+                # get image shape
+                n_pix_l, n_pix_m, _ = skymodel.shape
+                
+                # reproject FITS cube to MS frequencies
+                # TODO: implement interpolation of FITS cube to MS channel frequencies
+                if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
+                    # interpolate FITS cube
+                    log.warning("Interpolating FITS cube onto MS channel frequency grid. This uses a lot of memory.")
+                    ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, phase_centre, n_pix_l, n_pix_m)
+                    fits_interp = RegularGridInterpolator((ra_coords, dec_coords, freqs), skymodel)
+                    ra, dec, vv = np.meshgrid(ra_coords, dec_coords, chan_freqs, indexing="ij")
+                    radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
+                    model_cube = fits_interp(radecv).reshape(n_pix_l, n_pix_m, nchan)
+                    
+                else:
+                    model_cube = skymodel
+            
+            else: # singleton spectral axis
+                # raise error if frequency is not in bounds of MS channel frequencies
+                if fits_start_freq < ms_start_freq or fits_end_freq > ms_end_freq:    
+                    raise SkymodelError("FITS image frequency range does not fall in MS channel frequency range.")
+                
+                # reshape FITS data to (n_pix_l, n_pix_m, nchan)
+                skymodel= np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec"), dims.index("freq")))
+                skymodel = np.squeeze(skymodel)
+                
+                # get image shape
+                n_pix_l, n_pix_m = skymodel.shape
 
-            freqs = ref_freq + np.arange(1 - refpix_nu, 1 - refpix_nu + nband) * delta_nu # calculate frequencies
-            
-            # reproject FITS cube to MS freqs
-            if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
-                log.warning("Reprojecting FITS cube to MS freqs. This uses a lot of memory.")
-                from scipy.interpolate import RegularGridInterpolator
-                
-                # interpolate FITS cube
-                fits_interp = RegularGridInterpolator((l_coords, m_coords, freqs), skymodel, bounds_error=True)
-                
-                # reevaluate at MS freqs
-                ll, mm, vv = np.meshgrid(l_coords, m_coords, chan_freqs, indexing="ij")
-                lmv = np.vstack((ll.ravel(), mm.ravel(), vv.ravel())).T
-                try:
-                    model_cube = fits_interp(lmv).reshape(n_pix_l, n_pix_m, nchan)
-                except ValueError as e: # catch and re-raise bounds error
-                    if str(e) == "One of the requested xi is out of bounds in dimension 2":
-                        raise SkymodelError("At least one frequency in FITS image is out of bounds of MS channel frequencies.")
-                    else:
-                        raise e
-            else:
-                model_cube = skymodel
-            
-        else: # no spectral axis
-            data_axis_indices = check_data_axis_ordering(header, ['ra', 'dec'])
-            
+                freqs = chan_freqs
+                # repeat the image along the frequency axis
+                model_cube = np.repeat(skymodel[:, :, np.newaxis], nchan, axis=2)
+
+        # no spectral axis
+        else:
+            # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
+            wcs = WCS(header, naxis=['longitude', 'latitude'])
             # reshape FITS data to (n_pix_l, n_pix_m)
-            skymodel = np.transpose(skymodel, axes=(data_axis_indices['ra'], data_axis_indices['dec']))
+            skymodel = np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec")))
+            
+            # get image shape
             n_pix_l, n_pix_m = skymodel.shape
-            
-            # calculate pixel (l, m) coordinates
-            l_coords, m_coords = compute_lm_coords(wcs, np.array([ra0, dec0]), np.array([n_pix_m, n_pix_l]))
-            
+        
             freqs = chan_freqs
-            model_cube = np.repeat(skymodel[:, :, np.newaxis], nchan, axis=2) # repeat the image along the frequency axis
+            # repeat the image along the frequency axis
+            model_cube = np.repeat(skymodel[:, :, np.newaxis], nchan, axis=2)
         
         model_cubes.append(model_cube)
     
@@ -348,8 +528,9 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     polarisation = False if len(model_cubes) == 1 else True
     
     if not polarisation: # if no polarisation is present
-        intensities = np.empty((n_pix_l, n_pix_m, nchan, ncorr)) # create pixel grid for sky model
+        intensities = np.zeros((n_pix_l, n_pix_m, nchan, ncorr)) # create pixel grid for sky model
         I = model_cubes[0]
+        
         if ncorr == 2: # if ncorr is 2, we only need compute XX and duplicate to YY
             intensities[:, :, :, 0] = I
             intensities[:, :, :, 1] = I
@@ -362,226 +543,126 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
     
     else: # if polarisation is present
-        intensities = np.empty((n_pix_l, n_pix_m, nchan, ncorr), dtype=np.complex128) # create pixel grid for sky model
-        if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
-            log.warning("Only two correlations requested, but four are present in the FITS image directory. Using only Stokes I and Q.")
-            I, Q, _, _ = model_cubes
-            intensities[:, :, :, 0] = I + Q
-            intensities[:, :, :, 1] = I - Q
-        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
-            I, Q, U, V = model_cubes
-            intensities[:, :, :, 0] = I + Q
-            intensities[:, :, :, 1] = U + 1j * V
-            intensities[:, :, :, 2] = U - 1j * V
-            intensities[:, :, :, 3] = I - Q
+        intensities = np.zeros((n_pix_l, n_pix_m, nchan, ncorr), dtype=np.complex128) # create pixel grid for sky model
+        if basis == "linear":
+            if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
+                log.warning("Only two correlations requested, but four are present in the FITS image directory. Using only Stokes I and Q.")
+                I, Q, _, _ = model_cubes
+                intensities[:, :, :, 0] = I + Q
+                intensities[:, :, :, 1] = I - Q
+            elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
+                I, Q, U, V = model_cubes
+                intensities[:, :, :, 0] = I + Q
+                intensities[:, :, :, 1] = U + 1j * V
+                intensities[:, :, :, 2] = U - 1j * V
+                intensities[:, :, :, 3] = I - Q
+            else:
+                raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+        elif basis == "circular":
+            if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
+                log.warning("Only two correlations requested, but four are present in the FITS image directory. Using only Stokes I and V.")
+                I, _, _, V = model_cubes
+                intensities[:, :, :, 0] = I + V
+                intensities[:, :, :, 1] = I - V
+            elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
+                I, Q, U, V = model_cubes
+                intensities[:, :, :, 0] = I + V
+                intensities[:, :, :, 1] = Q + 1j * U
+                intensities[:, :, :, 2] = Q - 1j * U
+                intensities[:, :, :, 3] = I - V
+            else:
+                raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
         else:
-            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+            raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
         
     intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr) # reshape image for compatibility with im_to_vis
     
-    # set up coordinates for DFT
-    ll, mm = np.meshgrid(l_coords, m_coords)
-    lm = np.vstack((ll.ravel(), mm.ravel())).T
-
+    # calculate pixel (l, m) coordinates
+    lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
+    
     # get only pixels with brightness > tol
     tol_mask = np.any(np.abs(intensities) > tol, axis=(1, 2))
     non_zero_intensities = intensities[tol_mask]
+    if non_zero_intensities.size == 0:
+        raise SkymodelError("No pixels with brightness > tol found in FITS sky model.")
     non_zero_lm = lm[tol_mask]
     
-    # TODO: decide whether image is sparse enough for DFT, else use FFT
+    # decide whether image is sparse enough for DFT
+    sparsity = 1 - (non_zero_intensities.size/intensities.size)
     
-    return non_zero_intensities, non_zero_lm
-
-
-def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, frequency: np.ndarray, subtract: Optional[bool]=False, mod_data: Optional[np.ndarray]=None, noise: Optional[float]=None):
+    return non_zero_intensities, non_zero_lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec
+    
+    
+def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, use_dft: bool,
+                        mode: Union[None, str], mod_data: Union[None, np.ndarray], n_pix_l: Optional[int]=None, 
+                        n_pix_m: Optional[int]=None, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None, 
+                        tol: Optional[float]=1e-9, nthreads: Optional[int]=1, 
+                        noise: Optional[float] = None):
     """
     Augmented version of im_to_vis
     Args:
         image: image array
         uvw: UVW coordinates
         lm: (l, m) coordinates
-        frequency: frequency array
-        noise: RMS noise
+        chan_freqs: frequency array
+        sparsity: True if image is sparse, False otherwise
         subtract: True if visibilities should be subtracted from the model data, False otherwise
+        mod_data: model data to/from which computed visibilities should be added/subtracted
+        noise: RMS noise
     Returns:
         vis: visibility array
     """
-    # predict visibilities
-    vis = im_to_vis(image, uvw, lm, frequency)
+    _, nchan, ncorr = image.shape
+    
+    # if sparse, use DFT
+    if use_dft:
+        # predict visibilities
+        vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='casa')
+    
+    # else, use FFT
+    else:
+        log.info("Image is too dense for DFT. Using FFT.")
+        image = image.reshape(ncorr, nchan, n_pix_l, n_pix_m)
+        vis = np.zeros((uvw.shape[0], nchan, ncorr), dtype=np.complex128 if ncorr == 4 else np.float64)
+        freq_bin_idx = np.arange(nchan)
+        freq_bin_counts = np.ones(nchan)
+        # predict visibilities
+        for corr in image.shape[2]:
+            vis[:, :, corr] = fft_im_to_vis(uvw, chan_freqs, image[corr], freq_bin_idx, freq_bin_counts, delta_ra, 
+                                            celly=delta_dec, epsilon=tol, nthreads=nthreads)
     
     # add noise
-    if noise:
-        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
+    add_noise(vis, noise)
+    # do addition/subtraction of model data
+    add_to_column(vis, mod_data, mode)
     
-    # subtract visibilities
-    if mod_data:
-        vis = vis - mod_data if subtract else vis + mod_data
-        
     return vis
 
 
-def computevis(srcs, uvw, freqs, ncorr, polarisation, mod_data=None, noise=None, subtract=False):
+def compute_brightness_matrix(spectrum: np.ndarray, elements: str, basis: str):
     """
-    Computes visibilities
-
+    Computes the brightness matrix for a given spectrum and basis
     Args:
-        srcs (list):                List of Source objects
-        uvw (numpy.ndarray):        Array of shape (3, nrows) containing the UVW coordinates
-        freqs (numpy.ndarray):      Array of shape (nchan,) containing the frequencies
-        ncorr (int):                Number of correlations
-        polarisation (bool):        True if polarisation information is present, False otherwise
-        mod_data (numpy.ndarray):   Array of shape (nrows, nchan, ncorr) containing the model data 
-            to/from which computed visibilities should be added/subtracted
-        noise (float):              RMS noise
-        subtract (bool):            True if visibilities should be subtracted from the model data, False otherwise
-
+        spectrum: spectrum array
+        elements: elements to compute
+        basis: polarisation basis ("linear" or "circular")
     Returns:
-        vis (numpy.ndarray):        Visibility array of shape (nrows, nchan, ncorr)
+        brightness_matrix: brightness matrix elements
     """
-
-    wavs = 2.99e8 / freqs
-    uvw_scaled = uvw.T[...,np.newaxis] / wavs 
-    
-    # if polarisation is detected, we need to compute different correlations separately
-    if polarisation:
-        xx, yy = 0j, 0j
-        if ncorr==2: # if ncorr is 2, we only need compute XX and YY correlations
-            for source in srcs:
-                el, em = source.l, source.m
-                n_term = np.sqrt(1 - el*el - em*em) - 1
-                arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
-                if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-                    phase_factor = np.exp(-2 * np.pi * 1j * arg)
-                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor # I + Q
-                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor # I - Q
-                else:
-                    ell = source.emaj * np.sin(source.pa)
-                    emm = source.emaj * np.cos(source.pa)
-                    ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
-                
-                    fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
-                    fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
-
-                    shape_phase = fu1 * fu1 + fv1 * fv1
-                    phase_factor = np.exp(-2j*np.pi * arg - shape_phase)
-                
-                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor # I + Q
-                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor # I - Q
-                
-            vis = np.stack([xx, yy], axis=2)
-            
-        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
-            xy, yx = 0j, 0j
-            for source in srcs:
-                el, em = source.l, source.m
-                n_term = np.sqrt(1 - el*el - em*em) - 1
-                arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
-                if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-                    phase_factor = np.exp(-2 * np.pi * 1j * arg)
-                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor       # I + Q
-                    xy += (source.spectrum[2, :] + 1j * source.spectrum[3, :]) * phase_factor  # U + iV
-                    yx += (source.spectrum[2, :] - 1j * source.spectrum[3, :]) * phase_factor  # U - iV
-                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor       # I - Q
-                else:
-                    ell = source.emaj * np.sin(source.pa)
-                    emm = source.emaj * np.cos(source.pa)
-                    ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
-                
-                    fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
-                    fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
-
-                    shape_phase = fu1 * fu1 + fv1 * fv1
-                    phase_factor = np.exp(-2j*np.pi * arg - shape_phase)
-                
-                    xx += (source.spectrum[0, :] + source.spectrum[1, :]) * phase_factor       # I + Q
-                    xy += (source.spectrum[2, :] + 1j * source.spectrum[3, :]) * phase_factor  # U + iV
-                    yx += (source.spectrum[2, :] - 1j * source.spectrum[3, :]) * phase_factor  # U - iV
-                    yy += (source.spectrum[0, :] - source.spectrum[1, :]) * phase_factor       # I - Q
-            
-            vis = np.stack([xx, xy, yx, yy], axis=2)
-        
-        else:
-            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
-    
-    # if no polarisation is detected, we only need compute XX and duplicate to YY     
+    if basis == "linear":
+        order = [0, 1, 2, 3] # I, Q, U, V
+    elif basis == "circular":
+        order = [0, 3, 1, 2] # I, V, Q, U
     else:
-        vis = 0j    
-        for source in srcs:
-            el, em = source.l, source.m
-            n_term = np.sqrt(1 - el*el - em*em) - 1
-            arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
-            if source.emaj in [None, "null"] and source.emin in [None, "null"]:
-                vis += source.spectrum * np.exp(-2 * np.pi * 1j * arg)
-            else:
-                ell = source.emaj * np.sin(source.pa)
-                emm = source.emaj * np.cos(source.pa)
-                ecc = source.emin / (1.0 if source.emaj == 0.0 else source.emaj)
-            
-                fu1 = (uvw_scaled[0]*emm - uvw_scaled[1]*ell) * ecc
-                fv1 = (uvw_scaled[0]*ell + uvw_scaled[1]*emm)
-
-                shape_phase = fu1 * fu1 + fv1 * fv1
-            
-                vis += source.spectrum * np.exp(-2j*np.pi * arg - shape_phase)
-            
-        if ncorr == 2:
-            vis = np.stack([vis, vis], axis=2)
-        elif ncorr == 4:
-            vis = np.stack([vis, np.empty_like(vis), np.empty_like(vis), vis], axis=2)
-        else:
-            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+        raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
     
-    if noise:
-        vis += noise * (np.random.randn(*vis.shape) + 1j * np.random.randn(*vis.shape))
-    
-    if isinstance(mod_data, np.ndarray):
-        vis = vis - mod_data if subtract else vis + mod_data
-        
-    return vis
-
-
-def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, sefd: float, input_column: str):
-    """
-    Reads MS info
-    Args:
-        ms: MS file
-        spw_id: spectral window ID
-        field_id: field ID
-        chunks: dask chunking strategy
-        sefd: system equivalent flux density; used if return_noise is True
-        input_column: whether to read a column for manipulation
-    Returns:
-        ms_dsl: xarray dataset list
-        ra0: RA of phase-tracking centre in radians
-        dec0: Dec of phase-tracking centre in radians
-        chan_freqs: MS channel frequencies
-        nrows: number of rows
-        nchan: number of channels
-        ncorr: number of correlations
-        noise: RMS noise
-        input_column_data: data from input column
-    """
-    ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks=chunks)
-    spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
-    field_ds = xds_from_table(f"{ms}::FIELD")[0]
-    
-    radec0 = field_ds.PHASE_DIR.data[field_id].compute()
-    ra0, dec0 = radec0[0][0], radec0[0][1]
-    chan_freqs = spw_ds.CHAN_FREQ.data[spw_id].compute()
-    nrow, nchan, ncorr = ms_dsl[0].DATA.data.shape
-    
-    if sefd:
-        df = spw_ds.CHAN_WIDTH.data[spw_id][0].compute()
-        dt = ms_dsl[0].EXPOSURE.data[0].compute()
-        noise = sefd / np.sqrt(2*dt*df)
+    if elements == 'diagonal':
+        return (spectrum[order[0], :] + spectrum[order[1], :], 
+                spectrum[order[0], :] - spectrum[order[1], :])
+    elif elements == 'all':
+        return (spectrum[order[0], :] + spectrum[order[1], :], 
+                spectrum[order[2], :] + 1j * spectrum[order[3], :],
+                spectrum[order[2], :] - 1j * spectrum[order[3], :],
+                spectrum[order[0], :] - spectrum[order[1], :])
     else:
-        noise = None
-        
-    if input_column:
-        input_column_data =  getattr(ms_dsl[0], input_column).data
-        input_column_dims = ("row", "chan", "corr")
-    else:
-        input_column_data = None
-        input_column_dims = None
-    
-    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, ncorr, noise, input_column_data, input_column_dims
+        raise ValueError(f"Unrecognised elements '{elements}'. Use 'diagonal' or 'all'.")

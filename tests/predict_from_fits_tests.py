@@ -91,7 +91,7 @@ class TestPredictFromFITS(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        brightness_matrix, lm = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.ncorr)
+        brightness_matrix, lm, _, _, _, _, _ = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
         
         # predict visibilities
         vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
@@ -135,7 +135,7 @@ class TestPredictFromFITS(unittest.TestCase):
         
         # process the FITS file
         log.setLevel(logging.ERROR)
-        brightness_matrix, lm = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.ncorr)
+        brightness_matrix, lm, _, _, _, _, _ = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
         
         # predict visibilities
         vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
@@ -184,7 +184,7 @@ class TestPredictFromFITS(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        brightness_matrix, lm = process_fits_skymodel(test_skymodels, self.ra0, self.dec0, self.freqs, self.ncorr)
+        brightness_matrix, lm, _, _, _, _, _ = process_fits_skymodel(test_skymodels, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
         
         # predict visibilities
         vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)

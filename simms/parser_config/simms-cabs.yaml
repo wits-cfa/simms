@@ -14,11 +14,16 @@ cabs:
         dtype: File
         required: no
         abbreviation: cat
-      sky-fits:
+      fits-sky:
         info: FITS file(s) containing the sky model
         dtype: Union[File, List[File]]
         required: no
-        abbreviation: sf
+        abbreviation: fs
+      pol-basis:
+        info: Polarization basis for the simulation. The default is circular polarization.
+        dtype: str
+        default: linear
+        choices: ['linear', 'circular']
       pixel-tol:
         info: minimum brightness for a pixel to be considered in direct Fourier transform
         dtype: float

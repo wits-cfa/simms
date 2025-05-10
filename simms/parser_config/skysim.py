@@ -11,9 +11,11 @@ from simms.utilities import CatalogueError, isnummber, ParameterError
 from simms.skymodel.skymods import (
     read_ms, 
     makesources, 
-    computevis,
+    compute_vis,
     process_fits_skymodel,
-    augmented_im_to_vis
+    augmented_im_to_vis,
+    add_to_column,
+    add_noise
 )
 import numpy as np
 from tqdm.dask import TqdmCallback
@@ -40,10 +42,10 @@ def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     ms = opts.ms
     cat = opts.catalogue
-    sf = opts.sky_fits
+    fs = opts.fits_sky
     chunks = {"row": opts.row_chunk_size}
     
-    if cat and sf:
+    if cat and fs:
         raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
     elif cat:
         map_path = opts.mapping
@@ -114,7 +116,7 @@ def runit(**kwargs):
                 )      
         
         # read MS (also computes noise)
-        ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr, noise, incol, incol_dims = read_ms(ms, 
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, _, ncorr, noise, incol, incol_dims = read_ms(ms, 
                                                                                          opts.spwid, 
                                                                                          opts.field_id, 
                                                                                          chunks, 
@@ -138,15 +140,16 @@ def runit(**kwargs):
             log.warning("Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
 
         for ds in ms_dsl:
-            simvis = da.blockwise(computevis, ("row", "chan", "corr"),
+            simvis = da.blockwise(compute_vis, ("row", "chan", "corr"),
                                 sources, ("source",),
                                 ds.UVW.data, ("row", "uvw"),
                                 freqs, ("chan",),
                                 ncorr, None,
                                 polarisation, None,
-                                incol, None,
-                                noise, None,
-                                opts.mode == "subtract", None,
+                                opts.pol_basis, None,
+                                opts.mode, None,
+                                incol, incol_dims,
+                                noise=noise,
                                 new_axes={"corr": ncorr},
                                 dtype=ds.DATA.data.dtype,
                                 concatenate=True,
@@ -154,28 +157,28 @@ def runit(**kwargs):
             
             allvis.append(simvis)
         
-    elif sf:
-        if os.path.exists(sf):
-            if os.path.isdir(sf):
-                sf = []
+    elif fs:
+        if os.path.exists(fs):
+            if os.path.isdir(fs):
+                fs = []
                 try:
-                    sf.append(glob(f"{sf}/*I.fits")[0])
-                    sf.append(glob(f"{sf}/*Q.fits")[0])
-                    sf.append(glob(f"{sf}/*U.fits")[0])
-                    sf.append(glob(f"{sf}/*V.fits")[0])
+                    fs.append(glob(f"{fs}/*I.fits")[0])
+                    fs.append(glob(f"{fs}/*Q.fits")[0])
+                    fs.append(glob(f"{fs}/*U.fits")[0])
+                    fs.append(glob(f"{fs}/*V.fits")[0])
                 except IndexError:
                     raise ParameterError("Could not find all required FITS files in the specified directory")
                 
-                if len(sf) > 4:
+                if len(fs) > 4:
                     raise ParameterError("Too many FITS files found in the specified directory")
                 
-            elif not sf.endswith(".fits"):
+            elif not fs.endswith(".fits"):
                 raise ParameterError("Invalid FITS file specified")
         else:
             raise ParameterError("FITS file/directory does not exist")
         
         # read MS (also computes noise)
-        ms_dsl, ra0, dec0, freqs, nrow, nchan, ncorr, noise, incol, incol_dims = read_ms(ms, 
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, df, ncorr, noise, incol, incol_dims = read_ms(ms, 
                                                                                          opts.spwid, 
                                                                                          opts.field_id, 
                                                                                          chunks, 
@@ -184,29 +187,41 @@ def runit(**kwargs):
                                                                                         )
         
         # process FITS sky model
-        image, lm = process_fits_skymodel(sf, ra0, dec0, freqs, ncorr, tol=float(opts.pixel_tol))
+        image, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(fs, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
         
+        if sparsity >= 0.8:
+            log.info("Image is sparse enough for DFT. Using DFT.")
+            use_dft = True
+        else:
+            log.info("Image is too dense for DFT. Using FFT.")
+            
         allvis = []
+    
         for ds in ms_dsl:
             simvis = da.blockwise(
                 augmented_im_to_vis, ("row", "chan", "corr"),
                 image, ("npix", "chan", "corr"),
                 ds.UVW.data, ("row", "uvw"),
                 lm, ("npix", "lm"),
-                freqs, ("chan",),
-                opts.mode == "subtract", None,
+                freqs, ("chan",), 
+                use_dft, None,
+                opts.mode, None,
                 incol, incol_dims,
-                noise, None,
+                noise=noise,
+                n_pix_l = n_pix_l,
+                n_pix_m = n_pix_m, 
+                delta_ra = delta_ra,
+                delta_dec = delta_dec,
+                tol=float(opts.pixel_tol),
                 dtype=ds.DATA.data.dtype,
                 concatenate=True
-                )
+            )
             
             allvis.append(simvis)
-        
-        
+         
     else:
         raise ParameterError("No sky model specified. Please provide either a catalogue or a FITS sky model.")
-                        
+
     writes = []
     for i, ds in enumerate(ms_dsl):
         ms_dsl[i] = ds.assign(**{
@@ -216,5 +231,5 @@ def runit(**kwargs):
     
         writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
         
-    with TqdmCallback(desc="compute"):
+    with TqdmCallback(desc="Computing and writing visibilities..."):
         da.compute(writes)
