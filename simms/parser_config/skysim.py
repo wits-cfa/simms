@@ -194,6 +194,7 @@ def runit(**kwargs):
             use_dft = True
         else:
             log.info("Image is too dense for DFT. Using FFT.")
+            use_dft = False
             
         allvis = []
     
