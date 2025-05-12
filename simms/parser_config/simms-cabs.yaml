@@ -88,8 +88,8 @@ cabs:
         default: 'J2000,1h0m0s,-31d0m0s'
         abbreviation: dir
       starttime: 
-        info: Observation start time. For example, 'UTC,05/02/2024,06:15:10' 
-        metavar: '[TIME ZONE,][DD/MM/YYYY,],HH:MM:SS'
+        info: Observation start time in UTC. For example, '2024/03/14T06:15:10' 
+        metavar: 'YYYY/MM/DDTHH:MM:SS'
         dtype: str
         abbreviation: st
       startha:
