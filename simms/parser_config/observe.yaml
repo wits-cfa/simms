@@ -24,7 +24,6 @@ observe:
         nchan: =recipe.nchan
         correlations: =recipe.correlations
         rowchunks: =recipe.rowchunks
-        addnoise: =recipe.addnoise
         column: =recipe.column
     create_sky:
         info: 'simulating the sky'
