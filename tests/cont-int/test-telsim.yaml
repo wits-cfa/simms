@@ -25,6 +25,11 @@ recipe:
         ntime: 20
         dtime: 4
         nchan: 3
-        sefd: 512
+    addnoise:
+      cab: telsim
+      params:
+        _use: recipe.steps.basic.params
+        sefd: 410
+        
     
         
