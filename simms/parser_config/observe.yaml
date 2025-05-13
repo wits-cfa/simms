@@ -36,8 +36,4 @@ observe:
           die: =recipe.die
           dde: =recipe.dde
           mapping: =recipe.mapping
-
-
-
-
-
+          
