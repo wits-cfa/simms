@@ -1,4 +1,5 @@
 import os
+from glob import glob
 import simms
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 from scabha.basetypes import File
@@ -7,11 +8,19 @@ from omegaconf import OmegaConf
 from simms import BIN, get_logger 
 import glob
 from simms.utilities import CatalogueError, isnummber, ParameterError
-from simms.skymodel.skymods import makesources, computevis
+from simms.skymodel.skymods import (
+    read_ms, 
+    makesources, 
+    compute_vis,
+    process_fits_skymodel,
+    augmented_im_to_vis,
+    add_to_column,
+    add_noise
+)
 import numpy as np
-from daskms import xds_from_ms, xds_from_table, xds_to_table
 from tqdm.dask import TqdmCallback
 import dask.array as da
+from daskms import xds_to_table
 
 log = get_logger(BIN.skysim)
 
@@ -31,131 +40,188 @@ config = paramfile_loader(parserfile, sources)[command]
 @clickify_parameters(config)
 def runit(**kwargs):
     opts = OmegaConf.create(kwargs)
-    cat = opts.catalogue
     ms = opts.ms
-    map_path = opts.mapping
-
-    if opts.mapping and opts.cat_species:
-        raise ParameterError("Cannot use custom map and built-in map simultaneously")
-    elif opts.mapping:
+    cat = opts.catalogue
+    fs = opts.fits_sky
+    chunks = {"row": opts.row_chunk_size}
+    
+    if cat and fs:
+        raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
+    elif cat:
         map_path = opts.mapping
-    elif opts.cat_species:
-        map_path = f"{thisdir}/library/{opts.cat_species}.yaml"
-    else:
-        map_path = f"{thisdir}/library/catalogue_template.yaml"
-        print(f"Warning: No mapping file specified nor built-in map selected. Assuming default column names (see {map_path})")
 
-    mapdata = OmegaConf.load(map_path)
-    mapcols = OmegaConf.create({})
-    column = opts.column
-    delimiter = opts.cat_delim
-
-    for key in mapdata:
-        keymap = mapdata.get(key)
-        if keymap:   
-            mapcols[key] = (keymap.name or key, [], keymap.get("unit"))
+        if opts.mapping and opts.cat_species:
+            raise ParameterError("Cannot use custom map and built-in map simultaneously")
+        elif opts.mapping:
+            map_path = opts.mapping
+        elif opts.cat_species:
+            map_path = f"{thisdir}/library/{opts.cat_species}.yaml"
         else:
-            mapcols[key] = (key, [], None)
-            
-    with open(cat) as stdr:
-        header = stdr.readline().strip()
+            map_path = f"{thisdir}/library/catalogue_template.yaml"
+            log.warning(f"No mapping file specified nor built-in map selected. Assuming default column names (see {map_path})")
 
-        if not header.startswith("#format:"):
-            raise CatalogueError("Catalogue needs to have a header starting with the string #format:")
-        
-        header = header.strip().replace("#format:", "").strip()
-        header = header.split(delimiter)
+        mapdata = OmegaConf.load(map_path)
+        mapcols = OmegaConf.create({})
+        column = opts.column
+        delimiter = opts.cat_delim
 
-        for line in stdr.readlines():
-            if line.startswith("#"):
-                continue
-            rowdata = line.strip().split(delimiter)
-            if len(rowdata) != len(header):
-                raise CatalogueError("The number of elements in one or more rows does not equal the\
-                                    number of expected elements based on the number of elements in the\
-                                    header")
-            for key in mapcols:
-                catkey = mapcols[key][0]
-                if catkey not in header:
-                    continue
-                
-                index = header.index(catkey)
-                value = rowdata[index]
-                if isnummber(value) and mapcols[key][2]:
-                    value += mapcols[key][2]
-                
-                mapcols[key][1].append(value)
-    
-    # validate mapcols to ensure that the required columns were read successfully
-    for col in ["name", "ra", "dec", "stokes_i"]:
-        if not mapcols[col][1]: # if the list storing column's data is empty
-            if col == "name": # user might not understand what simply "name" means
-                raise CatalogueError(
-                    f"Failed to identify required column corresponding to source name/ID in the catalogue."
-                    " Please ensure that catalogue column headers match those in mapping file."
-                )
+        for key in mapdata:
+            keymap = mapdata.get(key)
+            if keymap:   
+                mapcols[key] = (keymap.name or key, [], keymap.get("unit"))
             else:
-                raise CatalogueError(
-                f"Failed to identify required column corresponding to '{col}' in the catalogue."
-                " Please ensure that catalogue column headers match those in mapping file."
-            )      
+                mapcols[key] = (key, [], None)
                 
-    ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks={"row":10000})               
-    spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
-    field_ds  = xds_from_table(f"{ms}::FIELD")[0]
-    ms_ds0 = ms_dsl[0]
-    
-    radec0 = field_ds.PHASE_DIR.data[opts.field_id].compute()
-    ra0 = radec0[0][0] 
-    dec0 = radec0[0][1]
-    nrows, nchan, ncorr = ms_ds0.DATA.data.shape
-    freqs = spw_ds.CHAN_FREQ.data[opts.spwid].compute()
-    noise = 0
-    if opts.sefd:
-        df = spw_ds.CHAN_WIDTH.data[opts.spwid][0].compute()
-        dt = ms_ds0.EXPOSURE.data[0].compute() 
-        noise = opts.sefd / np.sqrt(2*dt*df)
-    
-    sources = makesources(mapcols,freqs, ra0, dec0)
+        with open(cat) as stdr:
+            header = stdr.readline().strip()
 
-    
-    allvis = []
-    
-    if isinstance(opts.input_column, str):
-        incol = getattr(ms_ds0, opts.input_column).data
-        incol_dims = ("row", "chan", "corr")
-    else:
-        incol = None
-        incol_dims = None
-        
-    # check for polarisation information
-    # TODO: also add condition that all elements are non-zero
-    if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']): # if any of the lists is not empty
-        polarisation = True
-    else:
-        polarisation = False
-    
-    # warn user if polarisation is detected but only two correlations are requested    
-    if polarisation and ncorr == 2:
-        print("Warning: Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
+            if not header.startswith("#format:"):
+                raise CatalogueError("Catalogue needs to have a header starting with the string #format:")
+            
+            header = header.strip().replace("#format:", "").strip()
+            header = header.split(delimiter)
 
-    for ds in ms_dsl:
-        simvis = da.blockwise(computevis, ("row", "chan", "corr"),
-                            sources, ("source",),
-                            ds.UVW.data, ("row", "uvw"),
-                            freqs, ("chan",),
-                            ncorr, None,
-                            polarisation, None,
-                            incol, None,
-                            noise, None,
-                            opts.mode == "subtract", None,
-                            new_axes={"corr": ncorr},
-                            dtype=ds.DATA.data.dtype,
-                            concatenate=True,
-                            )
+            for line in stdr.readlines():
+                if line.startswith("#"):
+                    continue
+                rowdata = line.strip().split(delimiter)
+                if len(rowdata) != len(header):
+                    raise CatalogueError("The number of elements in one or more rows does not equal the\
+                                        number of expected elements based on the number of elements in the\
+                                        header")
+                for key in mapcols:
+                    catkey = mapcols[key][0]
+                    if catkey not in header:
+                        continue
+                    
+                    index = header.index(catkey)
+                    value = rowdata[index]
+                    if isnummber(value) and mapcols[key][2]:
+                        value += mapcols[key][2]
+                    
+                    mapcols[key][1].append(value)
         
-        allvis.append(simvis)
+        # validate mapcols to ensure that the required columns were read successfully
+        for col in ["name", "ra", "dec", "stokes_i"]:
+            if not mapcols[col][1]: # if the list storing column's data is empty
+                if col == "name": # user might not understand what simply "name" means
+                    raise CatalogueError(
+                        f"Failed to identify required column corresponding to source name/ID in the catalogue."
+                        " Please ensure that catalogue column headers match those in mapping file."
+                    )
+                else:
+                    raise CatalogueError(
+                    f"Failed to identify required column corresponding to '{col}' in the catalogue."
+                    " Please ensure that catalogue column headers match those in mapping file."
+                )      
         
+        # read MS (also computes noise)
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, _, ncorr, noise, incol, incol_dims = read_ms(ms, 
+                                                                                         opts.spwid, 
+                                                                                         opts.field_id, 
+                                                                                         chunks, 
+                                                                                         sefd = opts.sefd, 
+                                                                                         input_column = opts.input_column
+                                                                                        )
+        
+        sources = makesources(mapcols, freqs, ra0, dec0)
+        
+        allvis = []
+
+        # check for polarisation information
+        if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']):
+            polarisation = True
+        else:
+            polarisation = False
+        # TODO: Consider adding condition that all elements are non-zero and not "null" or None
+        
+        # warn user if polarisation is detected but only two correlations are requested    
+        if polarisation and ncorr == 2:
+            log.warning("Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
+
+        for ds in ms_dsl:
+            simvis = da.blockwise(compute_vis, ("row", "chan", "corr"),
+                                sources, ("source",),
+                                ds.UVW.data, ("row", "uvw"),
+                                freqs, ("chan",),
+                                ncorr, None,
+                                polarisation, None,
+                                opts.pol_basis, None,
+                                opts.mode, None,
+                                incol, incol_dims,
+                                noise=noise,
+                                new_axes={"corr": ncorr},
+                                dtype=ds.DATA.data.dtype,
+                                concatenate=True,
+                                )
+            
+            allvis.append(simvis)
+        
+    elif fs:
+        if os.path.exists(fs):
+            if os.path.isdir(fs):
+                fs = []
+                try:
+                    fs.append(glob(f"{fs}/*I.fits")[0])
+                    fs.append(glob(f"{fs}/*Q.fits")[0])
+                    fs.append(glob(f"{fs}/*U.fits")[0])
+                    fs.append(glob(f"{fs}/*V.fits")[0])
+                except IndexError:
+                    raise ParameterError("Could not find all required FITS files in the specified directory")
+                
+                if len(fs) > 4:
+                    raise ParameterError("Too many FITS files found in the specified directory")
+                
+            elif not fs.endswith(".fits"):
+                raise ParameterError("Invalid FITS file specified")
+        else:
+            raise ParameterError("FITS file/directory does not exist")
+        
+        # read MS (also computes noise)
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, df, ncorr, noise, incol, incol_dims = read_ms(ms, 
+                                                                                         opts.spwid, 
+                                                                                         opts.field_id, 
+                                                                                         chunks, 
+                                                                                         sefd = opts.sefd, 
+                                                                                         input_column = opts.input_column
+                                                                                        )
+        
+        # process FITS sky model
+        image, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(fs, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
+        
+        if sparsity >= 0.8:
+            log.info("Image is sparse enough for DFT. Using DFT.")
+            use_dft = True
+        else:
+            log.info("Image is too dense for DFT. Using FFT.")
+            
+        allvis = []
+    
+        for ds in ms_dsl:
+            simvis = da.blockwise(
+                augmented_im_to_vis, ("row", "chan", "corr"),
+                image, ("npix", "chan", "corr"),
+                ds.UVW.data, ("row", "uvw"),
+                lm, ("npix", "lm"),
+                freqs, ("chan",), 
+                use_dft, None,
+                opts.mode, None,
+                incol, incol_dims,
+                noise=noise,
+                n_pix_l = n_pix_l,
+                n_pix_m = n_pix_m, 
+                delta_ra = delta_ra,
+                delta_dec = delta_dec,
+                tol=float(opts.pixel_tol),
+                dtype=ds.DATA.data.dtype,
+                concatenate=True
+            )
+            
+            allvis.append(simvis)
+         
+    else:
+        raise ParameterError("No sky model specified. Please provide either a catalogue or a FITS sky model.")
+
     writes = []
     for i, ds in enumerate(ms_dsl):
         ms_dsl[i] = ds.assign(**{
@@ -165,5 +231,5 @@ def runit(**kwargs):
     
         writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
         
-    with TqdmCallback(desc="compute"):
+    with TqdmCallback(desc="Computing and writing visibilities..."):
         da.compute(writes)

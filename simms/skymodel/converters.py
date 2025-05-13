@@ -1,5 +1,8 @@
 from casacore.quanta import quantity as qa
 from casacore.measures import measures
+from numba import njit
+import numpy as np
+from typing import Union
 
 def convert2rad(string):
     if string is not None and string != 'null':
@@ -67,3 +70,18 @@ def convert2float(string, null_value=None):
     #    print(f"string is null")
     return numfloat
 
+@njit
+def radec2lm(ra0: float, dec0: float, ra: Union[float, np.ndarray], dec: Union[float, np.ndarray]):
+    """
+    Convert RA and Dec to l and m coordinates.
+    Args:
+        ra0 (float): phase centre RA in radians.
+        dec0 (float): phase centre Dec in radians.
+        ra (float or np.ndarray): RA in radians.
+        dec (float or np.ndarray): Dec in radians.
+    """
+    dra = ra - ra0
+    l = np.cos(dec) * np.sin(dra) 
+    m = np.sin(dec) * np.cos(dec0) - np.cos(dec) * np.sin(dec0) * np.cos(dra)
+
+    return l, m
