@@ -7,17 +7,16 @@ from numba import njit, prange
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from astropy.io import fits
-from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord
 from daskms import xds_from_ms, xds_from_table
 from africanus.dft import im_to_vis as dft_im_to_vis
 from africanus.gridding.wgridder import model as fft_im_to_vis
-from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
     convert2float,
     convert2Hz,
     convert2Jy,
     convert2rad,
+    convertdec2rad,
+    convertra2rad,
     radec2lm
 )
 from simms.skymodel.source_factory import contspec, singlegauss_1d
@@ -121,7 +120,7 @@ class Spectrum:
             self.cont_reffreq = convert2Hz(cont_reffreq)
             self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
             self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
-     
+    
         def make_spectrum(self, freqs):
             # only Stokes I case
             if all(param in [None, "null"] for param in [self.stokes_q, self.stokes_u, self.stokes_v]):
@@ -329,12 +328,11 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
     return lm.reshape(n_pix_l * n_pix_m, 2)
 
 
-def compute_radec_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float):
+def compute_radec_coords(header, n_ra: float, n_dec: float):
     """
     Calculates pixel (RA, Dec) coordinates
     Args:
         header (FITS header): FITS header
-        phase_centre (np.ndarray): phase centre coordinates
         n_ra (float): number of RA pixels
         n_dec (float): number of Dec pixels
     """
@@ -373,7 +371,7 @@ def compute_radec_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: f
 
 # TODO: consider assuming degrees for RA and Dec if no units are given
 def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_coords: Optional[np.ndarray]=None,
-                      delta_ra: Optional[float]=None, dec_coords: Optional[np.ndarray]=None, delta_dec: Optional[float]=None):
+                    delta_ra: Optional[float]=None, dec_coords: Optional[np.ndarray]=None, delta_dec: Optional[float]=None):
     """
     Calculates pixel (l, m) coordinates
     """
@@ -388,7 +386,7 @@ def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: floa
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
-                          ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-6, stokes: int = 0):
+                        ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-6, stokes: int = 0):
     """
     Processes FITS skymodel into DFT input
     Args:
@@ -460,8 +458,6 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         if "freq" in dims:
             freq_axis = check_var_axis(header, "FREQ")
             n_freqs = header[f"NAXIS{freq_axis}"]
-            # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
-            wcs = WCS(header, naxis=['longitude', 'latitude', 'spectral'])
 
             # get frequency info
             refpix_nu = header[f"CRPIX{freq_axis}"]
@@ -525,8 +521,6 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
 
         # no spectral axis
         else:
-            # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
-            wcs = WCS(header, naxis=['longitude', 'latitude'])
             # reshape FITS data to (n_pix_l, n_pix_m)
             skymodel = np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec")))
             
