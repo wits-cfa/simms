@@ -376,7 +376,7 @@ def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: floa
     Calculates pixel (l, m) coordinates
     """
     if not isinstance(ra_coords, np.ndarray) or not isinstance(dec_coords, np.ndarray):
-        ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, phase_centre, n_ra, n_dec)
+        ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, n_ra, n_dec)
     
     # calculate pixel (l, m) coordinates
     ra0, dec0 = phase_centre
@@ -494,7 +494,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
                     # interpolate FITS cube
                     log.warning("Interpolating FITS cube onto MS channel frequency grid. This uses a lot of memory.")
-                    ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, phase_centre, n_pix_l, n_pix_m)
+                    ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, n_pix_l, n_pix_m)
                     fits_interp = RegularGridInterpolator((ra_coords, dec_coords, freqs), skymodel)
                     ra, dec, vv = np.meshgrid(ra_coords, dec_coords, chan_freqs, indexing="ij")
                     radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
