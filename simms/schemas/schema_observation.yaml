@@ -25,7 +25,7 @@ Observation:
       - 0h0m0s
       - -30d0m0s
   start_time:
-    info: Observation UTC start time. Use this format DD/MM/YYYY HH:MM:SS
+    info: Observation UTC start time. Use this format YYYY-MM-DDTHH:MM:SS
     dtype: str
   start_hour_angle:
     info: Start hour angle in hours

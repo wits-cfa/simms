@@ -28,3 +28,14 @@ def known() -> Dict:
         lname = basename.split(".geodetic.yaml")[0]
         laysdict[lname] = layout
     return laysdict
+
+
+def unknown(file_path) -> Dict:
+    """
+    Returns a dictionary of the given array layouts
+    """
+    lay_dict = {}
+    basename = os.path.basename(file_path)
+    lname = basename.split(".yaml")[0]
+    lay_dict[lname] = file_path
+    return lname, lay_dict
