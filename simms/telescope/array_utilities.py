@@ -242,7 +242,7 @@ class Array:
         
         if not start_time:
             date = datetime.now()
-            start_time = date.strftime("%Y/%m/%d %H:%M:%S")
+            start_time = date.strftime("%Y-%m-%dT%H:%M:%S")
             start_day = Time(start_time, format="isot", scale="utc")
         else:
             if isinstance(start_time, str):
