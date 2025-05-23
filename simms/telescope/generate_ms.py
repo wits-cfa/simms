@@ -47,8 +47,10 @@ def create_ms(
     column: str,
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
-    horizon_limit: Union[float, str] = None,
-    antenna_limit: Union[float,str] = None
+    low_source_limit: Union[float, str] = None,
+    high_source_limit: Union[float, str] = None,
+    low_antenna_limit: Union[float,str] = None,
+    high_antenna_limit: Union[float,str] = None,
 ):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
@@ -160,6 +162,43 @@ def create_ms(
 
         ds[column] = (("row", "chan", "corr"), noisy_data)
 
+    nbaselines = num_ants * (num_ants - 1) // 2
+    src_elevs = uvcoverage_data.source_elevations
+    expanded_src_elevations = []
+    
+    for elevation in src_elevs:
+        all_baselines_elevation_per_time = [elevation] * nbaselines
+        expanded_src_elevations.append(all_baselines_elevation_per_time)
+        
+    expanded_src_elevations = np.array(expanded_src_elevations).flatten()
+    
+    
+    # if low_source_limit and high_source_limit:
+    #     flag_row = np.zeros(num_rows, dtype=bool)
+    #     for i in range(num_rows):
+    #         if expanded_src_elevations[i] < low_source_limit:
+    #             flag_row[i] = True
+    #         if expanded_src_elevations[i] > high_source_limit:
+    #             flag_row[i] = True
+        
+    #     ds["FLAG_ROW"] = (("row",), da.from_array(flag_row, chunks=num_row_chunks))
+     
+     
+    flag_row = np.zeros(num_rows, dtype=bool)
+        
+    if low_source_limit:
+        for i in range(num_rows):
+            if expanded_src_elevations[i] < low_source_limit:
+                flag_row[i] = True
+                    
+    if high_source_limit:
+        for i in range(num_rows):
+            if expanded_src_elevations[i] > high_source_limit:
+                flag_row[i] = True    
+    
+    ds["FLAG_ROW"] = (("row",), da.from_array(flag_row, chunks=num_row_chunks))        
+
+    
     main_table = daskms.Dataset(ds, coords={"ROWID": ("row", da.arange(num_rows))})
 
     write_main = xds_to_table(main_table, ms)

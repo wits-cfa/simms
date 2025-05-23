@@ -81,13 +81,43 @@ class Array:
                 self.sefd = sefd
 
         if self.degrees and self.coordsys.lower() == "geodetic":
-            self.antlocations = np.deg2rad(self.antlocations)
+            self.altitudes = self.antlocations[:, 2]
+            self.antlocations = np.deg2rad(self.antlocations[:, :2])
             self.centre_altitude = self.centre[2]
             self.centre = np.deg2rad(self.centre[:2]) #dont convert the height, its in meters.
 
+    def get_itrf_positions(self):
+        """
+        Get the ITRF positions of the antennas
+        """
+        if not hasattr(self, "antlocations"):
+            self.set_arrayinfo()
+
+        # convert to radians
+        if self.degrees and self.coordsys.lower() == "geodetic":
+            if self.antlocations.shape[1] == 3:
+                self.altitudes = self.antlocations[:, 2]
+            else:
+                self.altitudes = np.zeros(self.antlocations.shape[0])
+            self.antlocations = np.deg2rad(self.antlocations[:, :2])
+            self.centre_altitude = self.centre[2]
+            self.centre = np.deg2rad(self.centre[:2])
+            itrf_positions,_ = self.geodetic2global(self.antlocations[:, 0],self.antlocations[:, 1],self.altitudes,self.centre,self.centre_altitude)
+        
+        elif self.coordsys.lower() == "itrf":
+            itrf_positions = self.antlocations
+            self.centre = self.global2geodetic(self.centre[0],self.centre[1],self.centre[2])
+            
+        elif self.coordsys.lower() == "enu":
+            itrf_positions = self.local2global()  
+        
+        else:
+            raise ValueError("Unknown coordinate system. Please use geodetic, itrf or enu")     
+            
+            
     def geodetic2global(self):
         """
-        Convert the antenna positions from the geodetic frame to the global frame
+        Convert the antenna positions from the geodetic (WGS84) frame to the global (ITRF/ECEF) frame
 
         Returns
         ----
@@ -98,10 +128,13 @@ class Array:
 
         longitude = self.antlocations[:, 0]
         latitude = self.antlocations[:, 1]
-        altitude = self.antlocations[:, 2]
+        altitude = self.altitudes
 
         ref_longitude, ref_latitude= self.centre
         ref_altitude = self.centre_altitude
+        
+        # ref_longitude, ref_latitude = centre
+        # ref_altitude = centre_altitude
 
         nnp = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(latitude) ** 2)
         nn0 = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(ref_latitude**2))
@@ -120,10 +153,54 @@ class Array:
         xyz0 = np.column_stack((x0, y0, z0))
 
         return xyz, xyz0
+    
+    
+    def global2geodetic(self,X,Y,Z):
+        """
+        Convert the antenna positions from the global (ITRF/ECEF) frame to the geodetic (WGS84) frame.
+        
+        Parameters
+        ----
+        (X,Y,Z): float
+                : global coordinates of the antennas.
+        
+        Returns
+        ----
+        (phi,lam,h): float
+                : geodetic coordinates of the antennas.
+        """
+        
+        
+        f=1/298.257223563
+        b = constants.earth_emaj * (1 - f)
+        ep2 = (constants.earth_emaj**2 - b**2) / b**2
+
+        p = (X**2 + Y**2)**0.5
+        theta = np.arctan2(Z * constants.earth_emaj, p * b)
+
+        sin_theta = np.sin(theta)
+        cos_theta = np.cos(theta)
+
+        phi = np.arctan2(Z + ep2 * b * sin_theta**3, p - constants.esq * constants.earth_emaj * cos_theta**3)
+        lam = np.arctan2(Y, X)
+        v = constants.earth_emaj / (1 - constants.esq * np.sin(phi)**2)**0.5
+        h = p / np.cos(phi) - v
+        
+        geodetic = np.array((lam, phi, h))
+
+        return geodetic
+    
+    def local2global(self):
+        """"
+        Convert the antenna positions from the local (ENU) frame to the global (ITRF/ECEF) frame.
+        """
+        
+        pass
+    
 
     def geodetic2local(self):
         """
-        Converts the antenna positions from the geodetic frame to the local frame
+        Converts the antenna positions from the geodetic (WGS84) frame to the local (ENU) frame
 
         Returns
         ---
@@ -192,18 +269,27 @@ class Array:
 
         # xyz coordinates of the array
         positions_global, _ = self.geodetic2global()
+        
+        
+        # positions_global = self.get_itrf_positions()
+        # longitude = self.centre[0]
+        # latitude = self.centre[1]
+        
+
 
         # get the array centre info
         self.set_arrayinfo()
         longitude = self.centre[0]
         latitude = self.centre[1]
 
-        ra_dec = dm.direction(*pointing_direction)
+        if len(pointing_direction) == 3:
+            ra_dec = dm.direction(rf=pointing_direction[0], v0 = pointing_direction[1], v1=pointing_direction[2])
+        else:
+            ra_dec = dm.direction(rf='J2000', v0 = pointing_direction[1], v1=pointing_direction[2])
         ra = ra_dec["m0"]["value"]
         dec = ra_dec["m1"]["value"]
-
-        dt_ha = dtime / 3600 * 15 * constants.PI / 180
-
+         
+        
         if not start_time:
             date = datetime.now()
             start_time = date.strftime("%Y-%m-%dT%H:%M:%S")
@@ -233,7 +319,17 @@ class Array:
 
         total_time_rad = np.deg2rad(total_time/3600*15) 
         h0 = ih0 + np.linspace(-total_time_rad/2, total_time_rad/2, ntimes)
+        
+        source_elevations = self.get_source_elevation(
+            latitude, dec, h0)
+        
+        # antenna_elevations = self.get_antenna_elevation(
+        #     self.antlocations[:, 1], dec, h0, ntimes).T
+        # antenna_elevations = antenna_elevations.flatten()
+        # print(f"antenna_elevations: {antenna_elevations.shape}")
 
+
+        # Transformation matrix
         dec = np.ones(ntimes) * dec
         transform_matrix = np.array(
             [
@@ -279,12 +375,17 @@ class Array:
         total_bandwidth = start_freq + dfreq * nchan
         frequency_entries = np.arange(start_freq, total_bandwidth, dfreq)
 
-        uvcoverage = ObjDict({"antenna1": antenna1_list,
-                              "antenna2": antenna2_list,
-                              "uvw": uvw,
-                              "freqs": frequency_entries,
-                              "times": time_table,
-                              })
+        uvcoverage = ObjDict(
+            {
+                "antenna1": antenna1_list,
+                "antenna2": antenna2_list,
+                "uvw": uvw,
+                "freqs": frequency_entries,
+                "times": time_table,
+                "source_elevations": source_elevations,
+               
+            }
+        )
 
         return uvcoverage
 
@@ -303,35 +404,36 @@ class Array:
                                   "baseline": baseline}
                 baseline_info.append(baseline_entry)
         return baseline_info
-
-
-    def get_source_elevation(self,longitude,latitude,direction,times,starttime,starttime_sec):
+    
+    
+    
+    def get_source_elevation(self,latitude,declination,hour_angles):
         """
         Track the source during the observation and get its elevation.
+        
+        Parameters
+        ----
+        latitude: float
+                : latitude of the observer in radians.
+        declination: float
+                : declination of the source in radians.
+        hour_angles: array[float]
+                : hour angles of the source in radians.
+                
+        Returns
+        ----
+        source_elevations: array[float]
+                : the elevations of the source in degrees.
         """
-
-        dm = measures()
-        dm.doframe(dm.epoch('UTC', starttime))
-        src_dir = dm.direction(*direction)
-        # log.debug(f"longitude: {np.rad2deg(longitude)}, latitude: {np.rad2deg(latitude)}")
-        position = dm.position('wgs84', f'{longitude}rad', f'{latitude}rad', "1050m")
-
-        dm.doframe(position)
-
-        src_elevations = np.zeros(len(times))
-        times = np.unique(times)
-
-        for i in range(len(times)):
-            # current_time = starttime_sec + times[i]
-            dm.doframe(dm.epoch('UTC', f"{times[i]}s"))
-            if i % 100 == 0:
-                print(f"Time: {times[i]}s")
-            azel = dm.measure(src_dir, 'AZEL')
-            # log.debug(f"azel: {azel}")
-            el_rad = azel['m1']['value']
-            src_elevations[i] = el_rad
-        # log.debug(f"Source Elevations: {src_elevations[:2]}")   
-        return np.array(np.rad2deg(src_elevations))
+        
+        sin_elevation = np.sin(declination) * np.sin(latitude) + \
+            np.cos(declination) * np.cos(latitude) * np.cos(hour_angles)
+    
+        elevation = np.degrees(np.arcsin(sin_elevation))
+        
+        
+        return elevation
+        
 
 
     def get_antenna_elevation(self,ant_latitudes,dec,h0,ntimes):
@@ -354,41 +456,21 @@ class Array:
         antenna_elevations: Array[float]
                 : the elevations of the antennas in degrees.
         """
+        
         nants = ant_latitudes.shape[0]
         antenna_elevations = np.zeros((nants,ntimes))
 
         for i in range(nants):
-            antenna_elevations[i] = self.elevation(dec, ant_latitudes[i], h0)
-
-        return antenna_elevations
-
-
-    def elevation(self,dec,lat,h0): 
-        """
-        Compute the elevation given the source declination, antenna latitude and the hour angles.
-            
-        Parameters
-        ---
-
-        latitude: float
-                : latitude of the antenna in radians.
-        declination: float
-                : declination of the source in radians.
-        h0: float
-                : hour angle of the source in radians
-
-        Returns
-        ---
-
-        Elevation: float
-                : the elevation of the antenna in degrees.
-        """    
-        sin_elevation = np.sin(dec) * np.sin(lat) + np.cos(dec)* np.cos(lat) * np.cos(h0)
-
-        elevation = np.degrees(np.arcsin(sin_elevation))
-
-        return elevation
-
+            antenna_elevations[i] = np.sin(dec) * np.sin(ant_latitudes[i]) + \
+            np.cos(dec)* np.cos(ant_latitudes[i]) * np.cos(h0)
+        
+        altitude = np.degrees(np.arcsin(antenna_elevations))
+         
+        return altitude
+        
+             
+        
+        
 
 def ms_addrow(ms,subtable,nrows):
     
