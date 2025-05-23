@@ -80,18 +80,11 @@ class Array:
             elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
                 self.sefd = sefd
 
-        if self.degrees and self.coordsys.lower() == "geodetic":
-            self.altitudes = self.antlocations[:, 2]
-            self.antlocations = np.deg2rad(self.antlocations[:, :2])
-            self.centre_altitude = self.centre[2]
-            self.centre = np.deg2rad(self.centre[:2]) #dont convert the height, its in meters.
-
     def get_itrf_positions(self):
         """
         Get the ITRF positions of the antennas
         """
-        if not hasattr(self, "antlocations"):
-            self.set_arrayinfo()
+        self.set_arrayinfo()
 
         # convert to radians
         if self.degrees and self.coordsys.lower() == "geodetic":
@@ -100,20 +93,19 @@ class Array:
             else:
                 self.altitudes = np.zeros(self.antlocations.shape[0])
             self.antlocations = np.deg2rad(self.antlocations[:, :2])
+            print(f"centre shape and vals: {self.centre[2].shape, self.centre[2]}")
             self.centre_altitude = self.centre[2]
             self.centre = np.deg2rad(self.centre[:2])
-            itrf_positions,_ = self.geodetic2global(self.antlocations[:, 0],self.antlocations[:, 1],self.altitudes,self.centre,self.centre_altitude)
+            itrf_positions, _ = self.geodetic2global()
         
         elif self.coordsys.lower() == "itrf":
             itrf_positions = self.antlocations
             self.centre = self.global2geodetic(self.centre[0],self.centre[1],self.centre[2])
-            
-        elif self.coordsys.lower() == "enu":
-            itrf_positions = self.local2global()  
-        
+
         else:
-            raise ValueError("Unknown coordinate system. Please use geodetic, itrf or enu")     
+            raise ValueError("Unknown coordinate system. Please use Geodetic (WGS84), ITRF (XYZ)")     
             
+        return itrf_positions
             
     def geodetic2global(self):
         """
@@ -124,7 +116,6 @@ class Array:
         An array of the antennas XYZ positions and an array of the array center in XYZ
         """
 
-        self.set_arrayinfo()
 
         longitude = self.antlocations[:, 0]
         latitude = self.antlocations[:, 1]
@@ -132,11 +123,8 @@ class Array:
 
         ref_longitude, ref_latitude= self.centre
         ref_altitude = self.centre_altitude
-        
-        # ref_longitude, ref_latitude = centre
-        # ref_altitude = centre_altitude
 
-        nnp = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(latitude) ** 2)
+        nnp = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(latitude)**2)
         nn0 = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(ref_latitude**2))
 
         # calculating the global coordinates of the antennas.
@@ -189,14 +177,7 @@ class Array:
         geodetic = np.array((lam, phi, h))
 
         return geodetic
-    
-    def local2global(self):
-        """"
-        Convert the antenna positions from the local (ENU) frame to the global (ITRF/ECEF) frame.
-        """
         
-        pass
-    
 
     def geodetic2local(self):
         """
@@ -268,18 +249,12 @@ class Array:
         dm = measures()
 
         # xyz coordinates of the array
-        positions_global, _ = self.geodetic2global()
+        # positions_global, _ = self.geodetic2global()
         
         
-        # positions_global = self.get_itrf_positions()
+        
+        positions_global = self.get_itrf_positions()
         # longitude = self.centre[0]
-        # latitude = self.centre[1]
-        
-
-
-        # get the array centre info
-        self.set_arrayinfo()
-        longitude = self.centre[0]
         latitude = self.centre[1]
 
         if len(pointing_direction) == 3:
@@ -307,7 +282,7 @@ class Array:
         if start_ha:
             ih0 = start_ha * constants.PI
         else:
-            obs_location = EarthLocation(lon=longitude * u.rad, lat=latitude * u.rad)
+            # obs_location = EarthLocation(lon=longitude * u.rad, lat=latitude * u.rad)
             gmst = start_day.sidereal_time(kind="mean", longitude=0*u.deg)
             gmst_rad = gmst.to_value("rad")
             gha = gmst_rad - ra

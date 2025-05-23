@@ -60,7 +60,7 @@ def create_ms(
     size = telescope_array.size
     mount = telescope_array.mount
     antnames = telescope_array.names
-    antlocation, _ = telescope_array.geodetic2global()
+    antlocation = telescope_array.get_itrf_positions()
 
     uvcoverage_data = telescope_array.uvgen(
         pointing_direction,
