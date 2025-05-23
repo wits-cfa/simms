@@ -2,13 +2,20 @@ from datetime import datetime
 from typing import Union
 import ephem
 import numpy as np
+from astropy.time import Time
+from astropy.coordinates import EarthLocation
+import astropy.units as u
 from casacore.measures import measures
+from casacore import quanta as qa
+from casacore.measures import dq
 from casacore.tables import table
 from omegaconf import OmegaConf
 from simms import constants
-from .layouts import known
-from scabha.basetypes import File
+from simms.telescope.layouts import known, unknown
+from scabha.basetypes import File, List
 from simms.utilities import ObjDict
+from simms import get_logger
+log = get_logger(name="telsim")
 
 
 class Array:
@@ -16,7 +23,7 @@ class Array:
     The Array class has functions for converting from one coordinate system to another.
     """
 
-    def __init__(self, layout: Union[str, File], degrees: bool = True):
+    def __init__(self, layout: Union[str, File], degrees: bool = True, sefd: float=None):
         """
         layout: str|File
                     : specify an observatory as a str or a file.
@@ -28,10 +35,17 @@ class Array:
 
         """
 
-        self.layout = layout
+        
         self.degrees = degrees
         self.observatories = known()
-
+        if layout not in self.observatories:
+            self.layoutname, self.layout = unknown(layout)
+        else:
+            self.layout = layout
+        self.sefd = sefd
+        
+    
+            
     def set_arrayinfo(self):
         """
         Extract the array information from the schema
@@ -47,8 +61,8 @@ class Array:
                 vla = False
 
         else:
-            fname = self.layout
-
+            fname = self.layout.get(self.layoutname)
+        
         info = OmegaConf.load(fname)
         if vla:
             self.antlocations = np.array(info["antlocations"][self.layout])
@@ -60,11 +74,27 @@ class Array:
         self.names = info["antnames"]
         self.coordsys = info["coord_sys"]
         self.size = info["size"]
+        if self.sefd is None:
+            sefd = info.get("sefd", None)
+            self.sefd = sefd
+            
+            if isinstance(sefd, (float, int)):
+                self.sefd = [sefd]
+            elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
+                self.sefd = sefd
+           
+            
+        # if "tsys_over_eta" in info.keys():
+        #     self.tysys = info["tsys_over_eta"]
+        # else:
+        #     self.tysys = 0.1
+        
 
         if self.degrees and self.coordsys.lower() == "geodetic":
             self.antlocations = np.deg2rad(self.antlocations)
-            self.centre = np.deg2rad(self.centre)
-
+            self.centre_altitude = self.centre[2]
+            self.centre = np.deg2rad(self.centre[:2]) #dont convert the height, its in meters.
+            
     def geodetic2global(self):
         """
         Convert the antenna positions from the geodetic frame to the global frame
@@ -80,7 +110,8 @@ class Array:
         latitude = self.antlocations[:, 1]
         altitude = self.antlocations[:, 2]
 
-        ref_longitude, ref_latitude, ref_altitude = self.centre
+        ref_longitude, ref_latitude= self.centre
+        ref_altitude = self.centre_altitude
 
         nnp = constants.earth_emaj / \
             np.sqrt(1 - constants.esq * np.sin(latitude) ** 2)
@@ -176,6 +207,8 @@ class Array:
 
         # xyz coordinates of the array
         positions_global, _ = self.geodetic2global()
+        
+
 
         # get the array centre info
         self.set_arrayinfo()
@@ -186,32 +219,70 @@ class Array:
         ra = ra_dec["m0"]["value"]
         dec = ra_dec["m1"]["value"]
 
-        tot_ha = ((ntimes * dtime) / 3600) * constants.hour_angle
-        if start_ha or start_time:
-            if start_ha:
-                ih0 = start_ha
-            else:
-                if isinstance(start_time, str):
-                    ih0 = self.get_start_ha(
-                        longitude, latitude, ra, start_time)
-                else:
-                    split_start_time = start_time[1]
-                    ih0 = self.get_start_ha(
-                        longitude, latitude, ra, split_start_time)
+        # tot_ha = ((ntimes * dtime) / 3600) * constants.hour_angle
+        # if start_ha or start_time:
+        #     if start_ha:
+        #         ih0 = start_ha * (np.pi/12)
+        #     else:
+        #         if isinstance(start_time, str):
+        #             ih0 = self.get_hour_angles(start_time, ra,
+        #                 longitude, latitude, 0)
+        #         else:
+        #             split_start_time = start_time[1]
+        #             ih0 = self.get_start_ha(
+        #                 longitude, latitude, pointing_direction, split_start_time)
+        # else:
+        #     ih0 = -tot_ha / 2
+            
+        dt_ha = dtime / 3600 * 15 * np.pi / 180 
+        
+        # ih0 -= (tot_ha + dt_ha)/2
+        # h0 = np.linspace(0, tot_ha, ntimes) - ih0
+        # print(f"{h0[::25]}, ih0:{ih0}  tot_ha:{np.rad2deg(tot_ha)/15}") 
+        
+        if not start_time:
+            date = datetime.now()
+            start_time = date.strftime("%Y-%m-%dT%H:%M:%S")
+            start_day = Time(start_time, format="isot", scale="utc")
         else:
-            ih0 = -tot_ha / 2
+            if isinstance(start_time, str):
+               
+                start_day = Time(start_time, format="isot", scale="utc")
+                
+        start_time_sec = start_day.to_value("mjd") * 24 * 3600
+        total_time = ntimes * dtime
 
-        h0 = ih0 + np.linspace(0, tot_ha, ntimes)
-
+        time_entries = np.arange(start_time_sec, start_time_sec+total_time, dtime)
+        
+        if start_ha:
+            ih0 = start_ha * constants.PI
+            
+        else:
+            obs_location = EarthLocation(lon=longitude * u.rad, lat=latitude * u.rad)
+            gmst = start_day.sidereal_time(kind="mean", longitude=0*u.deg)
+            gmst_rad = gmst.to_value("rad")
+            gha = gmst_rad - ra
+            gha = gha % (2 * np.pi)
+            
+            start_day_rads = start_day.to_value("mjd")%1 
+            start_day_rads *= 24*15*np.pi/180
+            
+            ih0 = gha
+        
+        total_time_rad = np.deg2rad(total_time/3600*15) 
+        h0 = ih0 + np.linspace(-total_time_rad/2, total_time_rad/2, ntimes)
+        
+     
         # Transformation matrix
+        
+        dec = np.ones(ntimes) * dec
         transform_matrix = np.array(
             [
-                [np.sin(h0), np.cos(h0), np.array(
-                    [0.0 for _ in range(len(h0))])],
-                [-np.sin(dec) * np.cos(h0), np.sin(dec) * np.sin(h0),
-                 np.array([np.cos(dec) for _ in range(len(h0))])],
-                [np.cos(dec) * np.cos(h0), -np.cos(dec) * np.sin(h0),
-                 np.array([np.sin(dec) for _ in range(len(h0))])],
+                [np.sin(h0), np.cos(h0), np.zeros(ntimes)],
+                
+                [-np.sin(dec) * np.cos(h0), np.sin(dec) * np.sin(h0), np.cos(dec)],
+                
+                [-np.cos(dec) * np.cos(h0), np.cos(dec) * np.sin(h0), np.sin(dec)]
             ]
         )
 
@@ -229,6 +300,7 @@ class Array:
             antenna2_list.append(antenna2)
 
         bl_array = np.vstack(baseline_list)
+        
 
         u_coord = (np.outer(transform_matrix[0, 0], bl_array[:, 0]) + np.outer(
             transform_matrix[0, 1], bl_array[:, 1]) + np.outer(transform_matrix[0, 2], bl_array[:, 2]))
@@ -237,24 +309,12 @@ class Array:
         w_coord = (np.outer(transform_matrix[2, 0], bl_array[:, 0]) + np.outer(
             transform_matrix[2, 1], bl_array[:, 1]) + np.outer(transform_matrix[2, 2], bl_array[:, 2]))
 
+        # import pdb; pdb.set_trace()
         u_coord, v_coord, w_coord = [x.flatten()
                                      for x in (u_coord, v_coord, w_coord)]
         uvw = np.column_stack((u_coord, v_coord, w_coord))
 
-        if not start_time:
-            date = datetime.now()
-            start_time = date.strftime("%Y/%m/%d %H:%M:%S")
-            start_day = dm.epoch(rf='UTC', v0=start_time)["m0"]["value"]
-        else:
-            if isinstance(start_time, str):
-                start_day = dm.epoch(rf='UTC', v0=start_time)["m0"]["value"]
-            else:
-                start_day = dm.epoch(*start_time)["m0"]["value"]
-        start_time_sec = start_day * 24 * 3600
-        total_time = start_time_sec + ntimes * dtime
-
-        time_entries = np.arange(start_time_sec, total_time, dtime)
-
+        
         time_table = []
         for time_entry in time_entries:
             baseline_time = [time_entry] * len(baseline_list)
@@ -274,6 +334,7 @@ class Array:
                 "uvw": uvw,
                 "freqs": frequency_entries,
                 "times": time_table,
+               
             }
         )
 
@@ -292,46 +353,96 @@ class Array:
                                   "antenna2": j, "baseline": baseline}
                 baseline_info.append(baseline_entry)
         return baseline_info
-
-    def get_start_ha(self, longitude, latitude, ra, date):
+    
+    
+    
+    def get_source_elevation(self,longitude,latitude,direction,times,starttime,starttime_sec):
         """
-        TODO(mukundi and galefang) add docstring
+        Track the source during the observation and get its elevation.
         """
+        
+        dm = measures()
+        dm.doframe(dm.epoch('UTC', starttime))
+        src_dir = dm.direction(*direction)
+        # log.debug(f"longitude: {np.rad2deg(longitude)}, latitude: {np.rad2deg(latitude)}")
+        position = dm.position('wgs84', f'{longitude}rad', f'{latitude}rad', "1050m")
+        
+        dm.doframe(position)
+        
+        src_elevations = np.zeros(len(times))
+        times = np.unique(times)
+        
+        for i in range(len(times)):
+            # current_time = starttime_sec + times[i]
+            dm.doframe(dm.epoch('UTC', f"{times[i]}s"))
+            if i % 100 == 0:
+                print(f"Time: {times[i]}s")
+            azel = dm.measure(src_dir, 'AZEL')
+            # log.debug(f"azel: {azel}")
+            el_rad = azel['m1']['value']
+            src_elevations[i] = el_rad
+        # log.debug(f"Source Elevations: {src_elevations[:2]}")   
+        return np.array(np.rad2deg(src_elevations))
+        
 
-        longitude = np.deg2rad(longitude)
-        latitude = np.deg2rad(latitude)
+    
+    def get_antenna_elevation(self,ant_latitudes,dec,h0,ntimes):
+        """
+        Get the elevations of the antennas at the observing times.
+            
+        Parameters
+        ---
+        
+        ant_latitudes: Array[float]
+                : latitudes of all the antennas in radians.
+        declination: float
+                : declination of the source in radians.
+        h0: Array[float]
+                : hour angles of the source in radians
 
-        obs = ephem.Observer()
-        obs.lon, obs.lat = longitude, latitude
+        Returns
+        ---
+        
+        antenna_elevations: Array[float]
+                : the elevations of the antennas in degrees.
+        """
+        nants = ant_latitudes.shape[0]
+        antenna_elevations = np.zeros((nants,ntimes))
+        
+        for i in range(nants):
+            antenna_elevations[i] = self.elevation(dec,
+                    ant_latitudes[i],h0)
+        
+        return antenna_elevations
+                
+    def elevation(self,dec,lat,h0): 
+        """
+        Compute the elevation given the source declination, antenna latitude and the hour angles.
+            
+        Parameters
+        ---
+        
+        latitude: float
+                : latitude of the antenna in radians.
+        declination: float
+                : declination of the source in radians.
+        h0: float
+                : hour angle of the source in radians
 
-        obs.date = date
-        lst = obs.sidereal_time()
-
-        def change(angle):
-            if angle > constants.two_pi:
-                angle -= constants.two_pi
-            elif angle < 0:
-                angle += constants.two_pi
-            return angle
-
-        lst, ra = map(change, (lst, ra))
-        diff = (lst - ra) / constants.two_pi
-
-        date = obs.date
-        obs.date = date + diff
-
-        transit = change(obs.sidereal_time())
-        if ra == 0:
-            obs.date = (date - lst) / constants.two_pi
-        elif transit - ra > 0.1 * constants.hour_angle:
-            obs.date = date - diff
-
-        ih0 = change(((obs.date) / constants.two_pi) % constants.two_pi)
-        if latitude < 0:
-            ih0 -= np.pi
-            obs.date -= 0.5
-
-        return ih0
+        Returns
+        ---
+        
+        Elevation: float
+                : the elevation of the antenna in degrees.
+        """    
+        sin_elevation = np.sin(dec) * np.sin(lat) + \
+            np.cos(dec)* np.cos(lat) * np.cos(h0)
+        
+        elevation = np.degrees(np.arcsin(sin_elevation))
+    
+        return elevation
+        
+        
 
 def ms_addrow(ms,subtable,nrows):
     

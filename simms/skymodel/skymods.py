@@ -7,21 +7,19 @@ from numba import njit, prange
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from astropy.io import fits
-from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord
 from daskms import xds_from_ms, xds_from_table
 from africanus.dft import im_to_vis as dft_im_to_vis
 from africanus.gridding.wgridder import model as fft_im_to_vis
-from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
-    convert2float, 
-    convert2Hz, 
-    convertdec2rad, 
-    convertra2rad,
+    convert2float,
+    convert2Hz,
     convert2Jy,
     convert2rad,
+    convertdec2rad,
+    convertra2rad,
     radec2lm
 )
+from simms.skymodel.source_factory import contspec, singlegauss_1d
 
 
 log = get_logger(BIN.skysim)
@@ -122,7 +120,7 @@ class Spectrum:
             self.cont_reffreq = convert2Hz(cont_reffreq)
             self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
             self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
-     
+    
         def make_spectrum(self, freqs):
             # only Stokes I case
             if all(param in [None, "null"] for param in [self.stokes_q, self.stokes_u, self.stokes_v]):
@@ -150,38 +148,52 @@ class Spectrum:
 
 def makesources(data, freqs, ra0, dec0):
     num_sources = len(data['name'][1])
-    
     sources = []
     for i in range(num_sources):
         source = Source(
-            name = data['name'][1][i],
-            ra = data['ra'][1][i],
-            dec = data['dec'][1][i],
-            emaj = data['emaj'][1][i] if i < len(data['emaj'][1]) else None,
-            emin = data['emin'][1][i] if i < len(data['emin'][1]) else None,
-            pa = data['pa'][1][i] if i < len(data['pa'][1]) else '0deg'
-            
+            name=data["name"][1][i],
+            ra=data["ra"][1][i],
+            dec=data["dec"][1][i],
+            emaj=data["emaj"][1][i] if i < len(data["emaj"][1]) else None,
+            emin=data["emin"][1][i] if i < len(data["emin"][1]) else None,
+            pa=data["pa"][1][i] if i < len(data["pa"][1]) else "0deg",
         )
-        
+
         spectrum = Spectrum(
-            stokes_i = data['stokes_i'][1][i],
-            stokes_q = data['stokes_q'][1][i] if i < len(data['stokes_q'][1]) else None,
-            stokes_u = data['stokes_u'][1][i] if i < len(data['stokes_u'][1]) else None,
-            stokes_v = data['stokes_v'][1][i] if i < len(data['stokes_v'][1]) else None,
-            cont_reffreq = data['cont_reffreq'][1][i] if i < len(data['cont_reffreq'][1]) else None,
-            line_peak = data['line_peak'][1][i] if i < len(data['line_peak'][1]) else None,
-            line_width = data['line_width'][1][i] if i < len(data['line_width'][1]) else None,
-            line_restfreq = data['line_restfreq'][1][i] if i < len(data['line_restfreq'][1]) else None,
-            cont_coeff_1 = (data['cont_coeff_1'][1][i]) if i < len(data['cont_coeff_1'][1]) else None,
-            cont_coeff_2 = data['cont_coeff_2'][1][i] if i < len(data['cont_coeff_2'][1]) else None
-            
+            stokes_i=data["stokes_i"][1][i],
+            stokes_q=data["stokes_q"][1][i] if i < len(data["stokes_q"][1]) else None,
+            stokes_u=data["stokes_u"][1][i] if i < len(data["stokes_u"][1]) else None,
+            stokes_v=data["stokes_v"][1][i] if i < len(data["stokes_v"][1]) else None,
+            cont_reffreq=(
+                data["cont_reffreq"][1][i] if i < len(data["cont_reffreq"][1]) else None
+            ),
+            line_peak=(
+                data["line_peak"][1][i] if i < len(data["line_peak"][1]) else None
+            ),
+            line_width=(
+                data["line_width"][1][i] if i < len(data["line_width"][1]) else None
+            ),
+            line_restfreq=(
+                data["line_restfreq"][1][i]
+                if i < len(data["line_restfreq"][1])
+                else None
+            ),
+            cont_coeff_1=(
+                (data["cont_coeff_1"][1][i])
+                if i < len(data["cont_coeff_1"][1])
+                else None
+            ),
+            cont_coeff_2=(
+                data["cont_coeff_2"][1][i] if i < len(data["cont_coeff_2"][1]) else None
+            ),
         )
         
         source.set_lm(ra0, dec0)
         source.spectrum = spectrum.make_spectrum(freqs)
         sources.append(source)
-        
+
     return sources
+
 
 
 def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str,
@@ -232,7 +244,7 @@ def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: i
     # if polarisation is detected, we need to compute different correlations separately
     if polarisation:
         xx, yy = 0j, 0j
-        if ncorr==2: # if ncorr is 2, we only need compute XX and YY correlations
+        if ncorr == 2:  # if ncorr is 2, we only need compute XX and YY correlations
             for source in srcs:
                 phase_factor = calculate_phase_factor(source, uvw_scaled)
                 source_xx, source_yy = compute_brightness_matrix(source.spectrum, 'diagonal', basis)
@@ -240,8 +252,8 @@ def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: i
                 yy += source_yy * phase_factor
                 
             vis = np.stack([xx, yy], axis=2)
-            
-        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
+
+        elif ncorr == 4:  # if ncorr is 4, we need to compute all correlations
             xy, yx = 0j, 0j
             for source in srcs:
                 phase_factor = calculate_phase_factor(source, uvw_scaled)
@@ -252,13 +264,15 @@ def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: i
                 yy += source_yy * phase_factor
             
             vis = np.stack([xx, xy, yx, yy], axis=2)
-        
+
         else:
-            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
-    
-    # if no polarisation is detected, we only need compute XX and duplicate to YY     
+            raise ValueError(
+                f"Only two or four correlations allowed, but {ncorr} were requested."
+            )
+
+    # if no polarisation is detected, we only need compute XX and duplicate to YY
     else:
-        vis = 0j    
+        vis = 0j
         for source in srcs:
             phase_factor = calculate_phase_factor(source, uvw_scaled)
             vis += source.spectrum * phase_factor
@@ -314,12 +328,11 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
     return lm.reshape(n_pix_l * n_pix_m, 2)
 
 
-def compute_radec_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float):
+def compute_radec_coords(header, n_ra: float, n_dec: float):
     """
     Calculates pixel (RA, Dec) coordinates
     Args:
         header (FITS header): FITS header
-        phase_centre (np.ndarray): phase centre coordinates
         n_ra (float): number of RA pixels
         n_dec (float): number of Dec pixels
     """
@@ -358,12 +371,12 @@ def compute_radec_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: f
 
 # TODO: consider assuming degrees for RA and Dec if no units are given
 def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_coords: Optional[np.ndarray]=None,
-                      delta_ra: Optional[float]=None, dec_coords: Optional[np.ndarray]=None, delta_dec: Optional[float]=None):
+                    delta_ra: Optional[float]=None, dec_coords: Optional[np.ndarray]=None, delta_dec: Optional[float]=None):
     """
     Calculates pixel (l, m) coordinates
     """
     if not isinstance(ra_coords, np.ndarray) or not isinstance(dec_coords, np.ndarray):
-        ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, phase_centre, n_ra, n_dec)
+        ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, n_ra, n_dec)
     
     # calculate pixel (l, m) coordinates
     ra0, dec0 = phase_centre
@@ -373,7 +386,7 @@ def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: floa
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
-                          ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-6, stokes: int = 0):
+                        ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-6, stokes: int = 0):
     """
     Processes FITS skymodel into DFT input
     Args:
@@ -445,8 +458,6 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         if "freq" in dims:
             freq_axis = check_var_axis(header, "FREQ")
             n_freqs = header[f"NAXIS{freq_axis}"]
-            # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
-            wcs = WCS(header, naxis=['longitude', 'latitude', 'spectral'])
 
             # get frequency info
             refpix_nu = header[f"CRPIX{freq_axis}"]
@@ -483,7 +494,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
                     # interpolate FITS cube
                     log.warning("Interpolating FITS cube onto MS channel frequency grid. This uses a lot of memory.")
-                    ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, phase_centre, n_pix_l, n_pix_m)
+                    ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, n_pix_l, n_pix_m)
                     fits_interp = RegularGridInterpolator((ra_coords, dec_coords, freqs), skymodel)
                     ra, dec, vv = np.meshgrid(ra_coords, dec_coords, chan_freqs, indexing="ij")
                     radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
@@ -510,8 +521,6 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
 
         # no spectral axis
         else:
-            # this knows the coordinate system of the image (e.g. FK5, Galactic or ICRS)
-            wcs = WCS(header, naxis=['longitude', 'latitude'])
             # reshape FITS data to (n_pix_l, n_pix_m)
             skymodel = np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec")))
             

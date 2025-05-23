@@ -13,6 +13,9 @@ recipe:
     telescope:
       dtype: str
       default: kat-7
+    start_time:
+      dtype: str
+      default: "2025-05-14T00:25:15"
   steps:
     helpinfo:
       cab:
@@ -22,6 +25,7 @@ recipe:
       params:
         ms: =recipe.msname
         telescope: =recipe.telescope
+        starttime: =recipe.start_time
         ntime: 20
         dtime: 4
         nchan: 3
@@ -29,6 +33,4 @@ recipe:
       cab: telsim
       params:
         _use: recipe.steps.basic.params
-        addnoise: true
         sefd: 410
-        
