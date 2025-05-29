@@ -612,22 +612,22 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         else:
             raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
         
-    intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr) # reshape image for compatibility with im_to_vis
-    
     # calculate pixel (l, m) coordinates
     lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
     
+    intensities_flat = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr)
+    lm_flat = lm.reshape(n_pix_l * n_pix_m, 2)
     # get only pixels with brightness > tol
-    tol_mask = np.any(np.abs(intensities) > tol, axis=(1, 2))
-    non_zero_intensities = intensities[tol_mask]
-    if non_zero_intensities.size == 0:
-        raise SkymodelError("No pixels with brightness > tol found in FITS sky model.")
-    non_zero_lm = lm[tol_mask]
+
+    tol_mask = np.any(np.abs(intensities_flat) > tol, axis=(1, 2))
+    non_zero_intensities = intensities_flat[tol_mask]
+    non_zero_lm = lm_flat[tol_mask]
+ 
     
     # decide whether image is sparse enough for DFT
     sparsity = 1 - (non_zero_intensities.size/intensities.size)
     
-    return non_zero_intensities, non_zero_lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec
+    return non_zero_intensities, non_zero_lm, intensities, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec
     
     
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, use_dft: bool,
@@ -649,25 +649,65 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
     Returns:
         vis: visibility array
     """
-    _, nchan, ncorr = image.shape
-    
+  
+    # Key changes for fft:
+    # - Use full intensity (fft requires the complete image)
+    # - Loop over both channel and correlation 
+    # - Use per-channel/correlation slicing 
+    # - Axis flipping for RA/Dec is still under testing
+ 
     # if sparse, use DFT
     if use_dft:
         # predict visibilities
-        vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='casa')
+        _, nchan, ncorr = image.shape
+        vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='fourier')
     
     # else, use FFT
     else:
         log.info("Image is too dense for DFT. Using FFT.")
-        image = image.reshape(ncorr, nchan, n_pix_l, n_pix_m)
+        n_pix_l, n_pix_m, nchan, ncorr = image.shape
+
+        # transposing to match wgridder expectations
+        image = image.transpose(3,2,0,1)
+
+        # TODO:
+        # Add a line for phase check
+        # flipping is header dependent
+        # flipping the ra, and dec didn't work for the casa produced fits
+        # maybe vis = np.conj(vis) for casa like headers?
+
+        # Reshape UVW
+        uvw = uvw.reshape(uvw.shape[0], 3)
         vis = np.zeros((uvw.shape[0], nchan, ncorr), dtype=np.complex128 if ncorr == 4 else np.float64)
-        freq_bin_idx = np.arange(nchan)
-        freq_bin_counts = np.ones(nchan)
-        # predict visibilities
-        for corr in image.shape[2]:
-            vis[:, :, corr] = fft_im_to_vis(uvw, chan_freqs, image[corr], freq_bin_idx, freq_bin_counts, delta_ra, 
-                                            celly=delta_dec, epsilon=tol, nthreads=nthreads)
-    
+        # 
+        for corr in range(image.shape[0]):
+            for chan in range(nchan):
+                chan_freq = chan_freqs[chan:chan+1]
+                # allowing to process one chan at a time
+                freq_bin_idx = np.zeros(1, dtype=np.int32)
+                freq_bin_counts = np.ones(1, dtype=np.int32)
+                
+                # Extract a 2d slice for this corr and chan an
+                # reshape because 3D is expected 
+                image_slice = image[corr, chan].reshape(1, n_pix_l, n_pix_m)
+                
+                vis_temp = fft_im_to_vis(
+                    uvw, 
+                    chan_freq, 
+                    image_slice, 
+                    freq_bin_idx, 
+                    freq_bin_counts, 
+                    abs(delta_ra), 
+                    celly=abs(delta_dec),  
+                    epsilon=tol, 
+                    nthreads=nthreads
+                )
+                
+                # remove the extra singleton from output
+                if vis_temp.shape != (uvw.shape[0],):
+                    vis_temp = np.squeeze(result)  
+                    
+                vis[:, chan, corr] = vis_temp
     # add noise
     add_noise(vis, noise)
     # do addition/subtraction of model data
