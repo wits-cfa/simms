@@ -187,7 +187,8 @@ def runit(**kwargs):
                                                                                         )
         
         # process FITS sky model
-        image, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(fs, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
+        non_zero_intensities, non_zero_lm, intensities, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(fs, ra0, 
+        dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
         
         if sparsity >= 0.8:
             log.info("Image is sparse enough for DFT. Using DFT.")
@@ -195,29 +196,53 @@ def runit(**kwargs):
         else:
             log.info("Image is too dense for DFT. Using FFT.")
             use_dft = False
+            log.info("Using non masked intensities and lm coordinates for fft")   
+
+
+        image = non_zero_intensities if use_dft else intensities 
+        lm_coords = non_zero_lm if use_dft else lm 
+
+        allvis = []   
             
-        allvis = []
-    
         for ds in ms_dsl:
-            simvis = da.blockwise(
-                augmented_im_to_vis, ("row", "chan", "corr"),
-                image, ("npix", "chan", "corr"),
-                ds.UVW.data, ("row", "uvw"),
-                lm, ("npix", "lm"),
-                freqs, ("chan",), 
-                use_dft, None,
-                opts.mode, None,
-                incol, incol_dims,
-                noise=noise,
-                n_pix_l = n_pix_l,
-                n_pix_m = n_pix_m, 
-                delta_ra = delta_ra,
-                delta_dec = delta_dec,
-                tol=float(opts.pixel_tol),
-                dtype=ds.DATA.data.dtype,
-                concatenate=True
-            )
-            
+            if use_dft:
+                simvis = da.blockwise(
+                    augmented_im_to_vis, ("row", "chan", "corr"),
+                    image, ("npix", "chan", "corr"),
+                    ds.UVW.data, ("row", "uvw"),
+                    lm_coords, ("npix", "lm"),
+                    freqs, ("chan",), 
+                    use_dft, None,
+                    opts.mode, None,
+                    incol, incol_dims,
+                    noise=noise,
+                    n_pix_l = n_pix_l,
+                    n_pix_m = n_pix_m, 
+                    delta_ra = delta_ra,
+                    delta_dec = delta_dec,
+                    tol=float(opts.pixel_tol),
+                    dtype=ds.DATA.data.dtype,
+                    concatenate=True,
+                )
+            else:
+                simvis = da.blockwise(
+                    augmented_im_to_vis, ("row", "chan", "corr"),
+                    image, ("l", "m", "chan", "corr"),
+                    ds.UVW.data, ("row", "uvw"),
+                    lm_coords.reshape(n_pix_l, n_pix_m, 2), ("l", "m", "lm"),
+                    freqs, ("chan",), 
+                    use_dft, None,
+                    opts.mode, None,
+                    incol, incol_dims,
+                    noise=noise,
+                    n_pix_l=n_pix_l,
+                    n_pix_m=n_pix_m,
+                    delta_ra=delta_ra,
+                    delta_dec=delta_dec,
+                    tol=float(opts.pixel_tol),
+                    dtype=ds.DATA.data.dtype,
+                    concatenate=True,
+                )
             allvis.append(simvis)
          
     else:
