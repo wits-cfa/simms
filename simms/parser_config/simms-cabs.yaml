@@ -39,6 +39,11 @@ cabs:
         dtype: str
         default: MODEL_DATA
         abbreviation: col
+      simulated_column:
+        info: Name of the column containing previously simulated data to use for add/subtract modes.
+        dtype: str
+        abbreviation: sc
+        required: no  
       row-chunk-size:
         info: Chunking strategy for the simulation
         dtype: int
