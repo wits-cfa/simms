@@ -250,12 +250,25 @@ def runit(**kwargs):
 
     writes = []
     for i, ds in enumerate(ms_dsl):
-        ms_dsl[i] = ds.assign(**{
-                opts.column: ( ("row", "chan", "corr"), 
-                    allvis[i]),
-        })
+            if opts.mode in ["add", "subtract"] and hasattr(opts, 'simulated_column'):
+                simulated_data = ds[opts.simulated_column].data
+                input_data = ds[opts.input_column].data
+
+                if opts.mode == "subtract":
+                    residual = input_data - simulated_data
+                else:
+                    residual = input_data + simulated_data
+
+                print("input_data[0,0,0]:", input_data[0,0,0].compute(), "simulated_data[0,0,0]:", simulated_data[0,0,0].compute(), "residual[0,0,0]:", residual[0,0,0].compute())  
+                print("input_data shape:", input_data.shape)
+                print(("simulated_data shape:", simulated_data.shape))
+                ms_dsl[i] = ds.assign(**{
+                    opts.column: (("row", "chan", "corr"), 
+                        residual)
+                })
+
+    writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
     
-        writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
-        
+
     with TqdmCallback(desc="Computing and writing visibilities..."):
         da.compute(writes)
