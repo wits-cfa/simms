@@ -45,6 +45,11 @@ def runit(**kwargs):
     fs = opts.fits_sky
     chunks = {"row": opts.row_chunk_size}
     
+    # you dont need to specify a sky model if you are adding or subtracting simulated visibilities to/from the input column,
+    # if you already have a simulated column in the MS
+    if opts.mode not in ["add", "subtract"] and not (cat or fs):
+        raise ParameterError("Please specify a catalogue or FITS sky model to simulate visibilities.")
+    
     if cat and fs:
         raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
     elif cat:
@@ -246,7 +251,16 @@ def runit(**kwargs):
             allvis.append(simvis)
          
     else:
-        raise ParameterError("No sky model specified. Please provide either a catalogue or a FITS sky model.")
+        if opts.mode not in ["add", "subtract"]:
+            raise ParameterError("You are simulating and no sky model was specified. Please provide either a catalogue or a FITS sky model.")
+     
+
+        ms_dsl , *_ = read_ms(ms,
+                            opts.spwid,
+                            opts.field_id,
+                            chunks,
+                            sefd=opts.sefd,
+                            input_column=opts.input_column)
 
     writes = []
     for i, ds in enumerate(ms_dsl):
