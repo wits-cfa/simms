@@ -253,9 +253,8 @@ def runit(**kwargs):
     else:
         if opts.mode not in ["add", "subtract"]:
             raise ParameterError("You are simulating and no sky model was specified. Please provide either a catalogue or a FITS sky model.")
-     
 
-        ms_dsl , *_ = read_ms(ms,
+        ms_dsl , * _ = read_ms(ms,
                             opts.spwid,
                             opts.field_id,
                             chunks,
@@ -263,6 +262,7 @@ def runit(**kwargs):
                             input_column=opts.input_column)
 
     writes = []
+   
     for i, ds in enumerate(ms_dsl):
             if opts.mode in ["add", "subtract"] and hasattr(opts, 'simulated_column'):
                 simulated_data = ds[opts.simulated_column].data
@@ -280,9 +280,12 @@ def runit(**kwargs):
                     opts.column: (("row", "chan", "corr"), 
                         residual)
                 })
+            else: 
+                ms_dsl[i] = ds.assign(**{
+                    opts.column: (("row", "chan", "corr"), allvis[i])
+                })
 
     writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
-    
 
     with TqdmCallback(desc="Computing and writing visibilities..."):
         da.compute(writes)
