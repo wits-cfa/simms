@@ -28,7 +28,7 @@ cabs:
         info: minimum brightness for a pixel to be considered in direct Fourier transform
         dtype: float
         required: no
-        default: 1e-9
+        default: 1e-7
         abbreviation: pt
       cat-delim: 
         info: Delimeter that is used in the catalogue

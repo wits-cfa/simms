@@ -22,7 +22,7 @@ from tqdm.dask import TqdmCallback
 import dask.array as da
 from daskms import xds_to_table
 
-log = get_logger(BIN.skysim)
+log = get_logger(BIN.skysim, level="ERROR")
 
 command = BIN.skysim
 
@@ -227,7 +227,7 @@ def runit(**kwargs):
          
     else:
         if opts.mode not in ["add", "subtract"]:
-            raise ParameterError("You are simulating and no sky model was specified. Please provide either a catalogue or a FITS sky model.")
+            raise ParameterError("You are simulating but no sky model was specified. Please provide either a catalogue or a FITS sky model.")
 
         ms_dsl , * _ = read_ms(ms,
                             opts.spwid,
@@ -236,8 +236,8 @@ def runit(**kwargs):
                             sefd=opts.sefd,
                             input_column=opts.input_column)
 
+    # write simulated visibilities to the MS
     writes = []
-   
     for i, ds in enumerate(ms_dsl):
             if opts.mode in ["add", "subtract"] and hasattr(opts, 'simulated_column'):
                 simulated_data = ds[opts.simulated_column].data
@@ -248,9 +248,6 @@ def runit(**kwargs):
                 else:
                     residual = input_data + simulated_data
 
-                print("input_data[0,0,0]:", input_data[0,0,0].compute(), "simulated_data[0,0,0]:", simulated_data[0,0,0].compute(), "residual[0,0,0]:", residual[0,0,0].compute())  
-                print("input_data shape:", input_data.shape)
-                print(("simulated_data shape:", simulated_data.shape))
                 ms_dsl[i] = ds.assign(**{
                     opts.column: (("row", "chan", "corr"), 
                         residual)
@@ -262,5 +259,5 @@ def runit(**kwargs):
 
     writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
 
-    with TqdmCallback(desc="Computing and writing visibilities..."):
+    with TqdmCallback(desc="Computing and writing visibilities"):
         da.compute(writes)
