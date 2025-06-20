@@ -458,7 +458,7 @@ class TestFITSProcessing(unittest.TestCase):
         l = np.sort(np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt)
         m = np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt
         ll, mm = np.meshgrid(l, m)
-        expected_lm = np.vstack((ll.flatten(), mm.flatten())).T
+        expected_lm = np.stack([ll, mm], axis=-1)
         
         # validate the l-m grid
         assert lm.shape == expected_lm.shape
@@ -504,7 +504,7 @@ class TestFITSProcessing(unittest.TestCase):
         l = np.sort(np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt)
         m = np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt
         ll, mm = np.meshgrid(l, m)
-        expected_lm = np.vstack((ll.flatten(), mm.flatten())).T
+        expected_lm = np.stack([ll, mm], axis=-1)
         
         # validate the l-m grid
         assert lm.shape == expected_lm.shape

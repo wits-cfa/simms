@@ -353,7 +353,7 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
             lm[i, j, 0] = l
             lm[i, j, 1] = m
     
-    return lm.reshape(n_pix_l * n_pix_m, 2)
+    return lm
 
 
 def compute_radec_coords(header, n_ra: float, n_dec: float):
@@ -414,7 +414,7 @@ def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: floa
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
-                        ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-6, stokes: int = 0):
+                          ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, stokes: int = 0):
     """
     Processes FITS skymodel into DFT input
     Args:
@@ -615,19 +615,27 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     # calculate pixel (l, m) coordinates
     lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
     
-    intensities_flat = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr)
-    lm_flat = lm.reshape(n_pix_l * n_pix_m, 2)
+    # reshape intensities to im_to_vis expectations
+    reshaped_intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr)
+    
     # get only pixels with brightness > tol
-
-    tol_mask = np.any(np.abs(intensities_flat) > tol, axis=(1, 2))
-    non_zero_intensities = intensities_flat[tol_mask]
-    non_zero_lm = lm_flat[tol_mask]
- 
+    tol_mask = np.any(np.abs(reshaped_intensities) > tol, axis=(1, 2))
+    non_zero_intensities = reshaped_intensities[tol_mask]
     
     # decide whether image is sparse enough for DFT
     sparsity = 1 - (non_zero_intensities.size/intensities.size)
-    
-    return non_zero_intensities, non_zero_lm, intensities, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec
+    if sparsity >= 0.8:
+        log.info(f"More than 80% of pixels have intensity < {(tol*1e6):.2f} μJy. DFT will be used for visibility prediction.")
+        use_dft = True
+        reshaped_lm = lm.reshape(n_pix_l * n_pix_m, 2)
+        non_zero_lm = reshaped_lm[tol_mask]
+        
+        return non_zero_intensities, non_zero_lm, use_dft, n_pix_l, n_pix_m, delta_ra, delta_dec
+    else:
+        log.info(f"More than 20% of pixels have intensity > {(tol*1e6):.2f} μJy. FFT will be used for visibility prediction.")
+        use_dft = False
+        
+        return intensities, lm, use_dft, n_pix_l, n_pix_m, delta_ra, delta_dec
     
     
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, use_dft: bool,
@@ -660,11 +668,10 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
     if use_dft:
         # predict visibilities
         _, nchan, ncorr = image.shape
-        vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='fourier')
+        vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='casa')
     
     # else, use FFT
     else:
-        log.info("Image is too dense for DFT. Using FFT.")
         n_pix_l, n_pix_m, nchan, ncorr = image.shape
 
         # transposing to match wgridder expectations
