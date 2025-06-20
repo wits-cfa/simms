@@ -130,8 +130,6 @@ def runit(**kwargs):
                                                                                         )
         
         sources = makesources(mapcols, freqs, ra0, dec0)
-        
-        allvis = []
 
         # check for polarisation information
         if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']):
@@ -144,22 +142,23 @@ def runit(**kwargs):
         if polarisation and ncorr == 2:
             log.warning("Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
 
+        allvis = []
         for ds in ms_dsl:
-            simvis = da.blockwise(compute_vis, ("row", "chan", "corr"),
-                                sources, ("source",),
-                                ds.UVW.data, ("row", "uvw"),
-                                freqs, ("chan",),
-                                ncorr, None,
-                                polarisation, None,
-                                opts.pol_basis, None,
-                                opts.mode, None,
-                                incol, incol_dims,
-                                noise=noise,
-                                new_axes={"corr": ncorr},
-                                dtype=ds.DATA.data.dtype,
-                                concatenate=True,
-                                )
-            
+            simvis = da.blockwise(
+                compute_vis, ("row", "chan", "corr"),
+                sources, ("source",),
+                ds.UVW.data, ("row", "uvw"),
+                freqs, ("chan",),
+                ncorr, None,
+                polarisation, None,
+                opts.pol_basis, None,
+                opts.mode, None,
+                incol, incol_dims,
+                noise=noise,
+                new_axes={"corr": ncorr},
+                dtype=ds.DATA.data.dtype,
+                concatenate=True,
+            )
             allvis.append(simvis)
         
     elif fs:
@@ -183,71 +182,47 @@ def runit(**kwargs):
             raise ParameterError("FITS file/directory does not exist")
         
         # read MS (also computes noise)
-        ms_dsl, ra0, dec0, freqs, nrow, nchan, df, ncorr, noise, incol, incol_dims = read_ms(ms, 
-                                                                                         opts.spwid, 
-                                                                                         opts.field_id, 
-                                                                                         chunks, 
-                                                                                         sefd = opts.sefd, 
-                                                                                         input_column = opts.input_column
-                                                                                        )
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, df, ncorr, noise, incol, incol_dims = read_ms(
+            ms, 
+            opts.spwid, 
+            opts.field_id, 
+            chunks, 
+            sefd = opts.sefd, 
+            input_column = opts.input_column
+        )
         
         # process FITS sky model
-        non_zero_intensities, non_zero_lm, intensities, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(fs, ra0, 
-        dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
-        
-        if sparsity >= 0.8:
-            log.info("Image is sparse enough for DFT. Using DFT.")
-            use_dft = True
-        else:
-            log.info("Image is too dense for DFT. Using FFT.")
-            use_dft = False
-            log.info("Using non masked intensities and lm coordinates for fft")   
+        image, lm, use_dft, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(
+            fs, 
+            ra0, 
+            dec0, 
+            freqs, 
+            df, 
+            ncorr, 
+            opts.pol_basis, 
+            tol=float(opts.pixel_tol)
+        )
 
-
-        image = non_zero_intensities if use_dft else intensities 
-        lm_coords = non_zero_lm if use_dft else lm 
-
-        allvis = []   
-            
+        allvis = []
         for ds in ms_dsl:
-            if use_dft:
-                simvis = da.blockwise(
-                    augmented_im_to_vis, ("row", "chan", "corr"),
-                    image, ("npix", "chan", "corr"),
-                    ds.UVW.data, ("row", "uvw"),
-                    lm_coords, ("npix", "lm"),
-                    freqs, ("chan",), 
-                    use_dft, None,
-                    opts.mode, None,
-                    incol, incol_dims,
-                    noise=noise,
-                    n_pix_l = n_pix_l,
-                    n_pix_m = n_pix_m, 
-                    delta_ra = delta_ra,
-                    delta_dec = delta_dec,
-                    tol=float(opts.pixel_tol),
-                    dtype=ds.DATA.data.dtype,
-                    concatenate=True,
-                )
-            else:
-                simvis = da.blockwise(
-                    augmented_im_to_vis, ("row", "chan", "corr"),
-                    image, ("l", "m", "chan", "corr"),
-                    ds.UVW.data, ("row", "uvw"),
-                    lm_coords.reshape(n_pix_l, n_pix_m, 2), ("l", "m", "lm"),
-                    freqs, ("chan",), 
-                    use_dft, None,
-                    opts.mode, None,
-                    incol, incol_dims,
-                    noise=noise,
-                    n_pix_l=n_pix_l,
-                    n_pix_m=n_pix_m,
-                    delta_ra=delta_ra,
-                    delta_dec=delta_dec,
-                    tol=float(opts.pixel_tol),
-                    dtype=ds.DATA.data.dtype,
-                    concatenate=True,
-                )
+            simvis = da.blockwise(
+                augmented_im_to_vis, ("row", "chan", "corr"),
+                image, ("npix", "chan", "corr") if use_dft else ("l", "m", "chan", "corr"),
+                ds.UVW.data, ("row", "uvw"),
+                lm, ("npix", "lm") if use_dft else ("l", "m", "lm"),
+                freqs, ("chan",), 
+                use_dft, None,
+                opts.mode, None,
+                incol, incol_dims,
+                noise=noise,
+                n_pix_l = n_pix_l,
+                n_pix_m = n_pix_m, 
+                delta_ra = delta_ra,
+                delta_dec = delta_dec,
+                tol=float(opts.pixel_tol),
+                dtype=ds.DATA.data.dtype,
+                concatenate=True,
+            )
             allvis.append(simvis)
          
     else:
