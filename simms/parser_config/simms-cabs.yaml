@@ -177,3 +177,4 @@ cabs:
         info: Maximum source elevation in degrees that is considered reliable data. The data recorded when the source is above this value is flagged.
         dtype: float
         abbreviation: hsl
+        

@@ -248,13 +248,8 @@ class Array:
         """
         dm = measures()
 
-        # xyz coordinates of the array
-        # positions_global, _ = self.geodetic2global()
-        
-        
         
         positions_global = self.get_itrf_positions()
-        # longitude = self.centre[0]
         latitude = self.centre[1]
 
         if len(pointing_direction) == 3:
@@ -297,11 +292,7 @@ class Array:
         
         source_elevations = self.get_source_elevation(
             latitude, dec, h0)
-        
-        # antenna_elevations = self.get_antenna_elevation(
-        #     self.antlocations[:, 1], dec, h0, ntimes).T
-        # antenna_elevations = antenna_elevations.flatten()
-        # print(f"antenna_elevations: {antenna_elevations.shape}")
+    
 
 
         # Transformation matrix

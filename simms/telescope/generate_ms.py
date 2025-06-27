@@ -172,16 +172,6 @@ def create_ms(
         
     expanded_src_elevations = np.array(expanded_src_elevations).flatten()
     
-    
-    # if low_source_limit and high_source_limit:
-    #     flag_row = np.zeros(num_rows, dtype=bool)
-    #     for i in range(num_rows):
-    #         if expanded_src_elevations[i] < low_source_limit:
-    #             flag_row[i] = True
-    #         if expanded_src_elevations[i] > high_source_limit:
-    #             flag_row[i] = True
-        
-    #     ds["FLAG_ROW"] = (("row",), da.from_array(flag_row, chunks=num_row_chunks))
      
      
     flag_row = np.zeros(num_rows, dtype=bool)
@@ -266,7 +256,6 @@ def create_ms(
     else:
         dish_diameter = [size] * num_ants
         ant_mount = [mount] * num_ants
-        # names = [f"ANT-{x}" for x in range(num_ants)]
 
     names = np.array(antnames)
     teltype = ["GROUND_BASED"] * num_ants
