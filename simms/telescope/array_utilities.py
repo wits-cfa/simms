@@ -93,7 +93,6 @@ class Array:
             else:
                 self.altitudes = np.zeros(self.antlocations.shape[0])
             self.antlocations = np.deg2rad(self.antlocations[:, :2])
-            print(f"centre shape and vals: {self.centre[2].shape, self.centre[2]}")
             self.centre_altitude = self.centre[2]
             self.centre = np.deg2rad(self.centre[:2])
             itrf_positions, _ = self.geodetic2global()
@@ -101,9 +100,10 @@ class Array:
         elif self.coordsys.lower() == "itrf":
             itrf_positions = self.antlocations
             self.centre = self.global2geodetic(self.centre[0],self.centre[1],self.centre[2])
+            
 
         else:
-            raise ValueError("Unknown coordinate system. Please use Geodetic (WGS84), ITRF (XYZ)")     
+            raise ValueError("Unknown coordinate system. Please use Geodetic (WGS84) or ITRF (XYZ)")     
             
         return itrf_positions
             
