@@ -40,7 +40,10 @@ def runit(**kwargs):
     sefd = opts.sefd
     column = opts.column
     startha = opts.startha
+    l_src_limit = opts.low_source_limit
+    h_src_limit = opts.high_source_limit
     generate_ms.create_ms(msname, telescope, direction, dtime,
                           ntimes, startfreq, dfreq, nchan,
                           correlations, rowchunks,
-                          sefd, column, starttime,startha)
+                          sefd, column, starttime,startha,l_src_limit,
+                          h_src_limit)

@@ -169,3 +169,11 @@ cabs:
         info: File with antenna spectral sensivity information. Allowed keys (column names) are 'freq, tsys, sefd, tsys_over_eta'
         dtype: File 
         abbreviation: sfile
+      low_source_limit:
+        info: Minimum source elevation in degrees that is considered reliable data. The data recorded when the source is below this value is flagged.
+        dtype: float
+        abbreviation: lsl
+      high_source_limit:
+        info: Maximum source elevation in degrees that is considered reliable data. The data recorded when the source is above this value is flagged.
+        dtype: float
+        abbreviation: hsl
