@@ -10,6 +10,6 @@ antlocations:
 antnames: [ANT-0, ANT-1, ANT-2, ANT-3, ANT-4, ANT-5, ANT-6]
 
 centre: [5108428.27558035,  2006354.89404306, -3238622.81677188]
-coord_sys: itrf
+coord_sys: ITRF
 size: 12.0
 mount: ALT-AZ
