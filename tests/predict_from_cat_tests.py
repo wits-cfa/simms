@@ -157,7 +157,7 @@ class TestComputeVis(unittest.TestCase):
         np.testing.assert_allclose(vis[:, :, 3], 0.0, atol=1e-6) # check that YY = I - Q = 0
         
     
-    def test_compute_vis_all_stokes_4_corrs(self):
+    def test_compute_vis_all_stokes_4_corrs_linear_basis(self):
         """
         Test compute_vis with ncorr == 4 and Stokes I, Q, U and V provided.
         Validates:
@@ -168,10 +168,11 @@ class TestComputeVis(unittest.TestCase):
         - YY = I - Q
         """
         ncorr = 4
+        # the numbers below are unphysical—they are just for testing the computation
         I = 1.0
-        Q = 1.0
-        U = 1.0
-        V = 1.0
+        Q = 2.0
+        U = 3.0
+        V = 4.0
         spectrum = Spectrum(
             stokes_i = str(I),
             stokes_q = str(Q),
@@ -194,7 +195,51 @@ class TestComputeVis(unittest.TestCase):
         nchan = self.freqs.size
         
         self.assertEqual(vis.shape, (nrow, nchan, ncorr))
-        np.testing.assert_allclose(vis[:, :, 0], 2.0, atol=1e-6) # check that XX = I + Q = 2
-        np.testing.assert_allclose(np.abs(vis[:, :, 1]), np.sqrt(2.0), atol=1e-6) # check that XY = U + iV = sqrt(2)
-        np.testing.assert_allclose(np.abs(vis[:, :, 2]), np.sqrt(2.0), atol=1e-6) # check that YX = U - iV = sqrt(2)
-        np.testing.assert_allclose(vis[:, :, 3], 0.0, atol=1e-6) # check that YY = I - Q = 0
+        np.testing.assert_allclose(vis[:, :, 0], I + Q, atol=1e-6) # check that XX = I + Q
+        np.testing.assert_allclose(vis[:, :, 1], U + 1j*V, atol=1e-6) # check that XY = U + iV
+        np.testing.assert_allclose(vis[:, :, 2], U - 1j*V, atol=1e-6) # check that YX = U - iV
+        np.testing.assert_allclose(vis[:, :, 3], I - Q, atol=1e-6) # check that YY = I - Q
+    
+    
+    def test_compute_vis_all_stokes_4_corrs_circular_basis(self):
+        """
+        Test compute_vis with ncorr == 4 and Stokes I, Q, U and V provided.
+        Validates:
+        - Output shape of visibilities
+        - RR = I + V
+        - RL = Q + iU
+        - LR = Q - iU
+        - LL = I - V
+        """
+        ncorr = 4
+        # the numbers below are unphysical—they are just for testing the computation
+        I = 1.0
+        Q = 2.0
+        U = 3.0
+        V = 4.0
+        spectrum = Spectrum(
+            stokes_i = str(I),
+            stokes_q = str(Q),
+            stokes_u = str(U),
+            stokes_v = str(V),
+            cont_reffreq = None,
+            line_peak = None,
+            line_width = None,
+            line_restfreq = None,
+            cont_coeff_1 = None,
+            cont_coeff_2 = None
+        )
+        
+        self.source.spectrum = spectrum.make_spectrum(self.freqs)
+        sources = [self.source]
+        
+        vis = compute_vis(sources, self.uvw, self.freqs, ncorr, True, 'circular', None, None)
+        
+        nrow = self.uvw.shape[0]
+        nchan = self.freqs.size
+        
+        self.assertEqual(vis.shape, (nrow, nchan, ncorr))
+        np.testing.assert_allclose(vis[:, :, 0], I + V, atol=1e-6) # check that RR = I + V
+        np.testing.assert_allclose(vis[:, :, 1], Q + 1j*U, atol=1e-6) # check that RL = Q + iU
+        np.testing.assert_allclose(vis[:, :, 2], Q - 1j*U, atol=1e-6) # check that LR = Q - iU
+        np.testing.assert_allclose(vis[:, :, 3], I - V, atol=1e-6) # check that LL = I - V
