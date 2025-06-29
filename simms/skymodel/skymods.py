@@ -195,6 +195,34 @@ def makesources(data, freqs, ra0, dec0):
     return sources
 
 
+def compute_brightness_matrix(spectrum: np.ndarray, elements: str, basis: str):
+    """
+    Computes the brightness matrix for a given spectrum and basis
+    Args:
+        spectrum: spectrum array
+        elements: elements to compute
+        basis: polarisation basis ("linear" or "circular")
+    Returns:
+        brightness_matrix: brightness matrix elements
+    """
+    if basis == "linear":
+        order = [0, 1, 2, 3] # I, Q, U, V
+    elif basis == "circular":
+        order = [0, 3, 1, 2] # I, V, Q, U
+    else:
+        raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
+    
+    if elements == 'diagonal':
+        return (spectrum[order[0], :] + spectrum[order[1], :], 
+                spectrum[order[0], :] - spectrum[order[1], :])
+    elif elements == 'all':
+        return (spectrum[order[0], :] + spectrum[order[1], :], 
+                spectrum[order[2], :] + 1j * spectrum[order[3], :],
+                spectrum[order[2], :] - 1j * spectrum[order[3], :],
+                spectrum[order[0], :] - spectrum[order[1], :])
+    else:
+        raise ValueError(f"Unrecognised elements '{elements}'. Use 'diagonal' or 'all'.")
+
 
 def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str,
                 mode: Union[None, str], mod_data: Union[None, np.ndarray], noise: Optional[float] = None):
@@ -280,7 +308,7 @@ def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: i
         if ncorr == 2:
             vis = np.stack([vis, vis], axis=2)
         elif ncorr == 4:
-            vis = np.stack([vis, np.empty_like(vis), np.empty_like(vis), vis], axis=2)
+            vis = np.stack([vis, np.zeros_like(vis), np.zeros_like(vis), vis], axis=2)
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
     
@@ -646,32 +674,3 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
     add_to_column(vis, mod_data, mode)
     
     return vis
-
-
-def compute_brightness_matrix(spectrum: np.ndarray, elements: str, basis: str):
-    """
-    Computes the brightness matrix for a given spectrum and basis
-    Args:
-        spectrum: spectrum array
-        elements: elements to compute
-        basis: polarisation basis ("linear" or "circular")
-    Returns:
-        brightness_matrix: brightness matrix elements
-    """
-    if basis == "linear":
-        order = [0, 1, 2, 3] # I, Q, U, V
-    elif basis == "circular":
-        order = [0, 3, 1, 2] # I, V, Q, U
-    else:
-        raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
-    
-    if elements == 'diagonal':
-        return (spectrum[order[0], :] + spectrum[order[1], :], 
-                spectrum[order[0], :] - spectrum[order[1], :])
-    elif elements == 'all':
-        return (spectrum[order[0], :] + spectrum[order[1], :], 
-                spectrum[order[2], :] + 1j * spectrum[order[3], :],
-                spectrum[order[2], :] - 1j * spectrum[order[3], :],
-                spectrum[order[0], :] - spectrum[order[1], :])
-    else:
-        raise ValueError(f"Unrecognised elements '{elements}'. Use 'diagonal' or 'all'.")
