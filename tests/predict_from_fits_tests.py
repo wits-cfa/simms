@@ -146,7 +146,7 @@ class TestPredictFromFITS(unittest.TestCase):
         assert np.allclose(vis[:, :, 1], I, atol=1e-6)
     
     
-    def test_fits_predicting_all_stokes(self):
+    def test_fits_predicting_all_stokes_linear_basis(self):
         """
         Test visibility prediction from FITS images of all Stokes parameters, ncorr = 4
         Validates:
@@ -157,7 +157,8 @@ class TestPredictFromFITS(unittest.TestCase):
             - YY = I - Q
         """
         self.ncorr = 4
-        stokes_params = [('I', 1.0), ('Q', 1.0), ('U', 1.0), ('V', 1.0)]
+        # the numbers below are unphysical—they are just for testing the computation
+        stokes_params = [('I', 1.0), ('Q', 2.0), ('U', 3.0), ('V', 4.0)]
 
         test_skymodels = []
         for stokes in stokes_params:
@@ -195,3 +196,54 @@ class TestPredictFromFITS(unittest.TestCase):
         assert np.allclose(vis[:, :, 1], stokes_params[2][1] + 1j*stokes_params[3][1], atol=1e-6)   # U + iV
         assert np.allclose(vis[:, :, 2], stokes_params[2][1] - 1j*stokes_params[3][1], atol=1e-6)   # U - iV
         assert np.allclose(vis[:, :, 3], stokes_params[0][1] - stokes_params[1][1], atol=1e-6)      # I - Q
+
+    def test_fits_predicting_all_stokes_circular_basis(self):
+        """
+        Test visibility prediction from FITS images of all Stokes parameters, ncorr = 4
+        Validates:
+            - Output shape of visibilities
+            - RR = I + V
+            - RL = Q + iU
+            - LR = Q - iU
+            - LL = I - V
+        """
+        self.ncorr = 4
+        # the numbers below are unphysical—they are just for testing the computation
+        stokes_params = [('I', 1.0), ('Q', 2.0), ('U', 3.0), ('V', 4.0)]
+
+        test_skymodels = []
+        for stokes in stokes_params:
+            wcs = WCS(naxis=3)
+            wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
+            wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.freqs[1]-self.freqs[0]]) # pixel scale in deg
+            wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
+            wcs.wcs.crval = [np.rad2deg(self.ra0), np.rad2deg(self.dec0), self.freqs[0]] # reference pixel RA and Dec in deg
+        
+            # make header
+            header = wcs.to_header()
+            header['BUNIT'] = 'Jy'
+            
+            # make image
+            image = np.zeros((self.nchan, self.img_size, self.img_size))
+            image[:, self.img_size//2, self.img_size//2] = stokes[1] # put a point source at the center
+            
+            # write to FITS file
+            hdu = fits.PrimaryHDU(image, header=header)
+            test_filename = f'test_{uuid.uuid4()}_{stokes[0]}.fits'
+            self.test_files.append(test_filename)
+            hdu.writeto(test_filename, overwrite=True)
+        
+            test_skymodels.append(test_filename)
+            
+        # process the FITS files
+        brightness_matrix, lm, _, _, _, _, _ = process_fits_skymodel(test_skymodels, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'circular')
+        
+        # predict visibilities
+        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        
+        # check the output
+        assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
+        assert np.allclose(vis[:, :, 0], stokes_params[0][1] + stokes_params[3][1], atol=1e-6)      # I + V
+        assert np.allclose(vis[:, :, 1], stokes_params[1][1] + 1j*stokes_params[2][1], atol=1e-6)   # Q + iU
+        assert np.allclose(vis[:, :, 2], stokes_params[1][1] - 1j*stokes_params[2][1], atol=1e-6)   # Q - iU
+        assert np.allclose(vis[:, :, 3], stokes_params[0][1] - stokes_params[3][1], atol=1e-6)      # I - V
