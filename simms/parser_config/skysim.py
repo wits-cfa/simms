@@ -214,6 +214,7 @@ def runit(**kwargs):
                 use_dft, None,
                 opts.mode, None,
                 incol, incol_dims,
+                ncorr, None,
                 noise=noise,
                 n_pix_l = n_pix_l,
                 n_pix_m = n_pix_m, 

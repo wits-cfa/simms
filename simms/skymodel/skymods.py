@@ -9,7 +9,13 @@ from scipy.interpolate import RegularGridInterpolator
 from astropy.io import fits
 from daskms import xds_from_ms, xds_from_table
 from africanus.dft import im_to_vis as dft_im_to_vis
+<<<<<<< HEAD
 from africanus.gridding.wgridder import model as fft_im_to_vis
+=======
+from ducc0.wgridder import dirty2ms as fft_im_to_vis
+# from africanus.gridding.wgridder import model as fft_im_to_vis
+from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
+>>>>>>> 0b32a0f (changed FFT prediction function to 'dirty2ms')
 from simms.skymodel.converters import (
     convert2float,
     convert2Hz,
@@ -639,9 +645,9 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     
     
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, use_dft: bool,
-                        mode: Union[None, str], mod_data: Union[None, np.ndarray], n_pix_l: Optional[int]=None, 
+                        mode: Union[None, str], mod_data: Union[None, np.ndarray], ncorr: int, n_pix_l: Optional[int]=None, 
                         n_pix_m: Optional[int]=None, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None, 
-                        tol: Optional[float]=1e-9, nthreads: Optional[int]=1, 
+                        tol: Optional[float]=1e-9, nthreads: Optional[int]=8, 
                         noise: Optional[float] = None):
     """
     Augmented version of im_to_vis
@@ -657,64 +663,71 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
     Returns:
         vis: visibility array
     """
-  
     # Key changes for fft:
     # - Use full intensity (fft requires the complete image)
     # - Loop over both channel and correlation 
     # - Use per-channel/correlation slicing 
     # - Axis flipping for RA/Dec is still under testing
- 
+    
     # if sparse, use DFT
     if use_dft:
-        # predict visibilities
-        _, nchan, ncorr = image.shape
         vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='casa')
-    
+
     # else, use FFT
     else:
-        n_pix_l, n_pix_m, nchan, ncorr = image.shape
-
-        # transposing to match wgridder expectations
-        image = image.transpose(3,2,0,1)
-
-        # TODO:
-        # Add a line for phase check
-        # flipping is header dependent
-        # flipping the ra, and dec didn't work for the casa produced fits
-        # maybe vis = np.conj(vis) for casa like headers?
-
-        # Reshape UVW
-        uvw = uvw.reshape(uvw.shape[0], 3)
-        vis = np.zeros((uvw.shape[0], nchan, ncorr), dtype=np.complex128 if ncorr == 4 else np.float64)
-        # 
-        for corr in range(image.shape[0]):
-            for chan in range(nchan):
-                chan_freq = chan_freqs[chan:chan+1]
-                # allowing to process one chan at a time
-                freq_bin_idx = np.zeros(1, dtype=np.int32)
-                freq_bin_counts = np.ones(1, dtype=np.int32)
-                
-                # Extract a 2d slice for this corr and chan an
-                # reshape because 3D is expected 
-                image_slice = image[corr, chan].reshape(1, n_pix_l, n_pix_m)
-                
-                vis_temp = fft_im_to_vis(
-                    uvw, 
-                    chan_freq, 
-                    image_slice, 
-                    freq_bin_idx, 
-                    freq_bin_counts, 
-                    abs(delta_ra), 
-                    celly=abs(delta_dec),  
-                    epsilon=tol, 
-                    nthreads=nthreads
+        image = np.transpose(image, axes=(3, 2, 0, 1))
+        vis = np.zeros((uvw.shape[0], chan_freqs.size, ncorr), dtype=np.complex128)
+        for corr in range(ncorr):
+            for chan in range(chan_freqs.size):
+                vis[:, chan, corr] = fft_im_to_vis(
+                    uvw,
+                    np.array([chan_freqs[chan]]),
+                    image[corr, chan],
+                    pixsize_x=np.abs(delta_ra),
+                    pixsize_y=delta_dec,
+                    epsilon=1e-7,
+                    nthreads=nthreads,
+                    do_wstacking=True
                 )
+
+        # # TODO:
+        # # Add a line for phase check
+        # # flipping is header dependent
+        # # flipping the ra, and dec didn't work for the casa produced fits
+        # # maybe vis = np.conj(vis) for casa like headers?
+
+        # # Reshape UVW
+        # uvw = uvw.reshape(uvw.shape[0], 3)
+        # vis = np.zeros((uvw.shape[0], nchan, ncorr), dtype=np.complex128 if ncorr == 4 else np.float64)
+        # # 
+        # for corr in range(image.shape[0]):
+        #     for chan in range(nchan):
+        #         chan_freq = chan_freqs[chan:chan+1]
+        #         # allowing to process one chan at a time
+        #         freq_bin_idx = np.zeros(1, dtype=np.int32)
+        #         freq_bin_counts = np.ones(1, dtype=np.int32)
                 
-                # remove the extra singleton from output
-                if vis_temp.shape != (uvw.shape[0],):
-                    vis_temp = np.squeeze(result)  
+        #         # Extract a 2d slice for this corr and chan an
+        #         # reshape because 3D is expected 
+        #         image_slice = image[corr, chan].reshape(1, n_pix_l, n_pix_m)
+                
+        #         vis_temp = fft_im_to_vis(
+        #             uvw, 
+        #             chan_freq, 
+        #             image_slice, 
+        #             freq_bin_idx, 
+        #             freq_bin_counts, 
+        #             abs(delta_ra), 
+        #             celly=abs(delta_dec),  
+        #             epsilon=tol, 
+        #             nthreads=nthreads
+        #         )
+                
+        #         # remove the extra singleton from output
+        #         if vis_temp.shape != (uvw.shape[0],):
+        #             vis_temp = np.squeeze(result)  
                     
-                vis[:, chan, corr] = vis_temp
+        #         vis[:, chan, corr] = vis_temp
     # add noise
     add_noise(vis, noise)
     # do addition/subtraction of model data
