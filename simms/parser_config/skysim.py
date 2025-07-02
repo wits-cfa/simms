@@ -192,7 +192,7 @@ def runit(**kwargs):
         )
         
         # process FITS sky model
-        image, lm, polarisation, use_dft, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(
+        image, lm, polarisation, use_dft, delta_ra, delta_dec = process_fits_skymodel(
             fs, 
             ra0, 
             dec0, 
@@ -218,8 +218,6 @@ def runit(**kwargs):
                 opts.mode, None,
                 incol, incol_dims,
                 ncorr, None,
-                n_pix_l = n_pix_l,
-                n_pix_m = n_pix_m, 
                 delta_ra = delta_ra,
                 delta_dec = delta_dec,
                 epsilon = epsilon,

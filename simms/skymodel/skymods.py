@@ -647,12 +647,12 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         reshaped_lm = lm.reshape(n_pix_l * n_pix_m, 2)
         non_zero_lm = reshaped_lm[tol_mask]
         
-        return non_zero_intensities, non_zero_lm, polarisation, use_dft, n_pix_l, n_pix_m, None, None
+        return non_zero_intensities, non_zero_lm, polarisation, use_dft, None, None
     else:
         log.info(f"More than 20% of pixels have intensity > {(tol*1e6):.2f} μJy. FFT will be used for visibility prediction.")
         use_dft = False
         
-        return intensities, None, polarisation, use_dft, None, None, delta_ra, delta_dec
+        return intensities, None, polarisation, use_dft, delta_ra, delta_dec
     
     
 def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pixsize_x: float, pixsize_y: float,
@@ -675,22 +675,27 @@ def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pix
     return np.conj(np.squeeze(result))
     
     
-def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, polarision: bool,
-                        use_dft: bool, mode: Union[None, str], mod_data: Union[None, np.ndarray], ncorr: int,
-                        n_pix_l: Optional[int]=None, n_pix_m: Optional[int]=None, delta_ra: Optional[int]=None,
-                        delta_dec: Optional[int]=None, epsilon: Optional[float]=1e-9, noise: Optional[float]=None,
-                        nthreads: Optional[int]=8):
+def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.ndarray], chan_freqs: np.ndarray,
+                        polarision: bool, use_dft: bool, mode: Union[None, str], mod_data: Union[None, np.ndarray],
+                        ncorr: int, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None,
+                        epsilon: Optional[float]=1e-9, noise: Optional[float]=None, nthreads: Optional[int]=8):
     """
     Augmented version of im_to_vis
     Args:
         image: image array
         uvw: UVW coordinates
-        tol_mask: mask of pixels with brightness > tol
+        lm: (l, m) coordinates (used for DFT)
         chan_freqs: frequency array
-        sparsity: True if image is sparse, False otherwise
-        subtract: True if visibilities should be subtracted from the model data, False otherwise
+        polarision: True if polarisation information is present, False otherwise (used for FFT)
+        use_dft: True if DFT should be used, False if FFT should be used
+        mode: 'add' or 'subtract' to specify whether to add or subtract model data
         mod_data: model data to/from which computed visibilities should be added/subtracted
+        ncorr: number of correlations (must be 2 or 4; used for FFT)
+        delta_ra: pixel size in RA direction (used for FFT)
+        delta_dec: pixel size in Dec direction (used for FFT)
+        epsilon: numerical precision for FFT
         noise: RMS noise
+        nthreads: number of threads to use for FFT
     Returns:
         vis: visibility array
     """
