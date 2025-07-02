@@ -356,22 +356,6 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
             lm[i, j, 1] = m
     
     return lm
-
-
-def check_pixel_scale(header, ra_axis: Optional[str] = None, dec_axis: Optional[str] = None):
-    """
-    Retrieves pixel scale from FITS header.
-    """
-    if not ra_axis:
-        ra_axis = check_var_axis(header, "RA")
-    if not dec_axis:
-        dec_axis = check_var_axis(header, "DEC")
-    
-    # get pixel scale
-    delta_ra = header[f"CDELT{ra_axis}"]
-    delta_dec = header[f"CDELT{dec_axis}"]
-    
-    return delta_ra, delta_dec
     
 
 def compute_radec_coords(header, n_ra: float, n_dec: float):
@@ -384,7 +368,8 @@ def compute_radec_coords(header, n_ra: float, n_dec: float):
     """
     ra_axis = check_var_axis(header, "RA")
     dec_axis = check_var_axis(header, "DEC")
-    delta_ra, delta_dec = check_pixel_scale(header, ra_axis, dec_axis)
+    delta_ra = header[f"CDELT{ra_axis}"]
+    delta_dec = header[f"CDELT{dec_axis}"]
     
     # get reference pixel info
     refpix_ra = header[f"CRPIX{ra_axis}"]
