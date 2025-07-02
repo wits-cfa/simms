@@ -30,6 +30,11 @@ cabs:
         required: no
         default: 1e-7
         abbreviation: pt
+      fft-precision:
+        info: Precision of the FFT calculation. The default is double precision.
+        dtype: str
+        default: double
+        choices: ['single', 'double']
       cat-delim: 
         info: Delimeter that is used in the catalogue
         dtype: str

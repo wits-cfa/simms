@@ -192,7 +192,7 @@ def runit(**kwargs):
         )
         
         # process FITS sky model
-        image, lm, use_dft, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(
+        image, lm, polarisation, use_dft, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(
             fs, 
             ra0, 
             dec0, 
@@ -202,26 +202,29 @@ def runit(**kwargs):
             opts.pol_basis, 
             tol=float(opts.pixel_tol)
         )
-
+        
+        epsilon = 1e-7 if opts.fft_precision == "double" else 1e-5
+        
         allvis = []
         for ds in ms_dsl:
             simvis = da.blockwise(
                 augmented_im_to_vis, ("row", "chan", "corr"),
                 image, ("npix", "chan", "corr") if use_dft else ("l", "m", "chan", "corr"),
                 ds.UVW.data, ("row", "uvw"),
-                lm, ("npix", "lm") if use_dft else ("l", "m", "lm"),
-                freqs, ("chan",), 
+                lm, ("npix", "lm") if use_dft else None,
+                freqs, ("chan",),
+                polarisation, None,
                 use_dft, None,
                 opts.mode, None,
                 incol, incol_dims,
                 ncorr, None,
-                noise=noise,
                 n_pix_l = n_pix_l,
                 n_pix_m = n_pix_m, 
                 delta_ra = delta_ra,
                 delta_dec = delta_dec,
-                tol=float(opts.pixel_tol),
-                dtype=ds.DATA.data.dtype,
+                epsilon = epsilon,
+                noise = noise,
+                dtype = ds.DATA.data.dtype,
                 concatenate=True,
             )
             allvis.append(simvis)

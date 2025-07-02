@@ -9,13 +9,9 @@ from scipy.interpolate import RegularGridInterpolator
 from astropy.io import fits
 from daskms import xds_from_ms, xds_from_table
 from africanus.dft import im_to_vis as dft_im_to_vis
-<<<<<<< HEAD
-from africanus.gridding.wgridder import model as fft_im_to_vis
-=======
-from ducc0.wgridder import dirty2ms as fft_im_to_vis
+from ducc0.wgridder import dirty2ms
 # from africanus.gridding.wgridder import model as fft_im_to_vis
 from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
->>>>>>> 0b32a0f (changed FFT prediction function to 'dirty2ms')
 from simms.skymodel.converters import (
     convert2float,
     convert2Hz,
@@ -362,6 +358,22 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
     return lm
 
 
+def check_pixel_scale(header, ra_axis: Optional[str] = None, dec_axis: Optional[str] = None):
+    """
+    Retrieves pixel scale from FITS header.
+    """
+    if not ra_axis:
+        ra_axis = check_var_axis(header, "RA")
+    if not dec_axis:
+        dec_axis = check_var_axis(header, "DEC")
+    
+    # get pixel scale
+    delta_ra = header[f"CDELT{ra_axis}"]
+    delta_dec = header[f"CDELT{dec_axis}"]
+    
+    return delta_ra, delta_dec
+    
+
 def compute_radec_coords(header, n_ra: float, n_dec: float):
     """
     Calculates pixel (RA, Dec) coordinates
@@ -372,10 +384,7 @@ def compute_radec_coords(header, n_ra: float, n_dec: float):
     """
     ra_axis = check_var_axis(header, "RA")
     dec_axis = check_var_axis(header, "DEC")
-    
-    # get pixel scale
-    delta_ra = header[f"CDELT{ra_axis}"]
-    delta_dec = header[f"CDELT{dec_axis}"]
+    delta_ra, delta_dec = check_pixel_scale(header, ra_axis, dec_axis)
     
     # get reference pixel info
     refpix_ra = header[f"CRPIX{ra_axis}"]
@@ -416,7 +425,7 @@ def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: floa
     ra0, dec0 = phase_centre
     lm = pix_radec2lm(ra0, dec0, ra_coords, dec_coords)
     
-    return lm, delta_ra, delta_dec
+    return lm
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
@@ -527,7 +536,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 # TODO: implement interpolation of FITS cube to MS channel frequencies
                 if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
                     # interpolate FITS cube
-                    log.warning("Interpolating FITS cube onto MS channel frequency grid. This uses a lot of memory.")
+                    log.warning(f"Interpolating {fits_image} onto MS channel frequency grid. This uses a lot of memory.")
                     ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, n_pix_l, n_pix_m)
                     fits_interp = RegularGridInterpolator((ra_coords, dec_coords, freqs), skymodel)
                     ra, dec, vv = np.meshgrid(ra_coords, dec_coords, chan_freqs, indexing="ij")
@@ -579,8 +588,6 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             intensities[:, :, :, 1] = I
         elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
             intensities[:, :, :, 0] = I
-            intensities[:, :, :, 1] = 0.0
-            intensities[:, :, :, 2] = 0.0
             intensities[:, :, :, 3] = I
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
@@ -618,8 +625,9 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         else:
             raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
         
-    # calculate pixel (l, m) coordinates
-    lm, delta_ra, delta_dec = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
+    # get spatial coordinate info
+    if ra_coords is None:
+        ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, n_pix_l, n_pix_m)
     
     # reshape intensities to im_to_vis expectations
     reshaped_intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr)
@@ -630,31 +638,54 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     
     # decide whether image is sparse enough for DFT
     sparsity = 1 - (non_zero_intensities.size/intensities.size)
+    
     if sparsity >= 0.8:
         log.info(f"More than 80% of pixels have intensity < {(tol*1e6):.2f} μJy. DFT will be used for visibility prediction.")
         use_dft = True
+        # calculate pixel (l, m) coordinates
+        lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
         reshaped_lm = lm.reshape(n_pix_l * n_pix_m, 2)
         non_zero_lm = reshaped_lm[tol_mask]
         
-        return non_zero_intensities, non_zero_lm, use_dft, n_pix_l, n_pix_m, delta_ra, delta_dec
+        return non_zero_intensities, non_zero_lm, polarisation, use_dft, n_pix_l, n_pix_m, None, None
     else:
         log.info(f"More than 20% of pixels have intensity > {(tol*1e6):.2f} μJy. FFT will be used for visibility prediction.")
         use_dft = False
         
-        return intensities, lm, use_dft, n_pix_l, n_pix_m, delta_ra, delta_dec
+        return intensities, None, polarisation, use_dft, None, None, delta_ra, delta_dec
     
     
-def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, use_dft: bool,
-                        mode: Union[None, str], mod_data: Union[None, np.ndarray], ncorr: int, n_pix_l: Optional[int]=None, 
-                        n_pix_m: Optional[int]=None, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None, 
-                        tol: Optional[float]=1e-9, nthreads: Optional[int]=8, 
-                        noise: Optional[float] = None):
+def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pixsize_x: float, pixsize_y: float,
+                  epsilon: Optional[float]=1e-7, nthreads: Optional[int]=8) -> np.ndarray:
+    """
+    ducc0.wgridder.dirty2ms wrapper to add squeezing and conjugation.
+    NB: Image should be 2D.
+    """
+    result = dirty2ms(
+        uvw,
+        chan_freq,
+        image,
+        pixsize_x=pixsize_x,
+        pixsize_y=pixsize_y,
+        epsilon=epsilon,
+        do_wstacking=True,
+        nthreads=nthreads
+    )
+    
+    return np.conj(np.squeeze(result))
+    
+    
+def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan_freqs: np.ndarray, polarision: bool,
+                        use_dft: bool, mode: Union[None, str], mod_data: Union[None, np.ndarray], ncorr: int,
+                        n_pix_l: Optional[int]=None, n_pix_m: Optional[int]=None, delta_ra: Optional[int]=None,
+                        delta_dec: Optional[int]=None, epsilon: Optional[float]=1e-9, noise: Optional[float]=None,
+                        nthreads: Optional[int]=8):
     """
     Augmented version of im_to_vis
     Args:
         image: image array
         uvw: UVW coordinates
-        lm: (l, m) coordinates
+        tol_mask: mask of pixels with brightness > tol
         chan_freqs: frequency array
         sparsity: True if image is sparse, False otherwise
         subtract: True if visibilities should be subtracted from the model data, False otherwise
@@ -663,12 +694,6 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
     Returns:
         vis: visibility array
     """
-    # Key changes for fft:
-    # - Use full intensity (fft requires the complete image)
-    # - Loop over both channel and correlation 
-    # - Use per-channel/correlation slicing 
-    # - Axis flipping for RA/Dec is still under testing
-    
     # if sparse, use DFT
     if use_dft:
         vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='casa')
@@ -676,58 +701,37 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: np.ndarray, chan
     # else, use FFT
     else:
         image = np.transpose(image, axes=(3, 2, 0, 1))
-        vis = np.zeros((uvw.shape[0], chan_freqs.size, ncorr), dtype=np.complex128)
-        for corr in range(ncorr):
+        if polarision:
+            vis = np.zeros((uvw.shape[0], chan_freqs.size, ncorr), dtype=np.complex128)
+            for corr in range(ncorr):
+                for chan in range(chan_freqs.size):
+                    vis[:, chan, corr] = fft_im_to_vis(
+                        uvw,
+                        np.array([chan_freqs[chan]]),
+                        image[corr, chan],
+                        pixsize_x=np.abs(delta_ra),
+                        pixsize_y=delta_dec,
+                        epsilon=1e-7,
+                        nthreads=nthreads
+                    )
+        else:
+            vis = np.zeros((uvw.shape[0], chan_freqs.size), dtype=np.complex128)
             for chan in range(chan_freqs.size):
-                vis[:, chan, corr] = fft_im_to_vis(
+                vis[:, chan] = fft_im_to_vis(
                     uvw,
                     np.array([chan_freqs[chan]]),
-                    image[corr, chan],
+                    image[0, chan],
                     pixsize_x=np.abs(delta_ra),
                     pixsize_y=delta_dec,
                     epsilon=1e-7,
-                    nthreads=nthreads,
-                    do_wstacking=True
+                    nthreads=nthreads
                 )
+            
+            if ncorr == 2:
+                vis = np.stack([vis, vis], axis=2)
+            else:
+                vis = np.stack([vis, np.zeros_like(vis), np.zeros_like(vis), vis], axis=2)
 
-        # # TODO:
-        # # Add a line for phase check
-        # # flipping is header dependent
-        # # flipping the ra, and dec didn't work for the casa produced fits
-        # # maybe vis = np.conj(vis) for casa like headers?
-
-        # # Reshape UVW
-        # uvw = uvw.reshape(uvw.shape[0], 3)
-        # vis = np.zeros((uvw.shape[0], nchan, ncorr), dtype=np.complex128 if ncorr == 4 else np.float64)
-        # # 
-        # for corr in range(image.shape[0]):
-        #     for chan in range(nchan):
-        #         chan_freq = chan_freqs[chan:chan+1]
-        #         # allowing to process one chan at a time
-        #         freq_bin_idx = np.zeros(1, dtype=np.int32)
-        #         freq_bin_counts = np.ones(1, dtype=np.int32)
-                
-        #         # Extract a 2d slice for this corr and chan an
-        #         # reshape because 3D is expected 
-        #         image_slice = image[corr, chan].reshape(1, n_pix_l, n_pix_m)
-                
-        #         vis_temp = fft_im_to_vis(
-        #             uvw, 
-        #             chan_freq, 
-        #             image_slice, 
-        #             freq_bin_idx, 
-        #             freq_bin_counts, 
-        #             abs(delta_ra), 
-        #             celly=abs(delta_dec),  
-        #             epsilon=tol, 
-        #             nthreads=nthreads
-        #         )
-                
-        #         # remove the extra singleton from output
-        #         if vis_temp.shape != (uvw.shape[0],):
-        #             vis_temp = np.squeeze(result)  
-                    
-        #         vis[:, chan, corr] = vis_temp
     # add noise
     add_noise(vis, noise)
     # do addition/subtraction of model data
