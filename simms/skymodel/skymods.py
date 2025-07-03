@@ -10,7 +10,6 @@ from astropy.io import fits
 from daskms import xds_from_ms, xds_from_table
 from africanus.dft import im_to_vis as dft_im_to_vis
 from ducc0.wgridder import dirty2ms
-# from africanus.gridding.wgridder import model as fft_im_to_vis
 from simms.constants import gauss_scale_fact, C, FWHM_scale_fact
 from simms.skymodel.converters import (
     convert2float,
