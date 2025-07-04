@@ -46,9 +46,9 @@ cabs:
       column:
         info: Data column for simulation
         dtype: str
-        default: MODEL_DATA
+        default: DATA
         abbreviation: col
-      simulated_column:
+      simulated-column:
         info: Name of the column containing previously simulated data to use for add/subtract modes.
         dtype: str
         abbreviation: sc
