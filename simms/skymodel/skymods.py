@@ -621,10 +621,10 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     tol_mask = np.any(np.abs(reshaped_intensities) > tol, axis=(1, 2))
     non_zero_intensities = reshaped_intensities[tol_mask]
     
+    # decide whether image is sparse enough for DFT
+    sparsity = 1 - (non_zero_intensities.size/intensities.size)
+    
     if use_dft is None:
-        # decide whether image is sparse enough for DFT
-        sparsity = 1 - (non_zero_intensities.size/intensities.size)
-        
         if sparsity >= 0.8:
             log.info(f"More than 80% of pixels have intensity < {(tol*1e6):.2f} μJy. DFT will be used for visibility prediction.")
             use_dft = True
@@ -640,6 +640,8 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             
             return intensities, None, polarisation, use_dft, delta_ra, delta_dec
     else:
+        log.info(f"Filtered {sparsity*100:.2f}% of pixels using {(tol*1e6):.2f}-μJy tolerance.")
+        
         # calculate pixel (l, m) coordinates
         lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
         reshaped_lm = lm.reshape(n_pix_l * n_pix_m, 2)
