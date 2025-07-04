@@ -221,6 +221,7 @@ def runit(**kwargs):
                 delta_ra = delta_ra,
                 delta_dec = delta_dec,
                 epsilon = epsilon,
+                do_wstacking = opts.do_wstacking,
                 noise = noise,
                 dtype = ds.DATA.data.dtype,
                 concatenate=True,

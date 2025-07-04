@@ -35,6 +35,10 @@ cabs:
         dtype: str
         default: double
         choices: ['single', 'double']
+      do-wstacking:
+        info: Whether to use w-stacking for FFT-based visibility prediction.
+        dtype: bool
+        default: true
       cat-delim: 
         info: Delimeter that is used in the catalogue
         dtype: str

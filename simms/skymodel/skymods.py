@@ -640,7 +640,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     
     
 def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pixsize_x: float, pixsize_y: float,
-                  epsilon: Optional[float]=1e-7, nthreads: Optional[int]=8) -> np.ndarray:
+                  epsilon: Optional[float]=1e-7, nthreads: Optional[int]=8, do_wstacking: Optional[bool]=True) -> np.ndarray:
     """
     ducc0.wgridder.dirty2ms wrapper to add squeezing and conjugation.
     NB: Image should be 2D.
@@ -661,8 +661,8 @@ def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pix
     
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.ndarray], chan_freqs: np.ndarray,
                         polarision: bool, use_dft: bool, mode: Union[None, str], mod_data: Union[None, np.ndarray],
-                        ncorr: int, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None,
-                        epsilon: Optional[float]=1e-9, noise: Optional[float]=None, nthreads: Optional[int]=8):
+                        ncorr: int, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None, do_wstacking: Optional[bool]=True,
+                        epsilon: Optional[float]=1e-7, noise: Optional[float]=None, nthreads: Optional[int]=8,):
     """
     Augmented version of im_to_vis
     Args:
@@ -700,7 +700,8 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
                         image[corr, chan],
                         pixsize_x=np.abs(delta_ra),
                         pixsize_y=delta_dec,
-                        epsilon=1e-7,
+                        epsilon=epsilon,
+                        do_wstacking=do_wstacking,
                         nthreads=nthreads
                     )
         else:
@@ -712,7 +713,8 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
                     image[0, chan],
                     pixsize_x=np.abs(delta_ra),
                     pixsize_y=delta_dec,
-                    epsilon=1e-7,
+                    epsilon=epsilon,
+                    do_wstacking=do_wstacking,
                     nthreads=nthreads
                 )
             
