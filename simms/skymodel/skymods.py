@@ -508,7 +508,8 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 freqs = ref_freq + (np.arange(1, n_freqs + 1) - refpix_nu) * fits_delta_nu
                 
                 if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
-                    raise SkymodelError("Some MS frequencies are out of bounds of FITS image frequencies. "
+                    raise SkymodelError(f"Some MS frequencies [{ms_start_freq/1e9:.6f} GHz, {ms_end_freq/1e9:.6f} GHz] "
+                                        f"are out of bounds of FITS image frequencies[{fits_start_freq/1e9:.6f} GHz, {fits_end_freq/1e9:.6f} GHz]. "
                                         "Cannot interpolate FITS image onto MS frequency grid.")
                 
                 # reshape FITS data to (n_pix_l, n_pix_m, nchan)
@@ -534,7 +535,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             else: # singleton spectral axis
                 # raise error if frequency is not in bounds of MS channel frequencies
                 if fits_start_freq < ms_start_freq or fits_end_freq > ms_end_freq:    
-                    raise SkymodelError("FITS image frequency range does not fall in MS channel frequency range.")
+                    raise SkymodelError(f"{fits_image} frequency range does not fall in MS channel frequency range.")
                 
                 # reshape FITS data to (n_pix_l, n_pix_m, nchan)
                 skymodel= np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec"), dims.index("freq")))
