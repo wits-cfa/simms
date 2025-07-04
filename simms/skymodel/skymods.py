@@ -147,7 +147,7 @@ class Spectrum:
             return np.stack(spectrum, axis=0)
 
 
-def makesources(data, freqs, ra0, dec0):
+def make_sources(data, freqs, ra0, dec0):
     num_sources = len(data['name'][1])
     sources = []
     for i in range(num_sources):
@@ -413,7 +413,8 @@ def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: floa
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
-                          ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, stokes: int = 0):
+                          ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, stokes: int = 0,
+                          use_dft: Optional[bool]=None) -> tuple:
     """
     Processes FITS skymodel into DFT input
     Args:
@@ -620,23 +621,31 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
     tol_mask = np.any(np.abs(reshaped_intensities) > tol, axis=(1, 2))
     non_zero_intensities = reshaped_intensities[tol_mask]
     
-    # decide whether image is sparse enough for DFT
-    sparsity = 1 - (non_zero_intensities.size/intensities.size)
-    
-    if sparsity >= 0.8:
-        log.info(f"More than 80% of pixels have intensity < {(tol*1e6):.2f} μJy. DFT will be used for visibility prediction.")
-        use_dft = True
+    if use_dft is None:
+        # decide whether image is sparse enough for DFT
+        sparsity = 1 - (non_zero_intensities.size/intensities.size)
+        
+        if sparsity >= 0.8:
+            log.info(f"More than 80% of pixels have intensity < {(tol*1e6):.2f} μJy. DFT will be used for visibility prediction.")
+            use_dft = True
+            # calculate pixel (l, m) coordinates
+            lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
+            reshaped_lm = lm.reshape(n_pix_l * n_pix_m, 2)
+            non_zero_lm = reshaped_lm[tol_mask]
+            
+            return non_zero_intensities, non_zero_lm, polarisation, use_dft, None, None
+        else:
+            log.info(f"More than 20% of pixels have intensity > {(tol*1e6):.2f} μJy. FFT will be used for visibility prediction.")
+            use_dft = False
+            
+            return intensities, None, polarisation, use_dft, delta_ra, delta_dec
+    else:
         # calculate pixel (l, m) coordinates
         lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
         reshaped_lm = lm.reshape(n_pix_l * n_pix_m, 2)
         non_zero_lm = reshaped_lm[tol_mask]
         
         return non_zero_intensities, non_zero_lm, polarisation, use_dft, None, None
-    else:
-        log.info(f"More than 20% of pixels have intensity > {(tol*1e6):.2f} μJy. FFT will be used for visibility prediction.")
-        use_dft = False
-        
-        return intensities, None, polarisation, use_dft, delta_ra, delta_dec
     
     
 def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pixsize_x: float, pixsize_y: float,

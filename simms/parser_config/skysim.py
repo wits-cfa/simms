@@ -10,7 +10,7 @@ import glob
 from simms.utilities import CatalogueError, isnummber, ParameterError
 from simms.skymodel.skymods import (
     read_ms, 
-    makesources, 
+    make_sources, 
     compute_vis,
     process_fits_skymodel,
     augmented_im_to_vis,
@@ -129,7 +129,7 @@ def runit(**kwargs):
                                                                                          input_column = opts.input_column
                                                                                         )
         
-        sources = makesources(mapcols, freqs, ra0, dec0)
+        sources = make_sources(mapcols, freqs, ra0, dec0)
 
         # check for polarisation information
         if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']):
