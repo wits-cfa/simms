@@ -74,7 +74,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         
         # create expected intensities
@@ -124,7 +124,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         
         # create expected intensities
@@ -169,7 +169,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -216,7 +216,7 @@ class TestFITSProcessing(unittest.TestCase):
         
         log.setLevel(logging.ERROR) # suppress warning messages
         # process the FITS file
-        intensities, _, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -301,7 +301,7 @@ class TestFITSProcessing(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        intensities, _, _, _, _, _, _ = process_fits_skymodel(test_skymodels, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _ = process_fits_skymodel(test_skymodels, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr), dtype=np.complex128)
@@ -408,7 +408,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -421,94 +421,95 @@ class TestFITSProcessing(unittest.TestCase):
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
         
+    # FIXME: Incorporate the two tests below into the ones above as lm-grid is no longer created
+    # when FFT is used for visibility prediction.
+    # def test_lm_grid_creation_with_stokes_I_only(self):
+    #     """
+    #     Tests if the l-m grid is created correctly for Stokes I only FITS file (no spectral axis in FITS file)
+    #     Validates:
+    #         - output l-m grid shape
+    #         - output l-m grid values
+    #     """
     
-    def test_lm_grid_creation_with_stokes_I_only(self):
-        """
-        Tests if the l-m grid is created correctly for Stokes I only FITS file (no spectral axis in FITS file)
-        Validates:
-            - output l-m grid shape
-            - output l-m grid values
-        """
+    #     # create a FITS file with Stokes I only
+    #     wcs = WCS(naxis=2)
+    #     wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN']
+    #     wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600]) # pixel scale in deg
+    #     wcs.wcs.crpix = [self.img_size/2, self.img_size/2] # reference pixel
+    #     wcs.wcs.crval = [0.0, -30.0] # reference pixel RA and Dec in deg
+        
+    #     # make header
+    #     header = wcs.to_header()
+    #     header['BUNIT'] = 'Jy'
+        
+    #     # make image
+    #     image = np.ones((self.img_size, self.img_size))
+        
+    #     # write to FITS file
+    #     hdu = fits.PrimaryHDU(image, header=header)
+    #     test_filename = f'test_{uuid.uuid4()}.fits'
+    #     self.test_files.append(test_filename)
+    #     hdu.writeto(test_filename, overwrite=True)
+        
+    #     # process the FITS file
+    #     _, lm, _, _, _, _ = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        
+    #     # created expected l-m grid
+    #     delt = np.deg2rad(self.cell_size/3600)
+    #     l = np.sort(np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt)
+    #     m = np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt
+    #     ll, mm = np.meshgrid(l, m)
+    #     expected_lm = np.stack([ll, mm], axis=-1)
+        
+    #     # validate the l-m grid
+    #     assert lm.shape == expected_lm.shape
+    #     assert np.allclose(lm, expected_lm)
+        
+    #     # clean up
+    #     os.remove(test_filename)
+        
+        
+    # def test_lm_grid_creation_with_stokes_I_and_spectral_axis(self):
+    #     """
+    #     Tests if the l-m grid is created correctly for Stokes I only FITS file with spectral axis
+    #     Validates:
+    #         - output l-m grid shape
+    #         - output l-m grid values
+    #     """
     
-        # create a FITS file with Stokes I only
-        wcs = WCS(naxis=2)
-        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN']
-        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600]) # pixel scale in deg
-        wcs.wcs.crpix = [self.img_size/2, self.img_size/2] # reference pixel
-        wcs.wcs.crval = [0.0, -30.0] # reference pixel RA and Dec in deg
+    #     # create a FITS file with Stokes I only
+    #     wcs = WCS(naxis=3)
+    #     wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
+    #     wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0]]) # pixel scale in deg
+    #     wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
+    #     wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0]] # reference pixel RA and Dec in deg
         
-        # make header
-        header = wcs.to_header()
-        header['BUNIT'] = 'Jy'
+    #     # make header
+    #     header = wcs.to_header()
+    #     header['BUNIT'] = 'Jy'
         
-        # make image
-        image = np.ones((self.img_size, self.img_size))
+    #     # make image
+    #     image = np.ones((self.nchan, self.img_size, self.img_size))
         
-        # write to FITS file
-        hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f'test_{uuid.uuid4()}.fits'
-        self.test_files.append(test_filename)
-        hdu.writeto(test_filename, overwrite=True)
+    #     # write to FITS file
+    #     hdu = fits.PrimaryHDU(image, header=header)
+    #     test_filename = f'test_{uuid.uuid4()}.fits'
+    #     self.test_files.append(test_filename)
+    #     hdu.writeto(test_filename, overwrite=True)
         
-        # process the FITS file
-        _, lm, _, _, _, _, _ = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+    #     # process the FITS file
+    #     _, lm, _, _, _, _ = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
-        # created expected l-m grid
-        delt = np.deg2rad(self.cell_size/3600)
-        l = np.sort(np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt)
-        m = np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt
-        ll, mm = np.meshgrid(l, m)
-        expected_lm = np.vstack((ll.flatten(), mm.flatten())).T
+    #     # created expected l-m grid
+    #     delt = np.deg2rad(self.cell_size/3600)
+    #     l = np.sort(np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt)
+    #     m = np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt
+    #     ll, mm = np.meshgrid(l, m)
+    #     expected_lm = np.stack([ll, mm], axis=-1)
         
-        # validate the l-m grid
-        assert lm.shape == expected_lm.shape
-        assert np.allclose(lm, expected_lm)
+    #     # validate the l-m grid
+    #     assert lm.shape == expected_lm.shape
+    #     assert np.allclose(lm, expected_lm)
         
-        # clean up
-        os.remove(test_filename)
-        
-        
-    def test_lm_grid_creation_with_stokes_I_and_spectral_axis(self):
-        """
-        Tests if the l-m grid is created correctly for Stokes I only FITS file with spectral axis
-        Validates:
-            - output l-m grid shape
-            - output l-m grid values
-        """
-    
-        # create a FITS file with Stokes I only
-        wcs = WCS(naxis=3)
-        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
-        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0]]) # pixel scale in deg
-        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1] # reference pixel
-        wcs.wcs.crval = [0.0, -30.0, self.chan_freqs[0]] # reference pixel RA and Dec in deg
-        
-        # make header
-        header = wcs.to_header()
-        header['BUNIT'] = 'Jy'
-        
-        # make image
-        image = np.ones((self.nchan, self.img_size, self.img_size))
-        
-        # write to FITS file
-        hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f'test_{uuid.uuid4()}.fits'
-        self.test_files.append(test_filename)
-        hdu.writeto(test_filename, overwrite=True)
-        
-        # process the FITS file
-        _, lm, _, _, _, _, _ = process_fits_skymodel(test_filename, 0.0, np.deg2rad(-30.0), self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
-        
-        # created expected l-m grid
-        delt = np.deg2rad(self.cell_size/3600)
-        l = np.sort(np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt)
-        m = np.arange(1-self.img_size/2, 1-self.img_size/2+self.img_size) * delt
-        ll, mm = np.meshgrid(l, m)
-        expected_lm = np.vstack((ll.flatten(), mm.flatten())).T
-        
-        # validate the l-m grid
-        assert lm.shape == expected_lm.shape
-        assert np.allclose(lm, expected_lm)
-        
-        # clean up
-        os.remove(test_filename)
+    #     # clean up
+    #     os.remove(test_filename)

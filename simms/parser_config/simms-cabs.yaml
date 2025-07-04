@@ -28,8 +28,17 @@ cabs:
         info: minimum brightness for a pixel to be considered in direct Fourier transform
         dtype: float
         required: no
-        default: 1e-9
+        default: 1e-7
         abbreviation: pt
+      fft-precision:
+        info: Precision of the FFT calculation. The default is double precision.
+        dtype: str
+        default: double
+        choices: ['single', 'double']
+      do-wstacking:
+        info: Whether to use w-stacking for FFT-based visibility prediction.
+        dtype: bool
+        default: true
       cat-delim: 
         info: Delimeter that is used in the catalogue
         dtype: str
@@ -37,8 +46,13 @@ cabs:
       column:
         info: Data column for simulation
         dtype: str
-        default: MODEL_DATA
+        default: DATA
         abbreviation: col
+      simulated-column:
+        info: Name of the column containing previously simulated data to use for add/subtract modes.
+        dtype: str
+        abbreviation: sc
+        required: no  
       row-chunk-size:
         info: Chunking strategy for the simulation
         dtype: int
