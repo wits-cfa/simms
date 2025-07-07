@@ -223,6 +223,27 @@ def compute_brightness_matrix(spectrum: np.ndarray, elements: str, basis: str):
                 spectrum[order[0], :] - spectrum[order[1], :])
     else:
         raise ValueError(f"Unrecognised elements '{elements}'. Use 'diagonal' or 'all'.")
+    
+
+def stack_unpolarised_vis(vis: np.ndarray, ncorr: int) -> np.ndarray:
+    """
+    Takes XX or RR visibilities and creates visibility array with shape (nrows, nchan, ncorr).
+    Used to avoid double computation of identical correlations.
+    
+    Args:
+        vis: numpy array of shape (nrows, nchan) containing the visibility data
+        ncorr: number of correlations (2 or 4)
+    Returns:
+        vis: numpy array of shape (nrows, nchan, ncorr) containing the visibility data
+    """
+    if ncorr == 2:
+        vis = np.stack([vis, vis], axis=2)
+    elif ncorr == 4:
+        vis = np.stack([vis, np.zeros_like(vis), np.zeros_like(vis), vis], axis=2)
+    else:
+        raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+    
+    return vis
 
 
 def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: int, polarisation: bool, basis: str,
@@ -306,12 +327,7 @@ def compute_vis(srcs: List[Source], uvw: np.ndarray, freqs: np.ndarray, ncorr: i
             phase_factor = calculate_phase_factor(source, uvw_scaled)
             vis += source.spectrum * phase_factor
             
-        if ncorr == 2:
-            vis = np.stack([vis, vis], axis=2)
-        elif ncorr == 4:
-            vis = np.stack([vis, np.zeros_like(vis), np.zeros_like(vis), vis], axis=2)
-        else:
-            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+        vis = stack_unpolarised_vis(vis, ncorr)
     
     # add noise
     add_noise(vis, noise)
@@ -398,7 +414,8 @@ def compute_radec_coords(header, n_ra: float, n_dec: float):
 
 # TODO: consider assuming degrees for RA and Dec if no units are given
 def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_coords: Optional[np.ndarray]=None,
-                    delta_ra: Optional[float]=None, dec_coords: Optional[np.ndarray]=None, delta_dec: Optional[float]=None):
+                    delta_ra: Optional[float]=None, dec_coords: Optional[np.ndarray]=None, delta_dec: Optional[float]=None,
+                    tol_mask: Optional[np.ndarray]=None):
     """
     Calculates pixel (l, m) coordinates
     """
@@ -408,6 +425,12 @@ def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: floa
     # calculate pixel (l, m) coordinates
     ra0, dec0 = phase_centre
     lm = pix_radec2lm(ra0, dec0, ra_coords, dec_coords)
+    
+    if isinstance(tol_mask, np.ndarray):
+        # reshape lm for DFT
+        reshaped_lm = lm.reshape(n_ra * n_dec, 2)
+        non_zero_lm = reshaped_lm[tol_mask]
+        return non_zero_lm
     
     return lm
     
@@ -629,10 +652,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         if sparsity >= 0.8:
             log.info(f"More than 80% of pixels have intensity < {(tol*1e6):.2f} μJy. DFT will be used for visibility prediction.")
             use_dft = True
-            # calculate pixel (l, m) coordinates
-            lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
-            reshaped_lm = lm.reshape(n_pix_l * n_pix_m, 2)
-            non_zero_lm = reshaped_lm[tol_mask]
+            non_zero_lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec, tol_mask)
             
             return non_zero_intensities, non_zero_lm, polarisation, use_dft, None, None
         else:
@@ -642,11 +662,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             return intensities, None, polarisation, use_dft, delta_ra, delta_dec
     else:
         log.info(f"Filtered {sparsity*100:.2f}% of pixels using {(tol*1e6):.2f}-μJy tolerance.")
-        
-        # calculate pixel (l, m) coordinates
-        lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec)
-        reshaped_lm = lm.reshape(n_pix_l * n_pix_m, 2)
-        non_zero_lm = reshaped_lm[tol_mask]
+        non_zero_lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec, tol_mask)
         
         return non_zero_intensities, non_zero_lm, polarisation, use_dft, None, None
     
@@ -697,7 +713,12 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
     """
     # if sparse, use DFT
     if use_dft:
-        vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='casa')
+        if polarisation:
+            vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='casa')
+        else:
+            image = image[..., 0]
+            vis = dft_im_to_vis(image[..., np.newaxis], uvw, lm, chan_freqs, convention='casa')
+            vis = stack_unpolarised_vis(vis, ncorr)
 
     # else, use FFT
     else:
@@ -730,10 +751,7 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
                     nthreads=nthreads
                 )
             
-            if ncorr == 2:
-                vis = np.stack([vis, vis], axis=2)
-            else:
-                vis = np.stack([vis, np.zeros_like(vis), np.zeros_like(vis), vis], axis=2)
+            vis = stack_unpolarised_vis(vis, ncorr)
 
     # add noise
     add_noise(vis, noise)
