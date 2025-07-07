@@ -688,7 +688,7 @@ def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pix
     
     
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.ndarray], chan_freqs: np.ndarray,
-                        polarision: bool, use_dft: bool, mode: Union[None, str], mod_data: Union[None, np.ndarray],
+                        polarisation: bool, use_dft: bool, mode: Union[None, str], mod_data: Union[None, np.ndarray],
                         ncorr: int, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None, do_wstacking: Optional[bool]=True,
                         epsilon: Optional[float]=1e-7, noise: Optional[float]=None, nthreads: Optional[int]=8,):
     """
@@ -698,7 +698,7 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
         uvw: UVW coordinates
         lm: (l, m) coordinates (used for DFT)
         chan_freqs: frequency array
-        polarision: True if polarisation information is present, False otherwise (used for FFT)
+        polarisation: True if polarisation information is present, False otherwise (used for FFT)
         use_dft: True if DFT should be used, False if FFT should be used
         mode: 'add' or 'subtract' to specify whether to add or subtract model data
         mod_data: model data to/from which computed visibilities should be added/subtracted
@@ -723,7 +723,7 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
     # else, use FFT
     else:
         image = np.transpose(image, axes=(3, 2, 0, 1))
-        if polarision:
+        if polarisation:
             vis = np.zeros((uvw.shape[0], chan_freqs.size, ncorr), dtype=np.complex128)
             for corr in range(ncorr):
                 for chan in range(chan_freqs.size):
