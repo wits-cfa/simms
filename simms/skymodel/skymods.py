@@ -718,7 +718,7 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
         else:
             image = image[..., 0]
             vis = dft_im_to_vis(image[..., np.newaxis], uvw, lm, chan_freqs, convention='casa')
-            vis = stack_unpolarised_vis(vis, ncorr)
+            vis = stack_unpolarised_vis(vis[...,0], ncorr)
 
     # else, use FFT
     else:
