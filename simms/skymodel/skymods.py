@@ -540,9 +540,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 
                 # get image shape
                 n_pix_l, n_pix_m, _ = skymodel.shape
-                
-                # reproject FITS cube to MS frequencies
-                # TODO: implement interpolation of FITS cube to MS channel frequencies
+            
                 if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
                     # interpolate FITS cube
                     log.warning(f"Interpolating {fits_image} onto MS channel frequency grid. This uses a lot of memory.")

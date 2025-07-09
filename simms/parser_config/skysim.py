@@ -89,6 +89,8 @@ def runit(**kwargs):
             for line in stdr.readlines():
                 if line.startswith("#"):
                     continue
+                if not line.strip():
+                    continue
                 rowdata = line.strip().split(delimiter)
                 if len(rowdata) != len(header):
                     raise CatalogueError("The number of elements in one or more rows does not equal the\
