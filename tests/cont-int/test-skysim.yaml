@@ -28,7 +28,7 @@ recipe:
       params:
         ms: =recipe.ms
         catalogue: =recipe.skymodel
-        column: DATA
+        column: NOISY_DATA
         sefd: 512
     subtract:
       cab: skysim
@@ -36,5 +36,6 @@ recipe:
         _use: recipe.steps.basic.params
         mode: subtract
         input-column: DATA
-        column: CORRECTED_DATA
+        simulated-column: NOISY_DATA
+        column: DENOISED_DATA
     
