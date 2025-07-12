@@ -10,7 +10,7 @@ import glob
 from simms.utilities import CatalogueError, isnummber, ParameterError
 from simms.skymodel.skymods import (
     read_ms, 
-    makesources, 
+    make_sources, 
     compute_vis,
     process_fits_skymodel,
     augmented_im_to_vis,
@@ -22,7 +22,7 @@ from tqdm.dask import TqdmCallback
 import dask.array as da
 from daskms import xds_to_table
 
-log = get_logger(BIN.skysim)
+log = get_logger(BIN.skysim, level="ERROR")
 
 command = BIN.skysim
 
@@ -44,6 +44,11 @@ def runit(**kwargs):
     cat = opts.catalogue
     fs = opts.fits_sky
     chunks = {"row": opts.row_chunk_size}
+    
+    # you dont need to specify a sky model if you are adding or subtracting simulated visibilities to/from the input column,
+    # if you already have a simulated column in the MS
+    if opts.mode not in ["add", "subtract"] and not (cat or fs):
+        raise ParameterError("Please specify a catalogue or FITS sky model to simulate visibilities.")
     
     if cat and fs:
         raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
@@ -83,6 +88,8 @@ def runit(**kwargs):
 
             for line in stdr.readlines():
                 if line.startswith("#"):
+                    continue
+                if not line.strip():
                     continue
                 rowdata = line.strip().split(delimiter)
                 if len(rowdata) != len(header):
@@ -124,9 +131,7 @@ def runit(**kwargs):
                                                                                          input_column = opts.input_column
                                                                                         )
         
-        sources = makesources(mapcols, freqs, ra0, dec0)
-        
-        allvis = []
+        sources = make_sources(mapcols, freqs, ra0, dec0)
 
         # check for polarisation information
         if any(mapcols[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']):
@@ -139,22 +144,23 @@ def runit(**kwargs):
         if polarisation and ncorr == 2:
             log.warning("Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
 
+        allvis = []
         for ds in ms_dsl:
-            simvis = da.blockwise(compute_vis, ("row", "chan", "corr"),
-                                sources, ("source",),
-                                ds.UVW.data, ("row", "uvw"),
-                                freqs, ("chan",),
-                                ncorr, None,
-                                polarisation, None,
-                                opts.pol_basis, None,
-                                opts.mode, None,
-                                incol, incol_dims,
-                                noise=noise,
-                                new_axes={"corr": ncorr},
-                                dtype=ds.DATA.data.dtype,
-                                concatenate=True,
-                                )
-            
+            simvis = da.blockwise(
+                compute_vis, ("row", "chan", "corr"),
+                sources, ("source",),
+                ds.UVW.data, ("row", "uvw"),
+                freqs, ("chan",),
+                ncorr, None,
+                polarisation, None,
+                opts.pol_basis, None,
+                opts.mode, None,
+                incol, incol_dims,
+                noise=noise,
+                new_axes={"corr": ncorr},
+                dtype=ds.DATA.data.dtype,
+                concatenate=True,
+            )
             allvis.append(simvis)
         
     elif fs:
@@ -178,58 +184,85 @@ def runit(**kwargs):
             raise ParameterError("FITS file/directory does not exist")
         
         # read MS (also computes noise)
-        ms_dsl, ra0, dec0, freqs, nrow, nchan, df, ncorr, noise, incol, incol_dims = read_ms(ms, 
-                                                                                         opts.spwid, 
-                                                                                         opts.field_id, 
-                                                                                         chunks, 
-                                                                                         sefd = opts.sefd, 
-                                                                                         input_column = opts.input_column
-                                                                                        )
+        ms_dsl, ra0, dec0, freqs, nrow, nchan, df, ncorr, noise, incol, incol_dims = read_ms(
+            ms, 
+            opts.spwid, 
+            opts.field_id, 
+            chunks, 
+            sefd = opts.sefd, 
+            input_column = opts.input_column
+        )
         
         # process FITS sky model
-        image, lm, sparsity, n_pix_l, n_pix_m, delta_ra, delta_dec = process_fits_skymodel(fs, ra0, dec0, freqs, df, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
+        image, lm, polarisation, use_dft, delta_ra, delta_dec = process_fits_skymodel(
+            fs, 
+            ra0, 
+            dec0, 
+            freqs, 
+            df, 
+            ncorr, 
+            opts.pol_basis, 
+            tol=float(opts.pixel_tol)
+        )
         
-        if sparsity >= 0.8:
-            log.info("Image is sparse enough for DFT. Using DFT.")
-            use_dft = True
-        else:
-            log.info("Image is too dense for DFT. Using FFT.")
-            
+        epsilon = 1e-7 if opts.fft_precision == "double" else 1e-5
+        
         allvis = []
-    
         for ds in ms_dsl:
             simvis = da.blockwise(
                 augmented_im_to_vis, ("row", "chan", "corr"),
-                image, ("npix", "chan", "corr"),
+                image, ("npix", "chan", "corr") if use_dft else ("l", "m", "chan", "corr"),
                 ds.UVW.data, ("row", "uvw"),
-                lm, ("npix", "lm"),
-                freqs, ("chan",), 
+                lm, ("npix", "lm") if use_dft else None,
+                freqs, ("chan",),
+                polarisation, None,
                 use_dft, None,
                 opts.mode, None,
                 incol, incol_dims,
-                noise=noise,
-                n_pix_l = n_pix_l,
-                n_pix_m = n_pix_m, 
+                ncorr, None,
                 delta_ra = delta_ra,
                 delta_dec = delta_dec,
-                tol=float(opts.pixel_tol),
-                dtype=ds.DATA.data.dtype,
-                concatenate=True
+                epsilon = epsilon,
+                do_wstacking = opts.do_wstacking,
+                noise = noise,
+                dtype = ds.DATA.data.dtype,
+                concatenate=True,
             )
-            
             allvis.append(simvis)
          
     else:
-        raise ParameterError("No sky model specified. Please provide either a catalogue or a FITS sky model.")
+        if opts.mode not in ["add", "subtract"]:
+            raise ParameterError("You are simulating but no sky model was specified. Please provide either a catalogue or a FITS sky model.")
 
+        ms_dsl , * _ = read_ms(ms,
+                            opts.spwid,
+                            opts.field_id,
+                            chunks,
+                            sefd=opts.sefd,
+                            input_column=opts.input_column)
+
+    # write simulated visibilities to the MS
     writes = []
     for i, ds in enumerate(ms_dsl):
-        ms_dsl[i] = ds.assign(**{
-                opts.column: ( ("row", "chan", "corr"), 
-                    allvis[i]),
-        })
-    
-        writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
-        
-    with TqdmCallback(desc="Computing and writing visibilities..."):
+            if opts.mode in ["add", "subtract"] and hasattr(opts, 'simulated_column'):
+                simulated_data = ds[opts.simulated_column].data
+                input_data = ds[opts.input_column].data
+
+                if opts.mode == "subtract":
+                    residual = input_data - simulated_data
+                else:
+                    residual = input_data + simulated_data
+
+                ms_dsl[i] = ds.assign(**{
+                    opts.column: (("row", "chan", "corr"), 
+                        residual)
+                })
+            else: 
+                ms_dsl[i] = ds.assign(**{
+                    opts.column: (("row", "chan", "corr"), allvis[i])
+                })
+
+    writes.append(xds_to_table(ms_dsl, ms, [opts.column]))
+
+    with TqdmCallback(desc="Computing and writing visibilities"):
         da.compute(writes)
