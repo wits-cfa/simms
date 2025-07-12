@@ -7,8 +7,7 @@ import dask.array as da
 import daskms
 import numpy as np
 from casacore.measures import measures
-from casacore.tables import table
-from daskms import xds_from_table, xds_to_table
+from daskms import xds_to_table
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 from tqdm.dask import TqdmCallback
@@ -56,11 +55,11 @@ def create_ms(
 
     remove_ms(ms)
     telescope_array = autils.Array(telescope_name, sefd=sefd)
-    telescope_array.set_arrayinfo()
+    
     size = telescope_array.size
     mount = telescope_array.mount
     antnames = telescope_array.names
-    antlocation = telescope_array.get_itrf_positions()
+    antlocation = telescope_array.antlocations
 
     uvcoverage_data = telescope_array.uvgen(
         pointing_direction,
@@ -100,7 +99,6 @@ def create_ms(
     )
     times = da.from_array(uvcoverage_data.times, chunks=num_row_chunks)
     time_range = np.array([[uvcoverage_data.times[0], uvcoverage_data.times[-1]]])
-    duration = ntimes * dtime
     uvw = da.from_array(uvcoverage_data.uvw, chunks=(num_row_chunks, 3))
     antenna1 = da.from_array(ant1, chunks=num_row_chunks)
     antenna2 = da.from_array(ant2, chunks=num_row_chunks)

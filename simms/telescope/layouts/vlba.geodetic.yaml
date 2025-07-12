@@ -1,3 +1,4 @@
+name: vlba
 coord_sys: geodetic
 
 antnames: ["BR", "FD", "HN", "KP", "MK", "NL", "OV", "PT", "SC", "LA"]
