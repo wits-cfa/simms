@@ -173,7 +173,7 @@ def create_ms(
         expanded_src_elevations.append(all_baselines_elevation_per_time)
         
     expanded_src_elevations = np.array(expanded_src_elevations).flatten()
-     
+
     flag_row = np.zeros(num_rows, dtype=bool)
         
     if low_source_limit:
@@ -361,7 +361,7 @@ def get_noise(sefds: Union[List, float], ntime: int, dtime: int, chan_width: flo
     """
 
     if isinstance(sefds, (int, float)):
-        noise = np.sqrt(sefds / (2 * chan_width * dtime))
+        noise = sefds / np.sqrt(2 * chan_width * dtime)
         return noise
 
     sefd_pairs = list(combinations(sefds, 2))
