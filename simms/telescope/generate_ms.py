@@ -113,7 +113,10 @@ def create_ms(
         dtype=bool,
         chunks=(num_row_chunks, num_chans, num_corr),
     )
+    
     scan_number = da.rechunk(da.full(num_rows, 1), chunks=num_row_chunks)
+    state_id = scan_number
+    
 
     freqs = uvcoverage_data.freqs
     freqs = freqs.reshape(1, freqs.shape[0])
@@ -139,6 +142,7 @@ def create_ms(
         "FLAG": (("row", "chan", "corr"), flag),
         "FLAG_CATEGORY": (("row", "flagcat", "chan", "corr"), flag[:, None, :, :]),
         "SCAN_NUMBER": (("row"), scan_number),
+        "STATE_ID": (("row"), state_id),
     }
 
     sefd = telescope_array.sefd
@@ -169,8 +173,6 @@ def create_ms(
         expanded_src_elevations.append(all_baselines_elevation_per_time)
         
     expanded_src_elevations = np.array(expanded_src_elevations).flatten()
-    
-     
      
     flag_row = np.zeros(num_rows, dtype=bool)
         
@@ -248,16 +250,19 @@ def create_ms(
     with TqdmCallback(desc=f"Writing the SPECTRAL_WINDOW table to {ms}"):
         dask.compute(write_spw)
 
-    if not isinstance(size, (int, float)):
-        dish_diameter = np.array(size)
-        ant_mount = np.array(mount)
-    else:
+    
+    if isinstance(size, (int, float)):
         dish_diameter = [size] * num_ants
+    else:
+        dish_diameter = np.array(size)
+        
+    if isinstance(mount, str):
         ant_mount = [mount] * num_ants
+    else:
+        ant_mount = np.array(mount)
 
     names = np.array(antnames)
     teltype = ["GROUND_BASED"] * num_ants
-
     ant_ds = {
         "DISH_DIAMETER": (("row"), da.from_array(dish_diameter)),
         "MOUNT": (("row"), da.from_array(ant_mount)),
