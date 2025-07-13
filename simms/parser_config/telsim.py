@@ -34,7 +34,8 @@ def print_data_database(ctx, param, value):
             print(f"{key}: {info.strip()}")
             subarrays = getattr(val, "subarray", [])
             if subarrays:
-                print(f"  Subarrays: {", ".join(subarrays)}")
+                subarray_string = ", ".join(subarrays)
+                print(f"  Subarrays: {subarray_string}")
     raise SystemExit()
     
                 
