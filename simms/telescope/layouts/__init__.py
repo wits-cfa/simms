@@ -56,6 +56,6 @@ def simms_telescopes() -> Dict:
             lname = ".".join(lname.split(".")[:-1])
         laysdict[lname] = arrayinfo
 
-    return laysdict
+    return OmegaConf.create(laysdict)
 
 SIMMS_TELESCOPES = simms_telescopes()
