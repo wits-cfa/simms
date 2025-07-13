@@ -1,4 +1,5 @@
 name: vlba
+info: Very Long BAseline Array
 coord_sys: geodetic
 
 antnames: ["BR", "FD", "HN", "KP", "MK", "NL", "OV", "PT", "SC", "LA"]

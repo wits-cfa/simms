@@ -1,4 +1,10 @@
 Array:
+  info:
+    info: Array description
+    dtype: str
+  name:
+    info: Array name
+    dtype: str
   centre:
     info: Longitude and latitude of array
     dtype: List[float]

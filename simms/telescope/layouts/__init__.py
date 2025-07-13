@@ -46,6 +46,7 @@ def simms_telescopes() -> Dict:
                 size = antsizes,
                 coord_sys = arrayinfo.coord_sys,
                 mount = arrayinfo.mount,
+                issubarray = True,
             )
         
         # add main layout

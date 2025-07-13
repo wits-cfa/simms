@@ -1,4 +1,5 @@
 name: skamid
+info: Square Kilometre Array. 
 centre: [21.44380263, -30.71292499, 1095.967]
 coord_sys: geodetic
 mount: ALT-AZ
