@@ -338,7 +338,6 @@ class Array:
 
         start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
         dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
-        total_bandwidth = start_freq + dfreq * nchan
         end_freq = start_freq + dfreq * (nchan -1)
         frequency_entries = np.linspace(start_freq, end_freq, nchan)
         
