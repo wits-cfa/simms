@@ -351,6 +351,23 @@ def create_ms(
     write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"])
     with TqdmCallback(desc=f"Writing the DIRECTION column to POINTING table to {ms}"):
         dask.compute(write_dir)
+        
+    # add state table
+    state_table = daskms.Dataset( {
+        "SIG": (("row",), da.array([True])),
+        "REF": (("row",), da.array([False])),
+        "CAL": (("row",), da.array([0.0])),
+        "LOAD": (("row",), da.array([0.0])),
+        "SUB_SCAN": (("row",), da.array([1])),
+        "OBS_MODE": (("row",), da.array(['OBSERVE_TARGET.ON_SOURCE'])),
+        "FLAG_ROW": (("row",), da.array([False],dtype=bool)),
+    })
+    
+
+    with TqdmCallback(desc=f"Writing the STATE table to {ms}"):
+        dask.compute(
+            xds_to_table(state_table, f"{ms}::STATE"),
+        )
 
     log.info(f"{ms} successfully generated.")
 
