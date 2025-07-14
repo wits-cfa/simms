@@ -22,7 +22,7 @@ class Array:
     """
 
     def __init__(self, layout: Union[str, File], degrees: bool = True,
-                 sefd: Union[int, float, List[Union[int, float]]]=None):
+                sefd: Union[int, float, List[Union[int, float]]]=None):
         """
         layout: str|File
                     : specify an observatory as a str or a file.
@@ -218,7 +218,7 @@ class Array:
         return enu
 
     def uvgen(self, pointing_direction, dtime, ntimes, start_freq, dfreq,
-              nchan, start_time=None, start_ha=None) -> ObjDict:
+            nchan, start_time=None, start_ha=None) -> ObjDict:
         """
         Generate uvw coordimates
 
@@ -309,7 +309,7 @@ class Array:
         antenna1_list = []
         antenna2_list = []
         baseline_list = []
-   
+
         # Compute baselines and track antenna coordinates 
         for i in range(self.nant):
             for j in range(i + 1, self.nant):
@@ -349,7 +349,7 @@ class Array:
                 "freqs": frequency_entries,
                 "times": time_table,
                 "source_elevations": source_elevations,
-               
+            
             }
         )
         
@@ -357,8 +357,8 @@ class Array:
     
     
     def get_source_elevation(self, latitude: float,
-                             declination:float , 
-                             hour_angles: List[float]) -> List[float]:
+                            declination:float , 
+                            hour_angles: List[float]) -> List[float]:
         """
         Track the source during the observation and get its elevation.
         
@@ -383,12 +383,11 @@ class Array:
         elevation = np.degrees(np.arcsin(sin_elevation))
         
         return elevation
-        
 
 
     def get_antenna_elevation(self, ant_latitudes: List[float],
-                              dec: float, h0:float,
-                              ntimes: int) -> List[float]:
+                            dec: float, h0:float,
+                            ntimes: int) -> List[float]:
         """
         Get the elevations of the antennas at the observing times.
             
@@ -417,11 +416,11 @@ class Array:
             np.cos(dec)* np.cos(ant_latitudes[i]) * np.cos(h0)
         
         altitude = np.degrees(np.arcsin(antenna_elevations))
-         
+        
         return altitude
         
 
-def ms_addrow(ms,subtable,nrows):
+def ms_addrow(ms, subtable:str, nrows:int):
     
     subtab = table(f"{ms}::{subtable}",
                     readonly=False, lockoptions='user', ack=False)
