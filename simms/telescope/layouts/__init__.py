@@ -1,5 +1,7 @@
 from typing import Dict
+from scabha.basetypes import File
 import glob
+from omegaconf import OmegaConf
 import os
 
 # workaround the issue stated in
@@ -7,35 +9,54 @@ import os
 __path__ = os.path.dirname(__file__)
 
 
-def get_layout(name):
-    """
-    Get the specified layout information.
-    """
-    fname = os.path.join(__path__, f"{name}.geodetic.yaml")
-    if os.path.exists(fname):
-        return fname
-    raise FileNotFoundError("Layout not part of our known layouts")
-
-
-def known() -> Dict:
+def simms_telescopes() -> Dict:
     """
     Returns a dictionary of known array layouts
     """
-    lays = glob.glob(f"{__path__}/*.geodetic.yaml")
+    lays = map(File, glob.glob(f"{__path__}/*.geodetic.yaml"))
     laysdict = {}
     for layout in lays:
-        basename = os.path.basename(layout)
-        lname = basename.split(".geodetic.yaml")[0]
-        laysdict[lname] = layout
-    return laysdict
+        # Array name
+        arrayinfo = OmegaConf.load(layout)
+        allants = list(arrayinfo.antnames)
+        all_locations = list(arrayinfo.antlocations)
+        anant = len(all_locations)
+        
+        allsizes = arrayinfo.size
+        if isinstance(allsizes, (float, int)):
+            allsizes = [allsizes] * anant
+        else:
+            allsizes = list(allsizes)    
+         
+        subarrays = arrayinfo.get("subarray", [])
+        # add sub-arrays to database
+        for subarray in subarrays:
+            antnames = arrayinfo.subarray[subarray]
+            antlocations = []
+            antsizes = []
+            for ant in antnames:
+                idx = allants.index(ant)
+                antlocations.append(all_locations[idx])
+                antsizes.append(allsizes[idx])
+                
+            laysdict[subarray] = dict(
+                centre = arrayinfo.centre,
+                antlocations = antlocations,
+                antnames = antnames,
+                size = antsizes,
+                coord_sys = arrayinfo.coord_sys,
+                mount = arrayinfo.mount,
+                issubarray = True,
+            )
+        
+        # add main layout
+        if hasattr(arrayinfo, "name"):
+            lname = arrayinfo.name 
+        else:
+            lname = os.path.basename(layout.BASENAME)
+            lname = ".".join(lname.split(".")[:-1])
+        laysdict[lname] = arrayinfo
 
+    return OmegaConf.create(laysdict)
 
-def unknown(file_path) -> Dict:
-    """
-    Returns a dictionary of the given array layouts
-    """
-    lay_dict = {}
-    basename = os.path.basename(file_path)
-    lname = basename.split(".yaml")[0]
-    lay_dict[lname] = file_path
-    return lname, lay_dict
+SIMMS_TELESCOPES = simms_telescopes()

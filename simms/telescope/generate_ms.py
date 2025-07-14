@@ -7,8 +7,7 @@ import dask.array as da
 import daskms
 import numpy as np
 from casacore.measures import measures
-from casacore.tables import table
-from daskms import xds_from_table, xds_to_table
+from daskms import xds_to_table
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 from tqdm.dask import TqdmCallback
@@ -56,11 +55,11 @@ def create_ms(
 
     remove_ms(ms)
     telescope_array = autils.Array(telescope_name, sefd=sefd)
-    telescope_array.set_arrayinfo()
+    
     size = telescope_array.size
     mount = telescope_array.mount
     antnames = telescope_array.names
-    antlocation = telescope_array.get_itrf_positions()
+    antlocation = telescope_array.antlocations
 
     uvcoverage_data = telescope_array.uvgen(
         pointing_direction,
@@ -100,7 +99,6 @@ def create_ms(
     )
     times = da.from_array(uvcoverage_data.times, chunks=num_row_chunks)
     time_range = np.array([[uvcoverage_data.times[0], uvcoverage_data.times[-1]]])
-    duration = ntimes * dtime
     uvw = da.from_array(uvcoverage_data.uvw, chunks=(num_row_chunks, 3))
     antenna1 = da.from_array(ant1, chunks=num_row_chunks)
     antenna2 = da.from_array(ant2, chunks=num_row_chunks)
@@ -115,7 +113,10 @@ def create_ms(
         dtype=bool,
         chunks=(num_row_chunks, num_chans, num_corr),
     )
+    
     scan_number = da.rechunk(da.full(num_rows, 1), chunks=num_row_chunks)
+    state_id = scan_number
+    
 
     freqs = uvcoverage_data.freqs
     freqs = freqs.reshape(1, freqs.shape[0])
@@ -141,6 +142,7 @@ def create_ms(
         "FLAG": (("row", "chan", "corr"), flag),
         "FLAG_CATEGORY": (("row", "flagcat", "chan", "corr"), flag[:, None, :, :]),
         "SCAN_NUMBER": (("row"), scan_number),
+        "STATE_ID": (("row"), state_id),
     }
 
     sefd = telescope_array.sefd
@@ -171,9 +173,7 @@ def create_ms(
         expanded_src_elevations.append(all_baselines_elevation_per_time)
         
     expanded_src_elevations = np.array(expanded_src_elevations).flatten()
-    
-    
-    
+
     flag_row = np.zeros(num_rows, dtype=bool)
         
     if low_source_limit:
@@ -250,16 +250,19 @@ def create_ms(
     with TqdmCallback(desc=f"Writing the SPECTRAL_WINDOW table to {ms}"):
         dask.compute(write_spw)
 
-    if not isinstance(size, (int, float)):
-        dish_diameter = np.array(size)
-        ant_mount = np.array(mount)
-    else:
+    
+    if isinstance(size, (int, float)):
         dish_diameter = [size] * num_ants
+    else:
+        dish_diameter = np.array(size)
+        
+    if isinstance(mount, str):
         ant_mount = [mount] * num_ants
+    else:
+        ant_mount = np.array(mount)
 
     names = np.array(antnames)
     teltype = ["GROUND_BASED"] * num_ants
-
     ant_ds = {
         "DISH_DIAMETER": (("row"), da.from_array(dish_diameter)),
         "MOUNT": (("row"), da.from_array(ant_mount)),

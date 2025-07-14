@@ -1,3 +1,5 @@
+name: meerkat
+info: MeerKAT is a 64-antenna array in the Northern Cape of South Africa. 
 antlocations:
   - [21.4400065587876, -30.71108129016734, 1050.0000759201123]
   - [21.447868351086942, -30.715227625904166, 1050.0000753762174]
