@@ -7,6 +7,9 @@ from numba import njit, prange
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from astropy.io import fits
+from astropy.wcs import WCS
+from astropy.table import Table
+from casacore.quanta import quantity as qa
 from daskms import xds_from_ms, xds_from_table
 from africanus.dft import im_to_vis as dft_im_to_vis
 from ducc0.wgridder import dirty2ms
@@ -499,6 +502,94 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                                 log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
             
             skymodel = hdulist[0].data[tuple(data_slice)]
+        
+        # check BUNIT and convert from Jy/beam to Jy 
+            bunit = header.get('BUNIT', '').strip().lower()
+            if bunit == 'jy/beam':
+                wcs = WCS(header, naxis=2)
+                pix_scale_val = wcs.pixel_scale_matrix[-1, -1]  # scale of pixel (in deg), assuming all units in header are in degrees
+                pixel_area_deg2 = np.abs(pix_scale_val) * np.abs(pix_scale_val)  
+                
+                # Check if beam table exists for frequency-dependent beams
+                beam_table = None
+                try:
+                    beam_table = Table.read(fits_image)
+                except:
+                    # No beam table found, will use header values
+                    pass
+                
+                if beam_table is not None:
+                    if "freq" in dims and skymodel.ndim == 3:
+                        n_freq, n_pix_l, n_pix_m = skymodel.shape
+                        bmaj_unit = beam_table['BMAJ'].unit if hasattr(beam_table['BMAJ'], 'unit') and beam_table['BMAJ'].unit else 'deg'
+                        bmin_unit = beam_table['BMIN'].unit if hasattr(beam_table['BMIN'], 'unit') and beam_table['BMIN'].unit else 'deg'
+                        for chan in range(n_freq):
+                            if chan < len(beam_table):
+                                # check beam sizes from table and convert to degrees
+                                bmaj_val = str(beam_table[chan]['BMAJ'])
+                                bmin_val = str(beam_table[chan]['BMIN'])
+                                bmaj_val += str(bmaj_unit)  
+                                bmin_val += str(bmin_unit)
+
+                                bmaj_deg = qa(bmaj_val).get_value('deg')
+                                bmin_deg = qa(bmin_val).get_value('deg')
+
+                
+                                beam_area_deg2 = (np.pi * bmaj_deg * bmin_deg) / (4 * np.log(2))
+                                beam_area_pixels = beam_area_deg2 / pixel_area_deg2
+                                
+                                # Convert this channel from Jy/beam to Jy
+                                skymodel[:, :, chan] = skymodel[:, :, chan] / beam_area_pixels
+                            else:
+                                log.warning(f"Channel {chan} exceeds beam table length, skipping conversion")
+                        
+                        log.info(f"Converted {fits_image} from Jy/beam to Jy using beam table")
+                    else:
+                        # For 2D image, use first entry in beam table
+                        bmaj_val = str(beam_table[0]['BMAJ'])
+                        bmin_val = str(beam_table[0]['BMIN'])
+                        bmaj_val += str(bmaj_unit)  
+                        bmin_val += str(bmin_unit)
+
+                        bmaj_deg = qa(bmaj_val).get_value('deg')
+                        bmin_deg = qa(bmin_val).get_value('deg')
+                        
+                        # Calculate beam area in deg^2
+                        beam_area_deg2 = (np.pi * bmaj_deg * bmin_deg) / (4 * np.log(2))
+                        
+                        # Beam area in pixels
+                        beam_area_pixels = beam_area_deg2 / pixel_area_deg2
+                        
+                        # Convert from Jy/beam to Jy
+                        skymodel = skymodel / beam_area_pixels
+                        
+                    
+                elif 'BMAJ' in header and 'BMIN' in header:
+                    # Use constant beam from header
+                    bmaj_deg = header['BMAJ']  # assuming beam major axis in degrees
+                    bmin_deg = header['BMIN']  # assuming beam minor axis in degrees
+                    
+                    # Calculate beam area in deg^2
+                    beam_area_deg2 = (np.pi * bmaj_deg * bmin_deg) / (4 * np.log(2))
+                    
+                    # Beam area in pixels
+                    beam_area_pixels = beam_area_deg2 / pixel_area_deg2
+                    
+                    # Convert from Jy/beam to Jy
+                    skymodel = skymodel / beam_area_pixels
+                
+                else:
+                    raise SkymodelError(f"FITS image {fits_image} has BUNIT='Jy/beam' but missing beam parameters (no beam table and no BMAJ/BMIN in header)")
+                    
+            elif bunit == 'jy':
+                # Data is already in Jy, no conversion needed
+                log.info(f"FITS image {fits_image} is already in Jy units")
+                
+            elif bunit == '':
+                log.warning(f"FITS image {fits_image} has no BUNIT specified. Assuming data is in Jy")
+                
+            else:
+                log.warning(f"FITS image {fits_image} has unknown BUNIT='{bunit}'. Assuming data is in Jy")
         
         # # TODO (Mika, Senkhosi): assume image in l-m coords already if no celestial coords
         # # Would this mean the lengths of CTYPE and CRVAL are not the same? Is that even possible?
