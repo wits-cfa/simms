@@ -191,7 +191,7 @@ def create_ms(
     
     main_table = daskms.Dataset(ds, coords={"ROWID": ("row", da.arange(num_rows))})
 
-    write_main = xds_to_table(main_table, ms)
+    write_main = xds_to_table(main_table, ms, descriptor="ms")
     with TqdmCallback(desc=f"Writing the Main Table to {ms}"):
         dask.compute(write_main)
 
@@ -226,7 +226,7 @@ def create_ms(
 
     feed_table = daskms.Dataset(feed_ds)
 
-    write_feed = xds_to_table(feed_table, f"{ms}::FEED")
+    write_feed = xds_to_table(feed_table, f"{ms}::FEED", descriptor="ms_subtable")
     with TqdmCallback(desc=f"Writing the FEED table to {ms}"):
         dask.compute(write_feed)
 
@@ -274,7 +274,7 @@ def create_ms(
 
     ant_table = daskms.Dataset(ant_ds)
 
-    write_ant = xds_to_table(ant_table, f"{ms}::ANTENNA")
+    write_ant = xds_to_table(ant_table, f"{ms}::ANTENNA", descriptor="ms_subtable")
     with TqdmCallback(desc=f"Writing the ANTENNA table to {ms}"):
         dask.compute(write_ant)
 
@@ -294,11 +294,9 @@ def create_ms(
 
     fld_table = daskms.Dataset(fld_ds)
 
-    write_fld = xds_to_table(fld_table, f"{ms}::FIELD")
+    write_fld = xds_to_table(fld_table, f"{ms}::FIELD", descriptor="ms_subtable")
     with TqdmCallback(desc=f"Writing the FIELD table to {ms}"):
         dask.compute(write_fld)
-
-    autils.ms_addrow(ms, "DATA_DESCRIPTION", 1)
 
     obs_ds = {
         "TIME_RANGE": (("row", "obs-exts"), da.from_array(time_range)),
@@ -309,7 +307,7 @@ def create_ms(
 
     obs_table = daskms.Dataset(obs_ds)
 
-    write_obs = xds_to_table(obs_table, f"{ms}::OBSERVATION")
+    write_obs = xds_to_table(obs_table, f"{ms}::OBSERVATION", descriptor="ms_subtable")
     with TqdmCallback(desc=f"Writing the OBSERVATION table to {ms}"):
         dask.compute(write_obs)
 
@@ -321,7 +319,7 @@ def create_ms(
 
     pol_table = daskms.Dataset(pol_ds)
 
-    write_pol = xds_to_table(pol_table, f"{ms}::POLARIZATION")
+    write_pol = xds_to_table(pol_table, f"{ms}::POLARIZATION", descriptor="ms_subtable")
     with TqdmCallback(desc=f"Writing the POLARIZATION table to {ms}"):
         dask.compute(write_pol)
 
@@ -336,7 +334,7 @@ def create_ms(
 
     pntng_table = daskms.Dataset(pntng_ds)
 
-    write_pntng = xds_to_table(pntng_table, f"{ms}::POINTING")
+    write_pntng = xds_to_table(pntng_table, f"{ms}::POINTING", descriptor="ms_subtable")
     with TqdmCallback(desc=f"Writing the POINTING table to {ms}"):
         dask.compute(
             write_pntng,
@@ -348,9 +346,25 @@ def create_ms(
 
     dir_table = daskms.Dataset(dir_ds)
 
-    write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"])
+    write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"], descriptor="ms_subtable")
     with TqdmCallback(desc=f"Writing the DIRECTION column to POINTING table to {ms}"):
         dask.compute(write_dir)
+
+    # add DATA_DESC table
+    state_table = daskms.Dataset( {
+        "SPECTRAL_WINDOW_ID": (("row",), da.array([0])),
+        "POLARIZATION_ID": (("row",), da.array([0])),
+        "LAG_ID": (("row",), da.array([0])),
+        "FLAG_ROW": (("row",), da.array([False])),
+    })
+
+    with TqdmCallback(desc=f"Writing the DATA_DESCRIPTION table to {ms}"):
+        dask.compute(
+            xds_to_table(state_table, f"{ms}::DATA_DESCRIPTION"),
+        )
+
+
+
         
     # add state table
     state_table = daskms.Dataset( {
@@ -362,11 +376,10 @@ def create_ms(
         "OBS_MODE": (("row",), da.array(['OBSERVE_TARGET.ON_SOURCE'])),
         "FLAG_ROW": (("row",), da.array([False],dtype=bool)),
     })
-    
 
     with TqdmCallback(desc=f"Writing the STATE table to {ms}"):
         dask.compute(
-            xds_to_table(state_table, f"{ms}::STATE"),
+            xds_to_table(state_table, f"{ms}::STATE", descriptor="ms_subtable"),
         )
 
     log.info(f"{ms} successfully generated.")
