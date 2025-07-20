@@ -19,6 +19,9 @@ from simms.telescope import array_utilities as autils
 CORR_TYPES = OmegaConf.load(f"{simms.PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
 dm = measures()
 
+# Numpy does the correct type setting for strings
+nda = lambda items: da.asarray(np.array(items))
+
 log = simms.get_logger(name="telsim")
 
 
@@ -93,7 +96,6 @@ def create_ms(
     dec = ra_dec["m1"]["value"]
     phase_dir = np.array([[[ra, dec]]])
 
-    ddid = da.zeros(num_rows, chunks=num_row_chunks)
     data = da.zeros(
         (num_rows, num_chans, num_corr), chunks=(num_row_chunks, num_chans, num_corr)
     )
@@ -113,10 +115,6 @@ def create_ms(
         dtype=bool,
         chunks=(num_row_chunks, num_chans, num_corr),
     )
-    
-    scan_number = da.rechunk(da.full(num_rows, 1), chunks=num_row_chunks)
-    state_id = scan_number
-    
 
     freqs = uvcoverage_data.freqs
     freqs = freqs.reshape(1, freqs.shape[0])
@@ -124,9 +122,8 @@ def create_ms(
     chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
     channel_widths = da.full(freqs.shape, chan_width)
     total_bandwidth = nchan * chan_width
-
+    
     ds = {
-        "DATA_DESC_ID": (("row",), ddid),
         "DATA": (("row", "chan", "corr"), data),
         "UVW": (("row", "uvw_dim"), uvw),
         "TIME": (("row"), times),
@@ -141,10 +138,31 @@ def create_ms(
         "WEIGHT_SPECTRUM": (("row", "chan", "corr"), sigma_spec),
         "FLAG": (("row", "chan", "corr"), flag),
         "FLAG_CATEGORY": (("row", "flagcat", "chan", "corr"), flag[:, None, :, :]),
-        "SCAN_NUMBER": (("row"), scan_number),
-        "STATE_ID": (("row"), state_id),
     }
-
+    
+    dd_id = 0
+    ddid = da.rechunk(da.full(num_rows, dd_id), chunks=num_row_chunks)
+    
+    ds["DATA_DESC_ID"] = ("row",), ddid
+    
+    field_id = 0
+    ds["FIELD_ID"] = ("row"), da.full_like(ddid, fill_value=field_id)
+    
+    scan_number = 1
+    ds["SCAN_NUMBER"] = ("row"), da.full_like(ddid, fill_value=scan_number)
+    
+    state_id = 0
+    ds["STATE_ID"] = ("row"), da.full_like(ddid, fill_value=state_id)
+    
+    array_id = 0
+    ds["ARRAY_ID"] = ("row"), da.full_like(ddid, fill_value=array_id)
+    
+    obs_id = 0
+    ds["OBSERVATION_ID"] = ("row"), da.full_like(ddid, fill_value=obs_id)
+    
+    proc_id = 0
+    ds["PROCESSOR_ID"] = ("row"), da.full_like(ddid, fill_value=proc_id)
+    
     sefd = telescope_array.sefd
 
     if sefd:
@@ -191,7 +209,7 @@ def create_ms(
     
     main_table = daskms.Dataset(ds, coords={"ROWID": ("row", da.arange(num_rows))})
 
-    write_main = xds_to_table(main_table, ms)
+    write_main = xds_to_table(main_table, ms, columns="ALL", descriptor="ms(False)")
     with TqdmCallback(desc=f"Writing the Main Table to {ms}"):
         dask.compute(write_main)
 
@@ -225,8 +243,8 @@ def create_ms(
     }
 
     feed_table = daskms.Dataset(feed_ds)
-
-    write_feed = xds_to_table(feed_table, f"{ms}::FEED")
+    ms_desc = "ms_subtable(True)"
+    write_feed = xds_to_table(feed_table, f"{ms}::FEED", descriptor=ms_desc)
     with TqdmCallback(desc=f"Writing the FEED table to {ms}"):
         dask.compute(write_feed)
 
@@ -274,31 +292,27 @@ def create_ms(
 
     ant_table = daskms.Dataset(ant_ds)
 
-    write_ant = xds_to_table(ant_table, f"{ms}::ANTENNA")
+    write_ant = xds_to_table(ant_table, f"{ms}::ANTENNA", descriptor=ms_desc)
     with TqdmCallback(desc=f"Writing the ANTENNA table to {ms}"):
         dask.compute(write_ant)
 
-    num_fields = len(phase_dir)
-
-    field_names = np.array([f"{i:02d}" for i in range(num_fields)])
-    ftimes = np.zeros(num_fields)
+    field_name = "TARGET"
+    ftimes = [0.0]
 
     fld_ds = {
-        "NAME": (("row"), da.from_array(field_names)),
+        "NAME": (("row"), nda([field_name])),
         "PHASE_DIR": (("row", "field-poly", "field-dir"), da.from_array(phase_dir)),
         "DELAY_DIR": (("row", "field-poly", "field-dir"), da.from_array(phase_dir)),
         "REFERENCE_DIR": (("row", "field-poly", "field-dir"), da.from_array(phase_dir)),
         "TIME": (("row"), da.from_array(ftimes)),
-        "SOURCE_ID": (("row"), da.from_array(np.arange(num_fields))),
+        "SOURCE_ID": (("row"), da.from_array([field_id])),
     }
 
     fld_table = daskms.Dataset(fld_ds)
 
-    write_fld = xds_to_table(fld_table, f"{ms}::FIELD")
+    write_fld = xds_to_table(fld_table, f"{ms}::FIELD", descriptor=ms_desc)
     with TqdmCallback(desc=f"Writing the FIELD table to {ms}"):
         dask.compute(write_fld)
-
-    autils.ms_addrow(ms, "DATA_DESCRIPTION", 1)
 
     obs_ds = {
         "TIME_RANGE": (("row", "obs-exts"), da.from_array(time_range)),
@@ -309,7 +323,7 @@ def create_ms(
 
     obs_table = daskms.Dataset(obs_ds)
 
-    write_obs = xds_to_table(obs_table, f"{ms}::OBSERVATION")
+    write_obs = xds_to_table(obs_table, f"{ms}::OBSERVATION", descriptor=ms_desc)
     with TqdmCallback(desc=f"Writing the OBSERVATION table to {ms}"):
         dask.compute(write_obs)
 
@@ -321,7 +335,7 @@ def create_ms(
 
     pol_table = daskms.Dataset(pol_ds)
 
-    write_pol = xds_to_table(pol_table, f"{ms}::POLARIZATION")
+    write_pol = xds_to_table(pol_table, f"{ms}::POLARIZATION", descriptor=ms_desc)
     with TqdmCallback(desc=f"Writing the POLARIZATION table to {ms}"):
         dask.compute(write_pol)
 
@@ -336,7 +350,7 @@ def create_ms(
 
     pntng_table = daskms.Dataset(pntng_ds)
 
-    write_pntng = xds_to_table(pntng_table, f"{ms}::POINTING")
+    write_pntng = xds_to_table(pntng_table, f"{ms}::POINTING", descriptor=ms_desc)
     with TqdmCallback(desc=f"Writing the POINTING table to {ms}"):
         dask.compute(
             write_pntng,
@@ -348,9 +362,37 @@ def create_ms(
 
     dir_table = daskms.Dataset(dir_ds)
 
-    write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"])
+    write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"], descriptor=ms_desc)
     with TqdmCallback(desc=f"Writing the DIRECTION column to POINTING table to {ms}"):
         dask.compute(write_dir)
+        
+    # add PROCESSOR table
+    processor_table = daskms.Dataset({
+        "TYPE": (("row",), nda(["CORRELATOR"])),
+        "SUB_TYPE": (("row",), nda(["UNSET"])),
+        "TYPE_ID": (("row",), nda([proc_id])),
+        "MODE_ID": (("row",), nda([proc_id])),
+        "FLAG_ROW": (("row",), nda([False])),
+    })
+    
+    with TqdmCallback(desc=f"Writing the PROCESSOR table to {ms}"):
+        dask.compute(
+            xds_to_table(processor_table, f"{ms}::PROCESSOR"),
+        )
+    
+    # add DATA_DESC table
+    datadesc_table = daskms.Dataset( {
+        "SPECTRAL_WINDOW_ID": (("row",), da.array([dd_id])),
+        "POLARIZATION_ID": (("row",), da.array([dd_id])),
+        "LAG_ID": (("row",), da.array([0])),
+        "FLAG_ROW": (("row",), da.array([False])),
+    })
+
+    with TqdmCallback(desc=f"Writing the DATA_DESCRIPTION table to {ms}"):
+        dask.compute(
+            xds_to_table(datadesc_table, f"{ms}::DATA_DESCRIPTION"),
+        )
+
         
     # add state table
     state_table = daskms.Dataset( {
@@ -358,15 +400,14 @@ def create_ms(
         "REF": (("row",), da.array([False])),
         "CAL": (("row",), da.array([0.0])),
         "LOAD": (("row",), da.array([0.0])),
-        "SUB_SCAN": (("row",), da.array([1])),
-        "OBS_MODE": (("row",), da.array(['OBSERVE_TARGET.ON_SOURCE'])),
+        "SUB_SCAN": (("row",), da.array([state_id])),
+        "OBS_MODE": (("row",), nda(['OBSERVE_TARGET.ON_SOURCE'])),
         "FLAG_ROW": (("row",), da.array([False],dtype=bool)),
     })
-    
 
     with TqdmCallback(desc=f"Writing the STATE table to {ms}"):
         dask.compute(
-            xds_to_table(state_table, f"{ms}::STATE"),
+            xds_to_table(state_table, f"{ms}::STATE", descriptor=ms_desc),
         )
 
     log.info(f"{ms} successfully generated.")
