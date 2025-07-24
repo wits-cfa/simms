@@ -167,14 +167,13 @@ cabs:
         default: 50000
         abbreviation: rc
       column:
-        info: The column in which to corrupt the visibilities with noise.
+        info: The column in which to corrupt the visibilities with noise. Default is MODEL_DATA column.
         dtype: str
         default: 'MODEL_DATA'
         abbreviation: col
       sefd:
         info: Antenna SEFD (one value for all frequencies)
         dtype: float
-        # default: 551
       tsys_over_eta:
         info: Antenna system temperature over aperture efficiency (one value for all frequecies) 
         dtype: float
@@ -191,3 +190,7 @@ cabs:
         info: Maximum source elevation in degrees that is considered reliable data. The data recorded when the source is above this value is flagged.
         dtype: float
         abbreviation: hsl
+      freq_range:
+        info: A list containing the start frequency, end frequency, and number of channels, e.g., startfreq,endfreq,nchan.
+        dtype: str
+        abbreviation: fr

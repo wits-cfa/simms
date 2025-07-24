@@ -22,7 +22,8 @@ class Array:
     """
 
     def __init__(self, layout: Union[str, File], degrees: bool = True,
-                sefd: Union[int, float, List[Union[int, float]]]=None):
+                sefd: Union[int, float, List[Union[int, float]]]=None,
+                sensitivity_file: File = None):
         """
         layout: str|File
                     : specify an observatory as a str or a file.
@@ -44,8 +45,11 @@ class Array:
             self.layoutname = os.path.basename(self.layout.BASENAME)
         else:
             self.layout = SIMMS_TELESCOPES[layout]
+            
         self.sefd = sefd
-    
+        self.sensitivity_file = sensitivity_file
+        print(self.sensitivity_file)
+
         self.__set_arrayinfo()
         if self.layout.coord_sys == "geodetic":
             self.set_itrf()
@@ -94,15 +98,23 @@ class Array:
         self.size = self.layout["size"]
         
         if self.sefd is None:
+            print('here')
             sefd = self.layout.get("sefd", None)
             self.sefd = sefd
-
+            if self.sensitivity_file: 
+                print(self.sensitivity_file)
+                
+                sensitivity_data = OmegaConf.load(self.sensitivity_file)
+                
+                if 'sefd' in sensitivity_data:
+                    self.sefd = sensitivity_data['sefd']
+                
             if isinstance(sefd, (float, int)):
                 self.sefd = [sefd]
             elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
                 self.sefd = sefd
-    
-            
+
+
     def set_itrf(self):
         if not hasattr(self, "antlocations"):
             self.antlocations, xyz0 = self.geodetic2global()
@@ -217,8 +229,7 @@ class Array:
 
         return enu
 
-    def uvgen(self, pointing_direction, dtime, ntimes, start_freq, dfreq,
-            nchan, start_time=None, start_ha=None) -> ObjDict:
+    def uvgen(self, pointing_direction, dtime, ntimes, start_time=None, start_ha=None) -> ObjDict:
         """
         Generate uvw coordimates
 
@@ -231,13 +242,6 @@ class Array:
                     : integration time.
         ntimes: int
                     : number of times the sky should be snapped.
-        start_freq: Union[str,float]
-                    : starting freq of the observation.
-        dfreq: Union[str,float]
-                    : frequency interval.
-        nchan: int
-                    : number of channels.
-
         start_time: Union[str, List[str]]
                     : start time of the observation date and time ("YYYY/MM/DD 12:00:00", ["EPOCH", "YYYY/MM/DD 12:00:00"])
                         default is the current machine time.
@@ -335,18 +339,12 @@ class Array:
             time_table.append(baseline_time)
 
         time_table = np.array(time_table).flatten()
-
-        start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
-        dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
-        end_freq = start_freq + dfreq * (nchan -1)
-        frequency_entries = np.linspace(start_freq, end_freq, nchan)
         
         uvcoverage = ObjDict(
             {
                 "antenna1": antenna1_list,
                 "antenna2": antenna2_list,
                 "uvw": uvw,
-                "freqs": frequency_entries,
                 "times": time_table,
                 "source_elevations": source_elevations,
             

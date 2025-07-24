@@ -68,8 +68,14 @@ def runit(**kwargs):
     startha = opts.startha
     l_src_limit = opts.low_source_limit
     h_src_limit = opts.high_source_limit
+    freq_range = opts.freq_range
+    sfile = opts.sensitivity_file
+    if freq_range is not None:
+        freq_range = freq_range.split(",")
     generate_ms.create_ms(msname, telescope, direction, dtime,
                           ntimes, startfreq, dfreq, nchan,
                           correlations, rowchunks,
-                          sefd, column, starttime,startha,l_src_limit,
-                          h_src_limit)
+                          sefd, column, starttime, startha,
+                          freq_range,
+                          sfile,
+                          l_src_limit, h_src_limit)

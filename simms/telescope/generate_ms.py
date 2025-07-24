@@ -49,6 +49,8 @@ def create_ms(
     column: str,
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
+    freq_range: str = None,
+    sfile: File = None,
     low_source_limit: Union[float, str] = None,
     high_source_limit: Union[float, str] = None,
     low_antenna_limit: Union[float,str] = None,
@@ -57,20 +59,29 @@ def create_ms(
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
     remove_ms(ms)
-    telescope_array = autils.Array(telescope_name, sefd=sefd)
+    telescope_array = autils.Array(telescope_name, sefd=sefd, sensitivity_file=sfile)
     
     size = telescope_array.size
     mount = telescope_array.mount
     antnames = telescope_array.names
     antlocation = telescope_array.antlocations
+    
+    if freq_range:
+        start_freq = dm.frequency(v0=freq_range[0])["m0"]["value"]
+        end_freq = dm.frequency(v0=freq_range[1])["m0"]["value"]
+        nchan = int(freq_range[2])
+        dfreq = (end_freq - start_freq) / (nchan - 1)
+    else: 
+        start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
+        dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
+        end_freq = start_freq + dfreq * (nchan -1)
+        
+    freqs = np.linspace(start_freq, end_freq, nchan)
 
     uvcoverage_data = telescope_array.uvgen(
         pointing_direction,
         dtime,
         ntimes,
-        start_freq,
-        dfreq,
-        nchan,
         start_time,
         start_ha,
     )
@@ -78,7 +89,7 @@ def create_ms(
     num_rows = uvcoverage_data.times.shape[0]
     num_row_chunks = row_chunks
 
-    num_chans = len(uvcoverage_data.freqs)
+    num_chans = len(freqs)
     num_corr = len(correlations)
     corr_types = np.array([[CORR_TYPES[x] for x in correlations]])
     # TODO(sphe) use casacore to determine this
@@ -116,12 +127,9 @@ def create_ms(
         chunks=(num_row_chunks, num_chans, num_corr),
     )
 
-    freqs = uvcoverage_data.freqs
     freqs = freqs.reshape(1, freqs.shape[0])
-    ref_freq = dm.frequency(v0=start_freq)["m0"]["value"]
-    chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
-    channel_widths = da.full(freqs.shape, chan_width)
-    total_bandwidth = nchan * chan_width
+    channel_widths = da.full(freqs.shape, dfreq)
+    total_bandwidth = nchan * dfreq
     
     ds = {
         "DATA": (("row", "chan", "corr"), data),
@@ -166,7 +174,8 @@ def create_ms(
     sefd = telescope_array.sefd
 
     if sefd:
-        noise = get_noise(sefd, ntimes, dtime, chan_width)
+        print('WORKING')
+        noise = get_noise(sefd, ntimes, dtime, dfreq)
         dummy_data = np.random.randn(
             num_rows, num_chans, num_corr
         ) + 1j * np.random.randn(num_rows, num_chans, num_corr)
@@ -253,8 +262,8 @@ def create_ms(
         "CHAN_WIDTH": (("row", "chan"), channel_widths),
         "EFFECTIVE_BW": (("row", "chan"), channel_widths),
         "RESOLUTION": (("row", "chan"), channel_widths),
-        "REF_FREQ": (("row"), da.from_array([ref_freq])),
-        "MEAS_RES_FREQ": (("row"), da.from_array([ref_freq])),
+        "REF_FREQ": (("row"), da.from_array([start_freq])),
+        "MEAS_RES_FREQ": (("row"), da.from_array([start_freq])),
         "TOTAL_BANDWIDTH": (("row"), da.from_array([total_bandwidth])),
         "NUM_CHAN": (("row"), da.from_array([nchan])),
         "NAME": (("row"), da.from_array(["00"])),
@@ -413,20 +422,20 @@ def create_ms(
     log.info(f"{ms} successfully generated.")
 
 
-def get_noise(sefds: Union[List, float], ntime: int, dtime: int, chan_width: float):
+def get_noise(sefds: Union[List, float], ntime: int, dtime: int, dfreq: float):
     """
     This function computes the noise given an SEFD/s.
     """
 
     if isinstance(sefds, (int, float)):
-        noise = sefds / np.sqrt(2 * chan_width * dtime)
+        noise = sefds / np.sqrt(2 * dfreq * dtime)
         return noise
 
     sefd_pairs = list(combinations(sefds, 2))
     noises = []
     for sefd1, sefd2 in sefd_pairs:
         prod = sefd1 * sefd2
-        den = 2 * chan_width * dtime
+        den = 2 * dfreq * dtime
         noise = np.sqrt(prod / den)
         noises.append(noise)
 

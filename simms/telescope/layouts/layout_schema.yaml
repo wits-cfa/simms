@@ -53,7 +53,6 @@ Antenna:
   sefd:
     info: Antenna SEFD (one value for all frequencies)
     dtype: Union[float,List[float]]
-    # TODO: Add a default value
   tsys_over_eta:
     info: Antenna system temperature over aperture efficiency (one value for all frequecies) 
     dtype: Union[float,List[float]]
