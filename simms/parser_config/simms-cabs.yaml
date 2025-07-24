@@ -8,7 +8,10 @@ cabs:
         info: Measurement set
         dtype: MS
         required: yes
-        must_exist: no
+        must_exist: no #why is this no?
+        policies:
+          positional: true
+        
       catalogue: 
         info: Catalogue file containing sources. A full description of accepted units can be found in the documentation.
         dtype: File
