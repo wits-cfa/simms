@@ -7,7 +7,6 @@ from numba import njit, prange
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from astropy.io import fits
-from astropy.wcs import WCS
 from astropy.table import Table
 from casacore.quanta import quantity as qa
 from daskms import xds_from_ms, xds_from_table
@@ -376,7 +375,8 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
     return lm
     
 
-def compute_radec_coords(header, n_ra: float, n_dec: float):
+def compute_radec_coords(refpix_ra: float, ref_ra: float, delta_ra: float, n_ra: float,
+                         refpix_dec: float, ref_dec: float, delta_dec: float, n_dec: float) -> tuple:
     """
     Calculates pixel (RA, Dec) coordinates
     Args:
@@ -384,47 +384,34 @@ def compute_radec_coords(header, n_ra: float, n_dec: float):
         n_ra (float): number of RA pixels
         n_dec (float): number of Dec pixels
     """
-    ra_axis = check_var_axis(header, "RA")
-    dec_axis = check_var_axis(header, "DEC")
-    delta_ra = header[f"CDELT{ra_axis}"]
-    delta_dec = header[f"CDELT{dec_axis}"]
-    
-    # get reference pixel info
-    refpix_ra = header[f"CRPIX{ra_axis}"]
-    refpix_dec = header[f"CRPIX{dec_axis}"]
-    ref_ra = header[f"CRVAL{ra_axis}"]
-    ref_dec = header[f"CRVAL{dec_axis}"]
-    
-    if header[f"CUNIT{ra_axis}"] == header[f"CUNIT{dec_axis}"]:
-        if header[f"CUNIT{ra_axis}"] in ["DEG", "deg"]:
-            ref_ra = np.deg2rad(ref_ra)
-            ref_dec = np.deg2rad(ref_dec)
-            delta_ra = np.deg2rad(delta_ra)
-            delta_dec = np.deg2rad(delta_dec)
-        elif header[f"CUNIT{ra_axis}"] in ["RAD", "rad"]:
-            pass
-        else:
-            raise SkymodelError("RA and Dec units must be in degrees or radians")
-    else:
-        raise SkymodelError("RA and Dec units must be the same")
-    
+
     # calculate pixel (RA, Dec) coordinates
     ra_coords = ref_ra + (np.arange(1, n_ra + 1) - refpix_ra)  * delta_ra
     dec_coords = ref_dec + (np.arange(1, n_dec + 1) - refpix_dec) * delta_dec
     
-    return ra_coords, delta_ra, dec_coords, delta_dec
+    return ra_coords, dec_coords
 
 
 # TODO: consider assuming degrees for RA and Dec if no units are given
-def compute_lm_coords(header, phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_coords: Optional[np.ndarray]=None,
-                    delta_ra: Optional[float]=None, dec_coords: Optional[np.ndarray]=None, delta_dec: Optional[float]=None,
-                    tol_mask: Optional[np.ndarray]=None):
+def compute_lm_coords(phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_coords: Optional[np.ndarray]=None,
+                    refpix_ra: Optional[float]=None, ref_ra: Optional[float]=None, delta_ra: Optional[float]=None, 
+                    dec_coords: Optional[np.ndarray]=None, refpix_dec: Optional[float]=None, ref_dec: Optional[float]=None,
+                    delta_dec: Optional[float]=None, tol_mask: Optional[np.ndarray]=None):
     """
     Calculates pixel (l, m) coordinates
     """
     if not isinstance(ra_coords, np.ndarray) or not isinstance(dec_coords, np.ndarray):
-        ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, n_ra, n_dec)
-    
+        ra_coords, dec_coords = compute_radec_coords(
+                    refpix_ra,
+                    ref_ra,
+                    delta_ra,
+                    n_ra,
+                    refpix_dec,
+                    ref_dec,
+                    delta_dec,
+                    n_dec
+                )
+        
     # calculate pixel (l, m) coordinates
     ra0, dec0 = phase_centre
     lm = pix_radec2lm(ra0, dec0, ra_coords, dec_coords)
@@ -472,9 +459,43 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         with fits.open(fits_image) as hdulist:
             header = hdulist[0].header
             naxis = header['NAXIS']
+                
             if naxis < 2:
                 raise SkymodelError("FITS image must have at least 2 dimensions")
             
+            ra_axis = check_var_axis(header, "RA")
+            dec_axis = check_var_axis(header, "DEC")
+
+            refpix_ra = header[f"CRPIX{ra_axis}"]
+            refpix_dec = header[f"CRPIX{dec_axis}"]
+            ref_ra = header[f"CRVAL{ra_axis}"]
+            ref_dec = header[f"CRVAL{dec_axis}"]
+            delta_ra = header[f"CDELT{ra_axis}"]
+            delta_dec = header[f"CDELT{dec_axis}"]
+            bmaj = header.get('BMAJ', None)
+            bmin = header.get('BMIN', None)
+
+            
+
+            if header[f"CUNIT{ra_axis}"] == header[f"CUNIT{dec_axis}"]:
+                if header[f"CUNIT{ra_axis}"] in ["DEG", "deg"]:
+                    ref_ra = np.deg2rad(ref_ra)
+                    ref_dec = np.deg2rad(ref_dec)
+                    delta_ra = np.deg2rad(delta_ra)
+                    delta_dec = np.deg2rad(delta_dec)
+                    if bmaj is not None:
+                        bmaj = np.deg2rad(bmaj)
+                        bmin = np.deg2rad(bmin)
+                    
+                elif header[f"CUNIT{ra_axis}"] in ["RAD", "rad"]:
+                    pass
+                else:
+                    raise SkymodelError("RA and Dec units must be in degrees or radians")
+            else:
+                raise SkymodelError("RA and Dec units must be the same")
+            
+            pixel_area = np.abs(delta_ra) * np.abs(delta_dec)  # pixel area in radians^2
+
             # get all axis types
             orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
             
@@ -502,14 +523,11 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                                 log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
             
             skymodel = hdulist[0].data[tuple(data_slice)]
-        
-        # check BUNIT and convert from Jy/beam to Jy 
+             
+            # check BUNIT and convert from Jy/beam to Jy 
+            
             bunit = header.get('BUNIT', '').strip().lower()
             if bunit == 'jy/beam':
-                wcs = WCS(header, naxis=2)
-                pix_scale_val = wcs.pixel_scale_matrix[-1, -1]  # scale of pixel (in deg), assuming all units in header are in degrees
-                pixel_area_deg2 = np.abs(pix_scale_val) * np.abs(pix_scale_val)  
-                
                 # Check if beam table exists for frequency-dependent beams
                 beam_table = None
                 try:
@@ -518,32 +536,30 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                     # No beam table found, will use header values
                     pass
                 
-                if beam_table is not None:
+                if beam_table:
                     if "freq" in dims and skymodel.ndim == 3:
-                        n_freq, n_pix_l, n_pix_m = skymodel.shape
-                        bmaj_unit = beam_table['BMAJ'].unit if hasattr(beam_table['BMAJ'], 'unit') and beam_table['BMAJ'].unit else 'deg'
-                        bmin_unit = beam_table['BMIN'].unit if hasattr(beam_table['BMIN'], 'unit') and beam_table['BMIN'].unit else 'deg'
+                        n_freq, n_pix_m, n_pix_l = skymodel.shape
+                        bmaj_unit = beam_table['BMAJ'].unit if hasattr(beam_table['BMAJ'], 'unit') and beam_table['BMAJ'].unit else header[f"CUNIT{ra_axis}"]
+                        bmin_unit = beam_table['BMIN'].unit if hasattr(beam_table['BMIN'], 'unit') and beam_table['BMIN'].unit else header[f"CUNIT{ra_axis}"]
                         for chan in range(n_freq):
                             if chan < len(beam_table):
-                                # check beam sizes from table and convert to degrees
+                                # check beam sizes from table and convert to radians
                                 bmaj_val = str(beam_table[chan]['BMAJ'])
                                 bmin_val = str(beam_table[chan]['BMIN'])
                                 bmaj_val += str(bmaj_unit)  
                                 bmin_val += str(bmin_unit)
 
-                                bmaj_deg = qa(bmaj_val).get_value('deg')
-                                bmin_deg = qa(bmin_val).get_value('deg')
-
+                                bmaj = convert2rad(bmaj_val)
+                                bmin = convert2rad(bmin_val)
                 
-                                beam_area_deg2 = (np.pi * bmaj_deg * bmin_deg) / (4 * np.log(2))
-                                beam_area_pixels = beam_area_deg2 / pixel_area_deg2
+                                beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2))
+                                pixels_per_beam = beam_area / pixel_area
                                 
                                 # Convert this channel from Jy/beam to Jy
-                                skymodel[:, :, chan] = skymodel[:, :, chan] / beam_area_pixels
+                                skymodel[chan, :, :] = skymodel[chan, :, :] / pixels_per_beam
                             else:
-                                log.warning(f"Channel {chan} exceeds beam table length, skipping conversion")
-                        
-                        log.info(f"Converted {fits_image} from Jy/beam to Jy using beam table")
+                                raise SkymodelError(f"Channel {chan} exceeds beam table length, skipping conversion.")
+                        log.info(f"Converted {fits_image} from Jy/beam to Jy using beam table.")
                     else:
                         # For 2D image, use first entry in beam table
                         bmaj_val = str(beam_table[0]['BMAJ'])
@@ -551,31 +567,38 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                         bmaj_val += str(bmaj_unit)  
                         bmin_val += str(bmin_unit)
 
-                        bmaj_deg = qa(bmaj_val).get_value('deg')
-                        bmin_deg = qa(bmin_val).get_value('deg')
+                        bmaj = convert2rad(bmaj_val)
+                        bmin = convert2rad(bmin_val)
                         
-                        # Calculate beam area in deg^2
-                        beam_area_deg2 = (np.pi * bmaj_deg * bmin_deg) / (4 * np.log(2))
-                        
-                        # Beam area in pixels
-                        beam_area_pixels = beam_area_deg2 / pixel_area_deg2
-                        
-                        # Convert from Jy/beam to Jy
+                        beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2))
+                        beam_area_pixels = beam_area / pixel_area
                         skymodel = skymodel / beam_area_pixels
-                        
+                
+                elif 'BMAJ1' in header and 'BMIN1' in header:
+                    n_freq, n_pix_m, n_pix_l = skymodel.shape
                     
+                    if header[f"CUNIT{ra_axis}"] in ["DEG", "deg"]:
+                        bmaj_vals = np.array([np.deg2rad(header[f"BMAJ{n+1}"]) for n in range(n_freq)])
+                        bmin_vals = np.array([np.deg2rad(header[f"BMIN{n+1}"]) for n in range(n_freq)])
+                    else:
+                        bmaj_vals = np.array([header[f"BMAJ{n+1}"] for n in range(n_freq)])
+                        bmin_vals = np.array([header[f"BMIN{n+1}"] for n in range(n_freq)])
+                    for chan in range(n_freq):
+                            if chan < len(bmaj_vals):
+                                bmaj = bmaj_vals[chan]
+                                bmin = bmin_vals[chan]
+                                
+                                beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2))
+                                pixels_per_beam = beam_area / pixel_area
+                                
+                                # Convert this channel from Jy/beam to Jy
+                                skymodel[chan, :, :] = skymodel[chan, :, :] / pixels_per_beam
+
                 elif 'BMAJ' in header and 'BMIN' in header:
-                    # Use constant beam from header
-                    bmaj_deg = header['BMAJ']  # assuming beam major axis in degrees
-                    bmin_deg = header['BMIN']  # assuming beam minor axis in degrees
-                    
-                    # Calculate beam area in deg^2
-                    beam_area_deg2 = (np.pi * bmaj_deg * bmin_deg) / (4 * np.log(2))
-                    
-                    # Beam area in pixels
-                    beam_area_pixels = beam_area_deg2 / pixel_area_deg2
-                    
-                    # Convert from Jy/beam to Jy
+                    #TODO(mika): scale BMAJ and BMIN with frequency for n_freq > 1
+                    #but need the spectral axis to do this so where should we move reading in the spectral axi
+                    beam_area= (np.pi * bmaj * bmin) / (4 * np.log(2))
+                    beam_area_pixels = beam_area / pixel_area
                     skymodel = skymodel / beam_area_pixels
                 
                 else:
@@ -635,7 +658,16 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
                     # interpolate FITS cube
                     log.warning(f"Interpolating {fits_image} onto MS channel frequency grid. This uses a lot of memory.")
-                    ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, n_pix_l, n_pix_m)
+                    ra_coords, dec_coords = compute_radec_coords(
+                        refpix_ra,
+                        ref_ra,
+                        delta_ra,
+                        n_pix_l,
+                        refpix_dec,
+                        ref_dec,
+                        delta_dec,
+                        n_pix_m
+                    )
                     fits_interp = RegularGridInterpolator((ra_coords, dec_coords, freqs), skymodel)
                     ra, dec, vv = np.meshgrid(ra_coords, dec_coords, chan_freqs, indexing="ij")
                     radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
@@ -722,11 +754,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
         else:
             raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
-        
-    # get spatial coordinate info
-    if ra_coords is None:
-        ra_coords, delta_ra, dec_coords, delta_dec = compute_radec_coords(header, n_pix_l, n_pix_m)
-    
+
     # reshape intensities to im_to_vis expectations
     reshaped_intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr)
     
@@ -741,7 +769,20 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         if sparsity >= 0.8:
             log.info(f"More than 80% of pixels have intensity < {(tol*1e6):.2f} μJy. DFT will be used for visibility prediction.")
             use_dft = True
-            non_zero_lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec, tol_mask)
+            non_zero_lm = compute_lm_coords(
+                phase_centre,
+                n_pix_l,
+                n_pix_m, 
+                ra_coords, 
+                refpix_ra, 
+                ref_ra,
+                delta_ra, 
+                dec_coords, 
+                refpix_dec, 
+                ref_dec,
+                delta_dec, 
+                tol_mask
+            )
             
             return non_zero_intensities, non_zero_lm, polarisation, use_dft, None, None
         else:
@@ -750,8 +791,21 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
             
             return intensities, None, polarisation, use_dft, delta_ra, delta_dec
     else:
-        log.info(f"Filtered {sparsity*100:.2f}% of pixels using {(tol*1e6):.2f}-μJy tolerance.")
-        non_zero_lm = compute_lm_coords(header, phase_centre, n_pix_l, n_pix_m, ra_coords, delta_ra, dec_coords, delta_dec, tol_mask)
+        log.info(f"Filtered out {sparsity*100:.2f}% of pixels using {(tol*1e6):.2f}-μJy tolerance.")
+        non_zero_lm = compute_lm_coords(
+            phase_centre,
+            n_pix_l,
+            n_pix_m, 
+            ra_coords, 
+            refpix_ra, 
+            ref_ra,
+            delta_ra, 
+            dec_coords, 
+            refpix_dec, 
+            ref_dec,
+            delta_dec, 
+            tol_mask
+        )
         
         return non_zero_intensities, non_zero_lm, polarisation, use_dft, None, None
     
