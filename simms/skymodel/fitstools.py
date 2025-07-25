@@ -10,12 +10,12 @@ from astropy import units
 
 
 class FitsData:
-    def __init__(self, fname: str, memap: bool = True):
+    def __init__(self, fname: str, memmap: bool = True):
         self.fname = File(fname)
         if not self.fname.EXISTS:
             raise FileNotFoundError(f"Input FITS file '{fname}' does not exist")
             
-        self.hdulist = fits.open(self.fname, memmap=memap)
+        self.hdulist = fits.open(self.fname, memmap=memmap)
         self.phdu = self.hdulist[0]
         self.header = self.phdu.header
         self.wcs = WCS(self.header)
@@ -187,15 +187,29 @@ class FitsData:
     def add_coord(self, name, dim, dimgrid):
         self.coords[name] = dim, dimgrid
         
-
-    def set_spectral_dimension(self, idx:int, empty:bool=False):
-        """
-        set spectral coordinate data using the FITS WCS infomation
-
-        Args:
-            idx (int): Index of spectral dimension. 
-            empty (bool, optiona): Set the coordinate grid as an empty array. Defaults to False.
-        """
+    def extend_stokes(self, filename: str, memmap:bool=True):
+        # read new file
+        hdulist = fits.open(filename)
+        phdu = hdulist[0]
+        axis = "STOKES"
+    
+        idx = self.coord_names.index(axis)
+        slc = [slice(None)]*self.ndim
+        slc[idx] = 0
+        axis_data = da.from_array(phdu.section[tuple(slc)])
+        
+        # extend data
+        slc[idx] = da.newaxis
+        self.data = da.concatenate((self.data, axis_data[tuple(slc)]), axis=idx)
+        
+        # update shape
+        self.dshape = self.data.shape
+        
+        # update coord
+        dim_size = self.dshape[idx]
+        self.coords[axis] = ("stokes,"), da.arange(dim_size)
+        
+    def set_spectral_dimension(self, idx, empty=False):
         dimsize = self.dshape[idx]
         
         coord = self.coord_names[idx]
@@ -245,7 +259,15 @@ class FitsData:
         self.coords[dec_dim] = ("celesstial.ra",), grid[1]
         self.coords[ra_dim] = ("celestial.dec",), grid[0]
 
-    def getdata(self, data_slice=None) -> np.ndarray:
+    @property
+    def data(self):
+        return self._data 
+    
+    @data.setter
+    def data(self, value):
+        self._data = value
+    
+    def get_data(self, data_slice=None) -> np.ndarray:
         if data_slice:
             data = self.phdu.section[tuple(data_slice)]
         else:
@@ -268,7 +290,7 @@ class FitsData:
             data_slice = [slice(None)]*self.ndim
         if len(transpose) == 0:
             transpose = self.dims
-        data = da.asarray(self.phdu.section[tuple(data_slice)])
+        data = da.asarray(self.data[tuple(data_slice)])
         
         return xr.DataArray(data,
             coords = self.coords,

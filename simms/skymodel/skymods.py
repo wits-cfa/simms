@@ -6,7 +6,6 @@ from simms.skymodel.source_factory import singlegauss_1d, contspec
 from numba import njit, prange
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
-from astropy.io import fits
 from astropy.table import Table
 from casacore.quanta import quantity as qa
 from daskms import xds_from_ms, xds_from_table
@@ -22,6 +21,7 @@ from simms.skymodel.converters import (
     convertra2rad,
     radec2lm
 )
+from simms.skymodel.fitstools import FitsData
 from simms.skymodel.source_factory import contspec, singlegauss_1d
 
 
@@ -394,24 +394,10 @@ def compute_radec_coords(refpix_ra: float, ref_ra: float, delta_ra: float, n_ra:
 
 # TODO: consider assuming degrees for RA and Dec if no units are given
 def compute_lm_coords(phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_coords: Optional[np.ndarray]=None,
-                    refpix_ra: Optional[float]=None, ref_ra: Optional[float]=None, delta_ra: Optional[float]=None, 
-                    dec_coords: Optional[np.ndarray]=None, refpix_dec: Optional[float]=None, ref_dec: Optional[float]=None,
-                    delta_dec: Optional[float]=None, tol_mask: Optional[np.ndarray]=None):
+                    dec_coords: Optional[np.ndarray]=None, tol_mask: Optional[np.ndarray]=None):
     """
     Calculates pixel (l, m) coordinates
-    """
-    if not isinstance(ra_coords, np.ndarray) or not isinstance(dec_coords, np.ndarray):
-        ra_coords, dec_coords = compute_radec_coords(
-                    refpix_ra,
-                    ref_ra,
-                    delta_ra,
-                    n_ra,
-                    refpix_dec,
-                    ref_dec,
-                    delta_dec,
-                    n_dec
-                )
-        
+    """ 
     # calculate pixel (l, m) coordinates
     ra0, dec0 = phase_centre
     lm = pix_radec2lm(ra0, dec0, ra_coords, dec_coords)
@@ -442,345 +428,133 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         stokes:             Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). 
                             If 'all', all Stokes parameters are used.
     Returns:
-        intensities:    pixel-by-pixel brightness matrix for each channel and correlation
+        predict_image:    pixel-by-pixel brightness matrix for each channel and correlation
         lm:                 (l, m) coordinate grid for DFT
     """
     phase_centre = np.array([ra0, dec0])
     nchan = chan_freqs.size
     
     if isinstance(input_fitsimages, List):
-        data = []
-        for fits_image in input_fitsimages:
-            with fits.open(fits_image) as hdulist:
-                header = hdulist[0].header
-                naxis = header['NAXIS']
-                    
-                if naxis < 2:
-                    raise SkymodelError("FITS image must have at least 2 dimensions")
-                
-                # get all axis types
-                orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
-                
-                data_slice = [slice(None)] * naxis
-                dims = []
-                
-                for i, dim in enumerate(orig_dims):
-                    dim_name = dim.split("-")[0].lower()
-                    # axes of interest
-                    if dim_name in ["ra", "dec", "freq"]:
-                        dims.append(dim_name)
-                    # axes to be ignored
-                    else:
-                        # Stokes axis
-                        if dim_name == "stokes":
-                            log.warning(f"Using only Stokes parameter at index {stokes} from FITS image. Use separate files for full Stokes models.")
-                            data_slice[i] = stokes
-                        # other axes
-                        else:
-                            data_slice[i] = 0
-                            if header[f"NAXIS{i+1}"] > 1:
-                                if dim_name == "time":
-                                    log.warning(f"Removing 'TIME' axis with size > 1. Using only first time stamp. Use separate files for time-varying models.")
-                                else:
-                                    log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
-                
-                data.append(hdulist[0].data[tuple(data_slice)])
-                
-        skymodel = np.stack(data, axis=0)
-        
-    elif isinstance(input_fitsimages, File) and isinstance(stokes, int):
-        with fits.open(fits_image) as hdulist:
-            header = hdulist[0].header
-            naxis = header['NAXIS']
-                
-            if naxis < 2:
-                raise SkymodelError("FITS image must have at least 2 dimensions")
-            
-            # get all axis types
-            orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
-            
-            data_slice = [slice(None)] * naxis
-            dims = []
-            
-            for i, dim in enumerate(orig_dims):
-                dim_name = dim.split("-")[0].lower()
-                # axes of interest
-                if dim_name in ["ra", "dec", "freq"]:
-                    dims.append(dim_name)
-                # axes to be ignored
-                else:
-                    # Stokes axis
-                    if dim_name == "stokes":
-                        log.warning(f"Using only Stokes parameter at index {stokes} from FITS image. Use separate files for full Stokes models.")
-                        data_slice[i] = stokes
-                    # other axes
-                    else:
-                        data_slice[i] = 0
-                        if header[f"NAXIS{i+1}"] > 1:
-                            if dim_name == "time":
-                                log.warning(f"Removing 'TIME' axis with size > 1. Using only first time stamp. Use separate files for time-varying models.")
-                            else:
-                                log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
-        
-        skymodel = np.expand_dims(hdulist[0].data[tuple(data_slice)], axis=0)
+        fds = FitsData(input_fitsimages[0])
+        fds.register_dimensions(set_dims=['spectral', 'celestial'])
+        for fits_image in input_fitsimages[1:]:
+            fds.extend_stokes(fits_image)
         
     else:
-        with fits.open(fits_image) as hdulist:
-            header = hdulist[0].header
-            naxis = header['NAXIS']
+        fds = FitsData(input_fitsimages)
+        fds.register_dimensions(set_dims=['spectral', 'celestial'])
+    
+    has_stokes = "STOKES" in fds.dims
+    # ra_coords, delta_ra, dec_coords, delta_dec = None, None, None, None
                 
-            if naxis < 2:
-                raise SkymodelError("FITS image must have at least 2 dimensions")
-            
-            # get all axis types
-            orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
-            
-            data_slice = [slice(None)] * naxis
-            dims = []
-            
-            for i, dim in enumerate(orig_dims):
-                dim_name = dim.split("-")[0].lower()
-                # axes of interest
-                if dim_name in ["ra", "dec", "freq"]:
-                    dims.append(dim_name)
-                # axes to be ignored
-                else:
-                    data_slice[i] = 0
-                    if header[f"NAXIS{i+1}"] > 1:
-                        if dim_name == "time":
-                            log.warning(f"Removing 'TIME' axis with size > 1. Using only first time stamp. Use separate files for time-varying models.")
-                        else:
-                            log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
-                            
-        skymodel = hdulist[0].data[tuple(data_slice)]
+    # computes edges of FITS and MS frequency axes
+    ms_start_freq = chan_freqs[0] - 0.5*(ms_delta_nu)
+    ms_end_freq = chan_freqs[-1] + 0.5*(ms_delta_nu)
+    
+    if fds.spectral_coord == "VRAD":
+        fits_freqs = fds.get_freq_from_vrad()
+    elif fds.spectral_coord == "VOPT":
+        fits_freqs = fds.get_freq_from_vopt()
+    else:
+        fits_freqs = fds.coords["FREQ"].data
+    
+    fits_d_nu = abs(fits_freqs[1] - fits_freqs[0])
+    fits_start_freq = fits_freqs[0] - 0.5 * fits_d_nu
+    fits_end_freq = fits_freqs[-1] + 0.5 * fits_d_nu
+    
+    if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
+        raise SkymodelError(f"Some MS frequencies [{ms_start_freq/1e9:.6f} GHz, {ms_end_freq/1e9:.6f} GHz] "
+                            f"are out of bounds of FITS image frequencies[{fits_start_freq/1e9:.6f} GHz, {fits_end_freq/1e9:.6f} GHz]. "
+                            "Cannot interpolate FITS image onto MS frequency grid.")
+    
+    # reshape FITS data to (n_pix_l, n_pix_m, nchan)
+    trgt_shape = ["STOKES", "RA", "DEC", "FREQ"] if has_stokes else ["RA", "DEC", "FREQ"]
+    skymodel = fds.get_xds(transpose=trgt_shape).data
+    
+    # get image shape
+    n_pix_l, n_pix_m = fds.coords['RA'].size, fds.coords['DEC'].size
+
+    if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
+        # interpolate FITS cube
+        log.warning(f"Interpolating FITS sky model onto MS channel frequency grid. This uses a lot of memory.")
+        fits_interp = RegularGridInterpolator((fds.coords['RA'], fds.coords['DEC'], freqs), skymodel)
+        ra, dec, vv = np.meshgrid(fds.coords['RA'], fds.coords['DEC'], chan_freqs, indexing="ij")
+        radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
+        skymodel = fits_interp(radecv).reshape(n_pix_l, n_pix_m, nchan)
         
         
-    model_cubes = []
-    ra_coords, delta_ra, dec_coords, delta_dec = None, None, None, None
-    for fits_image in fits_images:
-        # get header and data
-        with fits.open(fits_image) as hdulist:
-            header = hdulist[0].header
-            naxis = header['NAXIS']
-                
-            if naxis < 2:
-                raise SkymodelError("FITS image must have at least 2 dimensions")
-            
-            ra_axis = check_var_axis(header, "RA")
-            dec_axis = check_var_axis(header, "DEC")
-
-            refpix_ra = header[f"CRPIX{ra_axis}"]
-            refpix_dec = header[f"CRPIX{dec_axis}"]
-            ref_ra = header[f"CRVAL{ra_axis}"]
-            ref_dec = header[f"CRVAL{dec_axis}"]
-            delta_ra = header[f"CDELT{ra_axis}"]
-            delta_dec = header[f"CDELT{dec_axis}"]
-            bmaj = header.get('BMAJ', None)
-            bmin = header.get('BMIN', None)
-
-            
-
-            if header[f"CUNIT{ra_axis}"] == header[f"CUNIT{dec_axis}"]:
-                if header[f"CUNIT{ra_axis}"] in ["DEG", "deg"]:
-                    ref_ra = np.deg2rad(ref_ra)
-                    ref_dec = np.deg2rad(ref_dec)
-                    delta_ra = np.deg2rad(delta_ra)
-                    delta_dec = np.deg2rad(delta_dec)
-                    if bmaj is not None:
-                        bmaj = np.deg2rad(bmaj)
-                        bmin = np.deg2rad(bmin)
-                    
-                elif header[f"CUNIT{ra_axis}"] in ["RAD", "rad"]:
-                    pass
-                else:
-                    raise SkymodelError("RA and Dec units must be in degrees or radians")
-            else:
-                raise SkymodelError("RA and Dec units must be the same")
-            
-            pixel_area = np.abs(delta_ra) * np.abs(delta_dec)  # pixel area in radians^2
-
-            # get all axis types
-            orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
-            
-            data_slice = [slice(None)] * naxis
-            dims = []
-            
-            for i, dim in enumerate(orig_dims):
-                dim_name = dim.split("-")[0].lower()
-                # axes of interest
-                if dim_name in ["ra", "dec", "freq"]:
-                    dims.append(dim_name)
-                # axes to be ignored
-                else:
-                    # Stokes axis
-                    if dim_name == "stokes":
-                        log.warning(f"Using only Stokes parameter at index {stokes} from FITS image. Use separate files for full Stokes models.")
-                        data_slice[i] = stokes
-                    # other axes
-                    else:
-                        data_slice[i] = 0
-                        if header[f"NAXIS{i+1}"] > 1:
-                            if dim_name == "time":
-                                log.warning(f"Removing 'TIME' axis with size > 1. Using only first time stamp. Use separate files for time-varying models.")
-                            else:
-                                log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
-            
-            skymodel = hdulist[0].data[tuple(data_slice)]
-            
-            # TODO: continue with unified processing of FITS images
-            
-            
-        
-        # # TODO (Mika, Senkhosi): assume image in l-m coords already if no celestial coords
-        # # Would this mean the lengths of CTYPE and CRVAL are not the same? Is that even possible?
-        if 'ra' not in dims or 'dec' not in dims:
-            raise SkymodelError("FITS image does not have or has unrecognised RA/Dec coordinates")
-        
-        # spectral axis exists
-        if "freq" in dims:
-            freq_axis = check_var_axis(header, "FREQ")
-            n_freqs = header[f"NAXIS{freq_axis}"]
-
-            # get frequency info
-            refpix_nu = header[f"CRPIX{freq_axis}"]
-            if header[f"CUNIT{freq_axis}"] == "Hz":
-                fits_delta_nu = header[f"CDELT{freq_axis}"]  # assumes units are Hz
-            else:
-                raise SkymodelError("Frequency units must be in Hz")
-            ref_freq = header[f"CRVAL{freq_axis}"]
-            
-            # computes edges of FITS and MS frequency axes
-            ms_start_freq = chan_freqs[0] - 0.5*(ms_delta_nu)
-            ms_end_freq = chan_freqs[-1] + 0.5*(ms_delta_nu)
-            
-            fits_start_freq = ref_freq - (refpix_nu - 1 + 0.5) * fits_delta_nu
-            fits_end_freq = fits_start_freq  + (n_freqs * fits_delta_nu)
-            
-            # if spectral axis is not singleton
-            if n_freqs > 1:
-                # construct frequency axis
-                freqs = ref_freq + (np.arange(1, n_freqs + 1) - refpix_nu) * fits_delta_nu
-                
-                if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
-                    raise SkymodelError(f"Some MS frequencies [{ms_start_freq/1e9:.6f} GHz, {ms_end_freq/1e9:.6f} GHz] "
-                                        f"are out of bounds of FITS image frequencies[{fits_start_freq/1e9:.6f} GHz, {fits_end_freq/1e9:.6f} GHz]. "
-                                        "Cannot interpolate FITS image onto MS frequency grid.")
-                
-                # reshape FITS data to (n_pix_l, n_pix_m, nchan)
-                skymodel = np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec"), dims.index("freq")))
-                
-                # get image shape
-                n_pix_l, n_pix_m, _ = skymodel.shape
-            
-                if len(chan_freqs) != len(freqs) or np.any(freqs != chan_freqs):
-                    # interpolate FITS cube
-                    log.warning(f"Interpolating {fits_image} onto MS channel frequency grid. This uses a lot of memory.")
-                    ra_coords, dec_coords = compute_radec_coords(
-                        refpix_ra,
-                        ref_ra,
-                        delta_ra,
-                        n_pix_l,
-                        refpix_dec,
-                        ref_dec,
-                        delta_dec,
-                        n_pix_m
-                    )
-                    fits_interp = RegularGridInterpolator((ra_coords, dec_coords, freqs), skymodel)
-                    ra, dec, vv = np.meshgrid(ra_coords, dec_coords, chan_freqs, indexing="ij")
-                    radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
-                    model_cube = fits_interp(radecv).reshape(n_pix_l, n_pix_m, nchan)
-                    
-                else:
-                    model_cube = skymodel
-            
-            else: # singleton spectral axis
-                # raise error if frequency is not in bounds of MS channel frequencies
-                if fits_start_freq < ms_start_freq or fits_end_freq > ms_end_freq:    
-                    raise SkymodelError(f"{fits_image} frequency range does not fall in MS channel frequency range.")
-                
-                # reshape FITS data to (n_pix_l, n_pix_m, nchan)
-                skymodel= np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec"), dims.index("freq")))
-                skymodel = np.squeeze(skymodel)
-                
-                # get image shape
-                n_pix_l, n_pix_m = skymodel.shape
-
-                freqs = chan_freqs
-                # repeat the image along the frequency axis
-                model_cube = np.repeat(skymodel[:, :, np.newaxis], nchan, axis=2)
-
-        # no spectral axis
+    # convert from intensity to Jy
+    if fds.data_units == 'jy/beam':
+        fds.register_beam_info()
+        beam_area = (np.pi * fds.beam_info["bmaj"] * fds.beam_info["bmin"]) / (4 * np.log(2)) #this should also be an array
+        beam_area_pixels = beam_area / pixel_area
+        if has_stokes:
+            skymodel = skymodel / beam_area_pixels[None, None, None, :]
         else:
-            # reshape FITS data to (n_pix_l, n_pix_m)
-            skymodel = np.transpose(skymodel, axes=(dims.index("ra"), dims.index("dec")))
-            
-            # get image shape
-            n_pix_l, n_pix_m = skymodel.shape
+            skymodel = skymodel / beam_area_pixels[None, None, :]
         
-            freqs = chan_freqs
-            # repeat the image along the frequency axis
-            model_cube = np.repeat(skymodel[:, :, np.newaxis], nchan, axis=2)
+    elif ds.data_units == '':
+        log.warning(f"FITS sky model has no BUNIT specified. Assuming data is in Jy")
         
-        model_cubes.append(model_cube)
-    
-    # compute sky model
-    polarisation = False if len(model_cubes) == 1 else True
-    
-    if not polarisation: # if no polarisation is present
-        intensities = np.zeros((n_pix_l, n_pix_m, nchan, ncorr)) # create pixel grid for sky model
-        I = model_cubes[0]
+    else:
+        log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data is in Jy")
+        
+    # compute per-pixel brghtness matrix
+    if not has_stokes: # if no has_stokes is present
+        predict_image = np.zeros((n_pix_l, n_pix_m, nchan, ncorr)) # create pixel grid for sky model
+        I = skymodel[0]
         
         if ncorr == 2: # if ncorr is 2, we only need compute XX and duplicate to YY
-            intensities[:, :, :, 0] = I
-            intensities[:, :, :, 1] = I
+            predict_image[:, :, :, 0] = I
+            predict_image[:, :, :, 1] = I
         elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
-            intensities[:, :, :, 0] = I
-            intensities[:, :, :, 3] = I
+            predict_image[:, :, :, 0] = I
+            predict_image[:, :, :, 3] = I
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
     
-    else: # if polarisation is present
-        intensities = np.zeros((n_pix_l, n_pix_m, nchan, ncorr), dtype=np.complex128) # create pixel grid for sky model
+    else: # if has_stokes is present
+        predict_image = np.zeros((n_pix_l, n_pix_m, nchan, ncorr), dtype=np.complex128) # create pixel grid for sky model
         if basis == "linear":
             if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
                 log.warning("Only two correlations requested, but four are present in the FITS image directory. Using only Stokes I and Q.")
-                I, Q, _, _ = model_cubes
-                intensities[:, :, :, 0] = I + Q
-                intensities[:, :, :, 1] = I - Q
+                I, Q, = skymodel[0], skymodel[1]
+                predict_image[:, :, :, 0] = I + Q
+                predict_image[:, :, :, 1] = I - Q
             elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
-                I, Q, U, V = model_cubes
-                intensities[:, :, :, 0] = I + Q
-                intensities[:, :, :, 1] = U + 1j * V
-                intensities[:, :, :, 2] = U - 1j * V
-                intensities[:, :, :, 3] = I - Q
+                I, Q, U, V = skymodel[0], skymodel[1], skymodel[2], skymodel[3]
+                predict_image[:, :, :, 0] = I + Q
+                predict_image[:, :, :, 1] = U + 1j * V
+                predict_image[:, :, :, 2] = U - 1j * V
+                predict_image[:, :, :, 3] = I - Q
             else:
                 raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
         elif basis == "circular":
             if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
                 log.warning("Only two correlations requested, but four are present in the FITS image directory. Using only Stokes I and V.")
-                I, _, _, V = model_cubes
-                intensities[:, :, :, 0] = I + V
-                intensities[:, :, :, 1] = I - V
+                I, V = skymodel[0], skymodel[3]
+                predict_image[:, :, :, 0] = I + V
+                predict_image[:, :, :, 1] = I - V
             elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
-                I, Q, U, V = model_cubes
-                intensities[:, :, :, 0] = I + V
-                intensities[:, :, :, 1] = Q + 1j * U
-                intensities[:, :, :, 2] = Q - 1j * U
-                intensities[:, :, :, 3] = I - V
+                I, Q, U, V = skymodel[0], skymodel[1], skymodel[2], skymodel[3]
+                predict_image[:, :, :, 0] = I + V
+                predict_image[:, :, :, 1] = Q + 1j * U
+                predict_image[:, :, :, 2] = Q - 1j * U
+                predict_image[:, :, :, 3] = I - V
             else:
                 raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
         else:
-            raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
+            raise ValueError(f"Unrecognised has_stokes basis '{basis}'. Use 'linear' or 'circular'.")
 
-    # reshape intensities to im_to_vis expectations
-    reshaped_intensities = intensities.reshape(n_pix_l * n_pix_m, nchan, ncorr)
+    # reshape predict_image to im_to_vis expectations
+    reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, nchan, ncorr)
     
     # get only pixels with brightness > tol
-    tol_mask = np.any(np.abs(reshaped_intensities) > tol, axis=(1, 2))
-    non_zero_intensities = reshaped_intensities[tol_mask]
+    tol_mask = np.any(np.abs(reshaped_predict_image) > tol, axis=(1, 2))
+    non_zero_predict_image = reshaped_predict_image[tol_mask]
     
     # decide whether image is sparse enough for DFT
-    sparsity = 1 - (non_zero_intensities.size/intensities.size)
+    sparsity = 1 - (non_zero_predict_image.size/predict_image.size)
     
     if use_dft is None:
         if sparsity >= 0.8:
@@ -790,41 +564,29 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 phase_centre,
                 n_pix_l,
                 n_pix_m, 
-                ra_coords, 
-                refpix_ra, 
-                ref_ra,
-                delta_ra, 
-                dec_coords, 
-                refpix_dec, 
-                ref_dec,
-                delta_dec, 
+                fds.coords['RA'], 
+                fds.coords['DEC'], 
                 tol_mask
             )
             
-            return non_zero_intensities, non_zero_lm, polarisation, use_dft, None, None
+            return non_zero_predict_image, non_zero_lm, has_stokes, use_dft, None, None
         else:
             log.info(f"More than 20% of pixels have intensity > {(tol*1e6):.2f} μJy. FFT will be used for visibility prediction.")
             use_dft = False
             
-            return intensities, None, polarisation, use_dft, delta_ra, delta_dec
+            return predict_image, None, has_stokes, use_dft, fds.pixel_scales["RA"], fds.pixel_scales["DEC"]
     else:
         log.info(f"Filtered out {sparsity*100:.2f}% of pixels using {(tol*1e6):.2f}-μJy tolerance.")
         non_zero_lm = compute_lm_coords(
             phase_centre,
             n_pix_l,
             n_pix_m, 
-            ra_coords, 
-            refpix_ra, 
-            ref_ra,
-            delta_ra, 
-            dec_coords, 
-            refpix_dec, 
-            ref_dec,
-            delta_dec, 
+            fds.coords['RA'], 
+            fds.coords['DEC'], 
             tol_mask
         )
         
-        return non_zero_intensities, non_zero_lm, polarisation, use_dft, None, None
+        return non_zero_predict_image, non_zero_lm, has_stokes, use_dft, None, None
     
     
 def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pixsize_x: float, pixsize_y: float,
