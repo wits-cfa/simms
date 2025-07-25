@@ -426,7 +426,7 @@ def compute_lm_coords(phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_co
     
 
 def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
-                          ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, stokes: int = 0,
+                          ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, stokes: Optional[Union[int, str]]=0,
                           use_dft: Optional[bool]=None) -> tuple:
     """
     Processes FITS skymodel into DFT input
@@ -439,22 +439,125 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
         ncorr:             number of correlations
         basis:             polarisation basis ("linear" or "circular")
         tol:                tolerance for pixel brightness
-        stokes:             Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V)
+        stokes:             Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). 
+                            If 'all', all Stokes parameters are used.
     Returns:
         intensities:    pixel-by-pixel brightness matrix for each channel and correlation
         lm:                 (l, m) coordinate grid for DFT
     """
-    
-    # if single fits image, turn into list so all processing is the same
-    if not isinstance(input_fitsimages, list):
-        input_fitsimages = [input_fitsimages]
-    
     phase_centre = np.array([ra0, dec0])
     nchan = chan_freqs.size
     
+    if isinstance(input_fitsimages, List):
+        data = []
+        for fits_image in input_fitsimages:
+            with fits.open(fits_image) as hdulist:
+                header = hdulist[0].header
+                naxis = header['NAXIS']
+                    
+                if naxis < 2:
+                    raise SkymodelError("FITS image must have at least 2 dimensions")
+                
+                # get all axis types
+                orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
+                
+                data_slice = [slice(None)] * naxis
+                dims = []
+                
+                for i, dim in enumerate(orig_dims):
+                    dim_name = dim.split("-")[0].lower()
+                    # axes of interest
+                    if dim_name in ["ra", "dec", "freq"]:
+                        dims.append(dim_name)
+                    # axes to be ignored
+                    else:
+                        # Stokes axis
+                        if dim_name == "stokes":
+                            log.warning(f"Using only Stokes parameter at index {stokes} from FITS image. Use separate files for full Stokes models.")
+                            data_slice[i] = stokes
+                        # other axes
+                        else:
+                            data_slice[i] = 0
+                            if header[f"NAXIS{i+1}"] > 1:
+                                if dim_name == "time":
+                                    log.warning(f"Removing 'TIME' axis with size > 1. Using only first time stamp. Use separate files for time-varying models.")
+                                else:
+                                    log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
+                
+                data.append(hdulist[0].data[tuple(data_slice)])
+                
+        skymodel = np.stack(data, axis=0)
+        
+    elif isinstance(input_fitsimages, File) and isinstance(stokes, int):
+        with fits.open(fits_image) as hdulist:
+            header = hdulist[0].header
+            naxis = header['NAXIS']
+                
+            if naxis < 2:
+                raise SkymodelError("FITS image must have at least 2 dimensions")
+            
+            # get all axis types
+            orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
+            
+            data_slice = [slice(None)] * naxis
+            dims = []
+            
+            for i, dim in enumerate(orig_dims):
+                dim_name = dim.split("-")[0].lower()
+                # axes of interest
+                if dim_name in ["ra", "dec", "freq"]:
+                    dims.append(dim_name)
+                # axes to be ignored
+                else:
+                    # Stokes axis
+                    if dim_name == "stokes":
+                        log.warning(f"Using only Stokes parameter at index {stokes} from FITS image. Use separate files for full Stokes models.")
+                        data_slice[i] = stokes
+                    # other axes
+                    else:
+                        data_slice[i] = 0
+                        if header[f"NAXIS{i+1}"] > 1:
+                            if dim_name == "time":
+                                log.warning(f"Removing 'TIME' axis with size > 1. Using only first time stamp. Use separate files for time-varying models.")
+                            else:
+                                log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
+        
+        skymodel = np.expand_dims(hdulist[0].data[tuple(data_slice)], axis=0)
+        
+    else:
+        with fits.open(fits_image) as hdulist:
+            header = hdulist[0].header
+            naxis = header['NAXIS']
+                
+            if naxis < 2:
+                raise SkymodelError("FITS image must have at least 2 dimensions")
+            
+            # get all axis types
+            orig_dims = [header[f"CTYPE{naxis - n}"].strip() for n in range(naxis)]
+            
+            data_slice = [slice(None)] * naxis
+            dims = []
+            
+            for i, dim in enumerate(orig_dims):
+                dim_name = dim.split("-")[0].lower()
+                # axes of interest
+                if dim_name in ["ra", "dec", "freq"]:
+                    dims.append(dim_name)
+                # axes to be ignored
+                else:
+                    data_slice[i] = 0
+                    if header[f"NAXIS{i+1}"] > 1:
+                        if dim_name == "time":
+                            log.warning(f"Removing 'TIME' axis with size > 1. Using only first time stamp. Use separate files for time-varying models.")
+                        else:
+                            log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
+                            
+        skymodel = hdulist[0].data[tuple(data_slice)]
+        
+        
     model_cubes = []
     ra_coords, delta_ra, dec_coords, delta_dec = None, None, None, None
-    for fits_image in input_fitsimages:
+    for fits_image in fits_images:
         # get header and data
         with fits.open(fits_image) as hdulist:
             header = hdulist[0].header
@@ -523,96 +626,10 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                                 log.warning(f"Removing '{dim_name.upper()}' axis with size > 1. Using only first element.")
             
             skymodel = hdulist[0].data[tuple(data_slice)]
-             
-            # check BUNIT and convert from Jy/beam to Jy 
             
-            bunit = header.get('BUNIT', '').strip().lower()
-            if bunit == 'jy/beam':
-                # Check if beam table exists for frequency-dependent beams
-                beam_table = None
-                try:
-                    beam_table = Table.read(fits_image)
-                except:
-                    # No beam table found, will use header values
-                    pass
-                
-                if beam_table:
-                    if "freq" in dims and skymodel.ndim == 3:
-                        n_freq, n_pix_m, n_pix_l = skymodel.shape
-                        bmaj_unit = beam_table['BMAJ'].unit if hasattr(beam_table['BMAJ'], 'unit') and beam_table['BMAJ'].unit else header[f"CUNIT{ra_axis}"]
-                        bmin_unit = beam_table['BMIN'].unit if hasattr(beam_table['BMIN'], 'unit') and beam_table['BMIN'].unit else header[f"CUNIT{ra_axis}"]
-                        for chan in range(n_freq):
-                            if chan < len(beam_table):
-                                # check beam sizes from table and convert to radians
-                                bmaj_val = str(beam_table[chan]['BMAJ'])
-                                bmin_val = str(beam_table[chan]['BMIN'])
-                                bmaj_val += str(bmaj_unit)  
-                                bmin_val += str(bmin_unit)
-
-                                bmaj = convert2rad(bmaj_val)
-                                bmin = convert2rad(bmin_val)
-                
-                                beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2))
-                                pixels_per_beam = beam_area / pixel_area
-                                
-                                # Convert this channel from Jy/beam to Jy
-                                skymodel[chan, :, :] = skymodel[chan, :, :] / pixels_per_beam
-                            else:
-                                raise SkymodelError(f"Channel {chan} exceeds beam table length, skipping conversion.")
-                        log.info(f"Converted {fits_image} from Jy/beam to Jy using beam table.")
-                    else:
-                        # For 2D image, use first entry in beam table
-                        bmaj_val = str(beam_table[0]['BMAJ'])
-                        bmin_val = str(beam_table[0]['BMIN'])
-                        bmaj_val += str(bmaj_unit)  
-                        bmin_val += str(bmin_unit)
-
-                        bmaj = convert2rad(bmaj_val)
-                        bmin = convert2rad(bmin_val)
-                        
-                        beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2))
-                        beam_area_pixels = beam_area / pixel_area
-                        skymodel = skymodel / beam_area_pixels
-                
-                elif 'BMAJ1' in header and 'BMIN1' in header:
-                    n_freq, n_pix_m, n_pix_l = skymodel.shape
-                    
-                    if header[f"CUNIT{ra_axis}"] in ["DEG", "deg"]:
-                        bmaj_vals = np.array([np.deg2rad(header[f"BMAJ{n+1}"]) for n in range(n_freq)])
-                        bmin_vals = np.array([np.deg2rad(header[f"BMIN{n+1}"]) for n in range(n_freq)])
-                    else:
-                        bmaj_vals = np.array([header[f"BMAJ{n+1}"] for n in range(n_freq)])
-                        bmin_vals = np.array([header[f"BMIN{n+1}"] for n in range(n_freq)])
-                    for chan in range(n_freq):
-                            if chan < len(bmaj_vals):
-                                bmaj = bmaj_vals[chan]
-                                bmin = bmin_vals[chan]
-                                
-                                beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2))
-                                pixels_per_beam = beam_area / pixel_area
-                                
-                                # Convert this channel from Jy/beam to Jy
-                                skymodel[chan, :, :] = skymodel[chan, :, :] / pixels_per_beam
-
-                elif 'BMAJ' in header and 'BMIN' in header:
-                    #TODO(mika): scale BMAJ and BMIN with frequency for n_freq > 1
-                    #but need the spectral axis to do this so where should we move reading in the spectral axi
-                    beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2))
-                    beam_area_pixels = beam_area / pixel_area
-                    skymodel = skymodel / beam_area_pixels
-                
-                else:
-                    raise SkymodelError(f"FITS image {fits_image} has BUNIT='Jy/beam' but missing beam parameters (no beam table and no BMAJ/BMIN in header)")
-                    
-            elif bunit == 'jy':
-                # Data is already in Jy, no conversion needed
-                log.info(f"FITS image {fits_image} is already in Jy units")
-                
-            elif bunit == '':
-                log.warning(f"FITS image {fits_image} has no BUNIT specified. Assuming data is in Jy")
-                
-            else:
-                log.warning(f"FITS image {fits_image} has unknown BUNIT='{bunit}'. Assuming data is in Jy")
+            # TODO: continue with unified processing of FITS images
+            
+            
         
         # # TODO (Mika, Senkhosi): assume image in l-m coords already if no celestial coords
         # # Would this mean the lengths of CTYPE and CRVAL are not the same? Is that even possible?
