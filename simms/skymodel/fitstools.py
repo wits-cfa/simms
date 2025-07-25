@@ -105,8 +105,9 @@ class FitsData:
                 freqs = self.coords["FREQ"].data
             
             for chan in range(self.nchan):
-                beam_info["bmaj"][chan] = header[f"BMAJ"] / freqs[chan]
-                beam_info["bmin"][chan] = header[f"BMIN{chan+1}"] / freqs[chan]
+                scale_factor = freqs[self.spectral_refpix]/freqs[chan]
+                beam_info["bmaj"][chan] = header[f"BMAJ"] * scale_factor
+                beam_info["bmin"][chan] = header[f"BMIN{chan+1}"] * scale_factor
         else:
             #TODO(mika): Print warning
             return
@@ -137,6 +138,7 @@ class FitsData:
         self.nchan = dimsize
         self.spectral_coord = coord
         self.spectral_units = self.wcs.spectral.world_axis_units[0]
+        self.spectral_refpix = self.header.get(f"CRPIX{self.ndim - idx}")
         
     def set_celestial_dimensions(self, empty:bool=True):
             
