@@ -3,6 +3,7 @@ from scabha.basetypes import File
 import glob
 from omegaconf import OmegaConf
 import os
+import numpy as np
 
 # workaround the issue stated in
 #  https://github.com/python/mypy/issues/1422
@@ -59,4 +60,76 @@ def simms_telescopes() -> Dict:
 
     return OmegaConf.create(laysdict)
 
+def custom_telescopes(layout: str,
+                     subarray_list = None,
+                     subarray_range = None,
+                     subarray_file: File = None) -> Dict:
+    """
+    Returns a dictionary of a custom array layout.
+    """
+    lays = glob.glob(f"{__path__}/{layout}.geodetic.yaml")
+    laysdict = {}
+    
+    arrayinfo = OmegaConf.load(lays[0])
+    allants = list(arrayinfo.antnames)
+    all_locations = list(arrayinfo.antlocations)
+    anant = len(all_locations)
+        
+    allsizes = arrayinfo.size
+    if isinstance(allsizes, (float, int)):
+        allsizes = [allsizes] * anant
+    else:
+        allsizes = list(allsizes)    
+    
+    if subarray_list:
+        antnames = subarray_list
+        antlocations = []
+        antsizes = []
+        for ant in antnames:
+            idx = allants.index(ant)
+            antlocations.append(all_locations[idx])
+            antsizes.append(allsizes[idx])
+
+    elif subarray_range:
+        
+        if len(subarray_range) == 2:
+            user_idx = list(range(subarray_range[0], subarray_range[1] + 1))
+        elif len(subarray_range) == 3:
+            user_idx = list(range(subarray_range[0], subarray_range[1], subarray_range[2]))
+        else:
+            raise ValueError("subarray_range must be a list of length 2 or 3")
+        
+        antnames = [allants[i] for i in user_idx]
+        antlocations = np.array(all_locations)[user_idx]
+        antlocations = [arr.tolist() for arr in antlocations]
+        antsizes = np.array(allsizes)[user_idx]
+        antsizes = [arr.tolist() for arr in antsizes]
+
+    elif subarray_file:
+        subarray_data = OmegaConf.load(subarray_file)
+                
+        if 'antnames' in subarray_data:
+            antnames = subarray_data['antnames']
+            antlocations = []
+            antsizes = []
+            for ant in antnames:
+                idx = allants.index(ant)
+                antlocations.append(all_locations[idx])
+                antsizes.append(allsizes[idx])
+
+    laysdict = dict(
+        centre = arrayinfo.centre,
+        antlocations = antlocations,
+        antnames = antnames,
+        size = antsizes,
+        coord_sys = arrayinfo.coord_sys,
+        mount = arrayinfo.mount,
+        issubarray = True,
+        )
+
+    return OmegaConf.create(laysdict)
+
 SIMMS_TELESCOPES = simms_telescopes()
+
+# subarray_tels = custom_telescopes(layout='skamid', subarray_range=[0,5,2])#subarray_list=['M000','SKA001'])#subarray_range=[0,5,2])
+# print(f'subarray_tels = {subarray_tels}') 

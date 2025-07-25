@@ -46,11 +46,15 @@ def create_ms(
     correlations: str,
     row_chunks: int,
     sefd: float,
+    tsys_over_eta: float,
     column: str,
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
     freq_range: str = None,
     sfile: File = None,
+    subarray_list: List[str] = None,
+    subarray_range: List[int] = None,
+    subarray_file: File = None,
     low_source_limit: Union[float, str] = None,
     high_source_limit: Union[float, str] = None,
     low_antenna_limit: Union[float,str] = None,
@@ -59,8 +63,12 @@ def create_ms(
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
     remove_ms(ms)
-    telescope_array = autils.Array(telescope_name, sefd=sefd, sensitivity_file=sfile)
-    
+    telescope_array = autils.Array(telescope_name, 
+                                   sefd=sefd,
+                                   tsys_over_eta=tsys_over_eta, 
+                                   sensitivity_file=sfile, 
+                                   subarray_list=subarray_list, subarray_range=subarray_range,
+                                   subarray_file=subarray_file)
     size = telescope_array.size
     mount = telescope_array.mount
     antnames = telescope_array.names
@@ -172,9 +180,8 @@ def create_ms(
     ds["PROCESSOR_ID"] = ("row"), da.full_like(ddid, fill_value=proc_id)
     
     sefd = telescope_array.sefd
-
+    
     if sefd:
-        print('WORKING')
         noise = get_noise(sefd, ntimes, dtime, dfreq)
         dummy_data = np.random.randn(
             num_rows, num_chans, num_corr
@@ -215,7 +222,6 @@ def create_ms(
     
     ds["FLAG_ROW"] = (("row",), da.from_array(flag_row, chunks=num_row_chunks))        
 
-    
     main_table = daskms.Dataset(ds, coords={"ROWID": ("row", da.arange(num_rows))})
 
     write_main = xds_to_table(main_table, ms, columns="ALL", descriptor="ms(False)")

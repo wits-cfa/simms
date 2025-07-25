@@ -116,6 +116,21 @@ cabs:
         dtype: str
         required: yes
         abbreviation: tel
+      subarray_list: 
+        info: Custom list of antenna subarray to use, e.g. [M000, M005, SKA009]. This is a sub-option of the telescope parameter.
+        dtype: List[str]
+        required: no
+        abbreviation: sublist
+      subarray_range:
+        info: Custom range of antennas to use in the subarray. This is a sub-option of the telescope parameter.
+        dtype: List[int]
+        required: no
+        abbreviation: subrange
+      subarray_file:
+        info: Custom file with antenna subarray to use, e.g. /path/to/subarray.yaml. This is a sub-option of the telescope parameter.
+        dtype: File
+        required: no
+        abbreviation: subfile
       direction:
         info: Direction of field centre for MS. Example, J2000,0h24m20s,-30d12m33s or J2000,0:24:20,-30:12:33
         dtype: str

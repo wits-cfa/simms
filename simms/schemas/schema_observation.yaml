@@ -15,7 +15,18 @@ Observation:
     dtype:
      - File
      - str
-    required: true
+  subarray_list: 
+    info: Custom list of antenna subarray to use, e.g. M000,M005,SKA009. This is a sub-option of the telescope parameter.
+    dtype: List[str]
+    required: no
+  subarray_range:
+    info: Custom range of antennas to use in the subarray inclusive of the endpoint, e.g. start,end,step where step is optional. This is a sub-option of the telescope parameter.
+    dtype: List[int]
+    required: no
+  subarray_file:
+    info: Custom file with antenna subarray to use, e.g. /path/to/subarray.yaml. This is a sub-option of the telescope parameter.
+    dtype: File
+    required: no
   direction:
     dtype:
       - List[str]
