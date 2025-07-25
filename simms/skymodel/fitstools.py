@@ -1,0 +1,210 @@
+from astropy.io import fits
+import dask.array as da
+import xarray as xr
+import numpy as np
+from astropy.wcs import WCS
+from scabha.basetypes import File
+from astropy.table import Table
+from astropy.coordinates import SpectralCoord
+from astropy import units
+
+
+
+class FitsData:
+    def __init__(self, fname: str, memap: bool = True):
+        self.fname = File(fname)
+        if not self.fname.EXISTS:
+            raise FileNotFoundError(f"Input FITS file '{fname}' does not exist")
+            
+        self.hdulist = fits.open(self.fname, memmap=memap)
+        self.phdu = self.hdulist[0]
+        self.header = self.phdu.header
+        self.wcs = WCS(self.header)
+        self.coord_names = self.wcs.axis_type_names[::-1]
+        self.ndim = len(self.coord_names)
+        self.dim_info = self.wcs.get_axis_types()[::-1]
+        self.dshape = self.wcs.array_shape
+        self.coords = xr.Coordinates()
+        self.open_arrays = []
+
+    
+    def register_dimensions(self, set_dims=["spectral"]):
+        """
+        Register data dimensions in a manner consistent with the data
+        """
+
+        self.pixel_scales = {}
+        pixel_scales = self.wcs.pixel_scale_matrix.diagonal()[::-1]
+        
+        for idx,coord in enumerate(self.coord_names):
+            self.pixel_scales[coord] = pixel_scales[idx]
+            diminfo = self.dim_info[idx]
+            dim = diminfo["coordinate_type"]
+            dtype = diminfo["group"]
+            if dim == "celestial":
+                continue
+            elif dim == "spectral":    
+                self.set_spectral_dimension(idx, dim not in set_dims)
+                continue
+                
+            dimsize = self.dshape[idx]
+            if dim in set_dims:
+                dimgrid = getattr(self.wcs,
+                                dim).array_index_to_world_values(da.arange(dimsize))
+            else:
+                dimgrid = da.empty(dimsize, dtype=dtype)
+            self.coords[coord] = (dim,), dimgrid
+            
+        self.set_celestial_dimensions(empty = "celestial" not in set_dims)
+        self.dims = list(self.coords.dims)
+        
+    def get_freq_from_vrad(self):
+        return SpectralCoord(self.coords["VRAD"], 
+                unit=units.meter/units.second).to(units.Hz, 
+                                            doppler_rest = self.header["RESTFRQ"]*units.Hz,
+                                            doppler_convention="radio").value
+        
+    def get_freq_from_vopt(self):
+        return SpectralCoord(self.coords["VOPT"],
+                unit=units.meter/units.second).to(units.Hz, 
+                                            doppler_rest = self.header["RESTFRQ"]*units.Hz,
+                                            doppler_convention="optical").value
+
+    def register_beam_info(self):
+        header = self.header
+        beam_table = None
+        
+        try:
+            beam_table = Table.read(self.fname)
+        except ValueError:
+            pass
+        
+        beam_info = {}
+        beam_info["bmaj"] = np.zeros(self.nchan)
+        beam_info["bmin"] = np.zeros(self.nchan)
+    
+        if beam_table:
+            bunit = beam_table["BMAJ"].unit
+            for chan in range(self.nchan):
+                beam = beam_table[chan]
+                beam_info["bmaj"][chan] = beam["BMAJ"]
+                beam_info["bmin"][chan] = beam["BMIN"]
+                
+        elif header.get(f"BMAJ1", False):
+            bunit = self.wcs.celestial.world_axis_units[0]
+            for chan in range(self.nchan):
+                beam_info["bmaj"][chan] = header[f"BMAJ{chan+1}"]
+                beam_info["bmin"][chan] = header[f"BMIN{chan+1}"]
+        elif header.get("BMAJ", False):
+            bunit = self.wcs.celestial.world_axis_units[0]
+            if self.spectral_coord == "VRAD":
+                freqs = self.get_freq_from_vrad()
+            elif self.spectral_coord == "VOPT":
+                freqs = self.get_freq_from_vopt()
+            else:
+                freqs = self.coords["FREQ"].data
+            
+            for chan in range(self.nchan):
+                beam_info["bmaj"][chan] = header[f"BMAJ"] / freqs[chan]
+                beam_info["bmin"][chan] = header[f"BMIN{chan+1}"] / freqs[chan]
+        else:
+            #TODO(mika): Print warning
+            return
+        
+        # convert to radians
+        if isinstance(bunit, str):
+            bunit = getattr(units, bunit)
+        
+        beam_info["bmaj"] = (beam_info["bmaj"]*bunit).to(units.rad).value
+        beam_info["bmin"] = (beam_info["bmin"]*bunit).to(units.rad).value
+        
+        self.beam_info = beam_info
+        return 0  
+    
+    def add_coord(self, name, dim, dimgrid):
+        self.coords[name] = dim, dimgrid
+        
+
+    def set_spectral_dimension(self, idx, empty=False):
+        dimsize = self.dshape[idx]
+        
+        coord = self.coord_names[idx]
+        if empty:
+            dimgrid = da.zeros(dimsize, dtype=self.dim_info[idx]["group"])
+        else:
+            dimgrid = self.wcs.spectral.array_index_to_world_values(da.arange(dimsize))                
+        self.coords[coord] = ("spectral",), dimgrid
+        self.nchan = dimsize
+        self.spectral_coord = coord
+        self.spectral_units = self.wcs.spectral.world_axis_units[0]
+        
+    def set_celestial_dimensions(self, empty:bool=True):
+            
+        for idx, diminfo in enumerate(self.dim_info):
+            dim = diminfo["coordinate_type"]
+            dim_number = diminfo["number"]
+            if dim == "celestial":
+                if dim_number == 0:
+                    ra_idx = idx
+                elif dim_number == 1:
+                    dec_idx = idx
+                else:
+                    raise ValueError(f"Unkown celestial dimension in WCS: {dim_number}")
+                    
+        ra_dim = self.coord_names[ra_idx]
+        dec_dim = self.coord_names[dec_idx]
+        ra_dimsize = self.dshape[ra_idx]
+        dec_dimsize = self.dshape[dec_idx]
+        dtype = self.dim_info[ra_idx]["group"]
+        self.celestial_units = self.wcs.celestial.world_axis_units[0]
+            
+        if empty:
+            self.coords[dec_dim] = ("celestial.dec",), da.empty(dec_dimsize, dtype=dtype)
+            self.coords[ra_dim] = ("celestial.ra",), da.empty(ra_dimsize, dtype=dtype)
+            return
+
+        grid = self.wcs.celestial.array_index_to_world_values(da.arange(ra_dimsize),
+                                        da.arange(dec_dimsize))
+        
+        self.coords[dec_dim] = ("celestial.ra",), grid[1]
+        self.coords[ra_dim] = ("celestial.dec",), grid[0]
+
+    def getdata(self, data_slice=None) -> np.ndarray:
+        if data_slice:
+            data = self.phdu.section[tuple(data_slice)]
+        else:
+            data = self.phdu.data
+        
+        self.open_arrays.append(data)
+        
+        return self.open_arrays[-1]
+        
+    def get_xds(self, data_slice=[],
+                transpose=[], chunks={}, **kwargs):
+
+        if len(data_slice) == 0:
+            data_slice = [slice(None)]*self.ndim
+        if len(transpose) == 0:
+            transpose = self.dims
+        data = da.asarray(self.phdu.section[tuple(data_slice)])
+        
+        return xr.DataArray(data,
+            coords = self.coords,
+            attrs = {
+                "header": dict(self.header.items()),
+                "pixel_scales": self.pixel_scales,
+            },
+            **kwargs,
+            chunks = chunks,
+        )
+        
+    def __close__(self):
+        self.hdulist.close()
+        for data in self.open_arrays:
+            del data
+    
+    def  close(self):
+        self.__close__()
+            
+    def __exit__(self):
+        self.__close__()

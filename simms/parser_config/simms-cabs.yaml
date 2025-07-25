@@ -8,10 +8,9 @@ cabs:
         info: Measurement set
         dtype: MS
         required: yes
-        must_exist: no #why is this no?
+        must_exist: yes
         policies:
           positional: true
-        
       catalogue: 
         info: Catalogue file containing sources. A full description of accepted units can be found in the documentation.
         dtype: File
@@ -22,6 +21,11 @@ cabs:
         dtype: Union[File, List[File]]
         required: no
         abbreviation: fs
+      polarisation:
+        info: Simulate all available stokes paraemters (correlations). If false, only consider stokes I
+        default: true
+        dtype:  bool
+        abreviation: pol
       pol-basis:
         info: Polarization basis for the simulation. The default is circular polarization.
         dtype: str
@@ -73,7 +77,6 @@ cabs:
       sefd:
         info: Add noise using the this SEFD value
         dtype: float
-        # TODO: Add default value
       cat-species:
         info: type of catalogue e.g. PyBDSF
         dtype: str
