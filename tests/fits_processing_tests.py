@@ -513,3 +513,149 @@ class TestFITSProcessing(unittest.TestCase):
         
     #     # clean up
     #     os.remove(test_filename)
+
+    def test_bmaj_bmin_header_scaling(self):
+        """
+        Tests flux scaling for FITS with BMAJ/BMIN in header (single beam for all channels).
+        """      
+        wcs = WCS(naxis=2)
+        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600])
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2]
+        wcs.wcs.crval = [0, 0]
+        
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy/beam'
+        header['BMAJ'] = 0.01  # degrees
+        header['BMIN'] = 0.005 # degrees
+        header['CUNIT1'] = 'DEG'
+        header['CUNIT2'] = 'DEG'
+        
+        image = np.zeros((self.img_size, self.img_size))
+        image[self.img_size//2, self.img_size//2] = 1.0
+        hdu = fits.PrimaryHDU(image, header=header)
+        
+        test_filename = f'test_{uuid.uuid4()}_bmajmin.fits'
+        self.test_files.append(test_filename)
+        hdu.writeto(test_filename, overwrite=True)
+        
+        intensities, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        
+        # Calculate expected scaling
+        bmaj_rad = np.deg2rad(header['BMAJ'])
+        bmin_rad = np.deg2rad(header['BMIN'])
+        pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
+        beam_area = (np.pi * bmaj_rad * bmin_rad) / (4 * np.log(2))
+        scale = 1.0 / (beam_area / pixel_area)
+        
+        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
+        expected_intensities[self.img_size//2, self.img_size//2, :, :] = scale
+        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
+        
+        assert intensities.shape == expected_intensities.shape
+        assert np.allclose(intensities, expected_intensities)
+
+    def test_bmaj1_bmin1_cube_scaling(self):
+        """
+        Tests flux scaling for FITS cube with BMAJ1/BMIN1 in header (per-channel beam).
+        """
+        wcs = WCS(naxis=3)
+        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0]])
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1]
+        wcs.wcs.crval = [0, 0, self.chan_freqs[0]]
+
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy/beam'
+        header['CUNIT1'] = 'DEG'
+        header['CUNIT2'] = 'DEG'
+
+        for i in range(self.nchan):
+            header[f'BMAJ{i+1}'] = 0.01 + 0.001*i
+            header[f'BMIN{i+1}'] = 0.005 + 0.001*i
+        
+        image = np.zeros((self.nchan, self.img_size, self.img_size))
+        image[:, self.img_size//2, self.img_size//2] = 1.0 
+        hdu = fits.PrimaryHDU(image, header=header)
+        
+        test_filename = f'test_{uuid.uuid4()}_bmaj1min1.fits'
+        self.test_files.append(test_filename)
+        hdu.writeto(test_filename, overwrite=True)
+        
+        intensities, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        
+        pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
+        
+        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
+        for i in range(self.nchan):
+            bmaj_rad = np.deg2rad(header[f'BMAJ{i+1}'])
+            bmin_rad = np.deg2rad(header[f'BMIN{i+1}'])
+            beam_area = (np.pi * bmaj_rad * bmin_rad) / (4 * np.log(2))
+            scale = 1.0 / (beam_area / pixel_area)
+            expected_intensities[self.img_size//2, self.img_size//2, i, :] = scale
+        
+        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
+        
+        assert intensities.shape == expected_intensities.shape
+        assert np.allclose(intensities, expected_intensities)
+
+    def test_beam_table_scaling(self):
+        """
+        Tests flux scaling for FITS with beam table (per-channel beam from table).
+        """
+        wcs = WCS(naxis=3)
+        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0]])
+        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1]
+        wcs.wcs.crval = [0, 0, self.chan_freqs[0]]
+        
+        header = wcs.to_header()
+        header['BUNIT'] = 'Jy/beam'
+        header['CUNIT1'] = 'DEG'
+        header['CUNIT2'] = 'DEG'
+        
+        image = np.zeros((self.nchan, self.img_size, self.img_size))
+        image[:, self.img_size//2, self.img_size//2] = 1.0
+        
+        # Create beam table
+        from astropy.table import Table
+        beam_table = Table()
+        beam_table['BMAJ'] = [5 + 0.01*i for i in range(self.nchan)]
+        beam_table['BMIN'] = [6 + 0.01*i for i in range(self.nchan)]
+        beam_table['BMAJ'].unit = 'arcsec'
+        beam_table['BMIN'].unit = 'arcsec'
+        beam_table.write('beam_table.fits', overwrite=True)
+        
+        # Write image and beam table to same FITS file (multi-extension)
+        hdu = fits.PrimaryHDU(image, header=header)
+        hdul = fits.HDUList([hdu, fits.BinTableHDU(beam_table)])
+        
+        test_filename = f'test_{uuid.uuid4()}_beamtable.fits'
+        self.test_files.append(test_filename)
+        hdul.writeto(test_filename, overwrite=True)
+        
+        intensities, _, _, _, _, _ = process_fits_skymodel(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        
+        pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
+        
+        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
+        for i in range(self.nchan):
+            bmaj_rad = np.deg2rad(beam_table['BMAJ'][i])
+            bmin_rad = np.deg2rad(beam_table['BMIN'][i])
+            beam_area = (np.pi * bmaj_rad * bmin_rad) / (4 * np.log(2))
+            scale = 1.0 / (beam_area / pixel_area)
+            expected_intensities[self.img_size//2, self.img_size//2, i, :] = scale
+        
+        print(expected_intensities[self.img_size//2, self.img_size//2, i, :])
+        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        
+        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
+        expected_intensities = expected_intensities[non_zero_mask]
+        
+        print(expected_intensities.shape, intensities.shape)
+        assert intensities.shape == expected_intensities.shape
+        assert np.allclose(intensities, expected_intensities)

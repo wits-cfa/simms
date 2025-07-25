@@ -597,7 +597,7 @@ def process_fits_skymodel(input_fitsimages: Union[File, List[File]], ra0: float,
                 elif 'BMAJ' in header and 'BMIN' in header:
                     #TODO(mika): scale BMAJ and BMIN with frequency for n_freq > 1
                     #but need the spectral axis to do this so where should we move reading in the spectral axi
-                    beam_area= (np.pi * bmaj * bmin) / (4 * np.log(2))
+                    beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2))
                     beam_area_pixels = beam_area / pixel_area
                     skymodel = skymodel / beam_area_pixels
                 
