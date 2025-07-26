@@ -117,17 +117,17 @@ cabs:
         required: yes
         abbreviation: tel
       subarray_list: 
-        info: Custom list of antenna subarray to use, e.g. [M000, M005, SKA009]. This is a sub-option of the telescope parameter.
+        info: Custom list of antennas to use, e.g., M000,M005,SKA009. If specified, this must be a subarray of the given telescope.
         dtype: List[str]
         required: no
         abbreviation: sublist
       subarray_range:
-        info: Custom range of antennas to use in the subarray. This is a sub-option of the telescope parameter.
+        info: Custom range of antennas indices to use, e.g. start,end,step where step is optional. If specified, this must be a subarray of the given telescope.
         dtype: List[int]
         required: no
         abbreviation: subrange
       subarray_file:
-        info: Custom file with antenna subarray to use, e.g. /path/to/subarray.yaml. This is a sub-option of the telescope parameter.
+        info: File with list of custom antennas to use, e.g., /path/to/subarray.yaml. File should contain antnames key, e.g., [M000,M005,SKA009]. This must be a subarray of the given telescope.
         dtype: File
         required: no
         abbreviation: subfile

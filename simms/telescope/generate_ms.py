@@ -67,8 +67,10 @@ def create_ms(
                                    sefd=sefd,
                                    tsys_over_eta=tsys_over_eta, 
                                    sensitivity_file=sfile, 
-                                   subarray_list=subarray_list, subarray_range=subarray_range,
+                                   subarray_list=subarray_list, 
+                                   subarray_range=subarray_range,
                                    subarray_file=subarray_file)
+    
     size = telescope_array.size
     mount = telescope_array.mount
     antnames = telescope_array.names

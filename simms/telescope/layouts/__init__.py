@@ -97,13 +97,11 @@ def custom_telescopes(layout: str,
         elif len(subarray_range) == 3:
             user_idx = list(range(subarray_range[0], subarray_range[1], subarray_range[2]))
         else:
-            raise ValueError("subarray_range must be a list of length 2 or 3")
+            raise ValueError("Subarray_range must be a list of length 2 or 3.")
         
         antnames = [allants[i] for i in user_idx]
-        antlocations = np.array(all_locations)[user_idx]
-        antlocations = [arr.tolist() for arr in antlocations]
-        antsizes = np.array(allsizes)[user_idx]
-        antsizes = [arr.tolist() for arr in antsizes]
+        antlocations = [all_locations[i] for i in user_idx]
+        antsizes = [allsizes[i] for i in user_idx]
 
     elif subarray_file:
         subarray_data = OmegaConf.load(subarray_file)
