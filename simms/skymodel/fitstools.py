@@ -36,7 +36,13 @@ class FitsData:
     def data(self, value):
         self._data = value
     
-    def set_coord_attrs(self, name):
+    def set_coord_attrs(self, name:str):
+        """ 
+        Add FITS pixel meta data to this instances coords attribute (xarray.Coordinates)
+
+        Args:
+            name (str): Name (or label) of coordinate to set
+        """
         
         idx = self.coord_names.index(name)
         self.coords[name].attrs = {
@@ -48,9 +54,13 @@ class FitsData:
             "size": self.dshape[idx]
         }
     
-    def register_dimensions(self, set_dims=["spectral"]):
+    def register_dimensions(self, set_dims=["spectral", "celestial"]):
         """
-        Register data dimensions in a manner consistent with the data
+        Register (or set) FITS data coordinate and dimension data from the FITS header
+        (including WCS information)
+        
+        Args:
+            set_dims (List[str]): FITS coordinates (celestial, spectral, etc.) that must be set according to header WCS information. For example, if 'celestial' is part of this list, then the RA and DEC coordinate grid will be populated using the header WCS instead a dummy array. Avoid inlcuding dimesions for which you will need the coordinate grids for.
         """
 
         self.pixel_scales = {}
@@ -83,19 +93,42 @@ class FitsData:
             
         self.dims = list(self.coords.dims)
         
-    def get_freq_from_vrad(self):
+    def get_freq_from_vrad(self, rest_freq_Hz=None):
+        """
+        Convert radio velocity coordinates to frequencies
+
+        Returns:
+            astropy.SpectralCoord: Astropy SpectralCoord instance
+        """
+        
+        rest_freq_Hz = rest_freq_Hz or self.header["RESTFRQ"]
         return SpectralCoord(self.coords["VRAD"], 
                 unit=units.meter/units.second).to(units.Hz, 
-                                            doppler_rest = self.header["RESTFRQ"]*units.Hz,
+                                            doppler_rest = rest_freq_Hz*units.Hz,
                                             doppler_convention="radio").value
         
     def get_freq_from_vopt(self):
+        """
+        Convert radio velocity coordinates to frequencies
+
+        Returns:
+            astropy.SpectralCoord: Astropy SpectralCoord instance
+        """
+        
         return SpectralCoord(self.coords["VOPT"],
                 unit=units.meter/units.second).to(units.Hz, 
                                             doppler_rest = self.header["RESTFRQ"]*units.Hz,
                                             doppler_convention="optical").value
 
     def register_beam_info(self):
+        """
+        Get FITS beam information and assign it to a self.beam_info attribute:
+        self.beam_info = {
+            "bmaj": <array>,
+            "bmin": <array>,
+            "bpa": <array>, 
+        }
+        """
         header = self.header
         beam_table = None
         
@@ -107,6 +140,7 @@ class FitsData:
         beam_info = {}
         beam_info["bmaj"] = np.zeros(self.nchan)
         beam_info["bmin"] = np.zeros(self.nchan)
+        beam_info["bpa"] = np.zeros(self.nchan)
     
         if beam_table:
             bunit = beam_table["BMAJ"].unit
@@ -114,12 +148,14 @@ class FitsData:
                 beam = beam_table[chan]
                 beam_info["bmaj"][chan] = beam["BMAJ"]
                 beam_info["bmin"][chan] = beam["BMIN"]
+                beam_info["bpa"][chan] = beam["BPA"]
                 
         elif header.get(f"BMAJ1", False):
             bunit = self.wcs.celestial.world_axis_units[0]
             for chan in range(self.nchan):
                 beam_info["bmaj"][chan] = header[f"BMAJ{chan+1}"]
                 beam_info["bmin"][chan] = header[f"BMIN{chan+1}"]
+                beam_info["bpa"][chan] = header[f"BPA{chan+1}"]
         elif header.get("BMAJ", False):
             bunit = self.wcs.celestial.world_axis_units[0]
             if self.spectral_coord == "VRAD":
@@ -132,7 +168,8 @@ class FitsData:
             for chan in range(self.nchan):
                 scale_factor = freqs[self.spectral_refpix]/freqs[chan]
                 beam_info["bmaj"][chan] = header[f"BMAJ"] * scale_factor
-                beam_info["bmin"][chan] = header[f"BMIN{chan+1}"] * scale_factor
+                beam_info["bmin"][chan] = header[f"BMIN"] * scale_factor
+                beam_info["bpa"][chan] = header[f"BPA"]
         else:
             #TODO(mika): Print warning
             return
@@ -143,6 +180,7 @@ class FitsData:
         
         beam_info["bmaj"] = (beam_info["bmaj"]*bunit).to(units.rad).value
         beam_info["bmin"] = (beam_info["bmin"]*bunit).to(units.rad).value
+        beam_info["bpa"] = (beam_info["bpa"]*bunit).to(units.rad).value
         
         self.beam_info = beam_info
         return 0  
