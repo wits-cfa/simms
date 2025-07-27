@@ -26,7 +26,27 @@ class FitsData:
         self.dshape = self.wcs.array_shape
         self.coords = xr.Coordinates()
         self.open_arrays = []
+        self.data = da.asarray(self.phdu.data)
 
+    @property
+    def data(self):
+        return self._data 
+    
+    @data.setter
+    def data(self, value):
+        self._data = value
+    
+    def set_coord_attrs(self, name):
+        
+        idx = self.coord_names.index(name)
+        self.coords[name].attrs = {
+            "name": name,
+            "pixel_size": self.pixel_scales[name],
+            "dim": self.coords[name].dims[0],
+            "ref_pixel": self.header[f"CRPIX{idx+1}"],
+            "units": self.wcs.world_axis_units[::-1][idx],
+            "size": self.dshape[idx]
+        }
     
     def register_dimensions(self, set_dims=["spectral"]):
         """
@@ -35,6 +55,7 @@ class FitsData:
 
         self.pixel_scales = {}
         pixel_scales = self.wcs.pixel_scale_matrix.diagonal()[::-1]
+        
         
         for idx,coord in enumerate(self.coord_names):
             self.pixel_scales[coord] = pixel_scales[idx]
@@ -56,6 +77,10 @@ class FitsData:
             self.coords[coord] = (dim,), dimgrid
             
         self.set_celestial_dimensions(empty = "celestial" not in set_dims)
+        # re-traverse to set FITS pixel meta data
+        for coord in self.coord_names:
+            self.set_coord_attrs(coord)
+            
         self.dims = list(self.coords.dims)
         
     def get_freq_from_vrad(self):
@@ -168,7 +193,7 @@ class FitsData:
         grid = self.wcs.celestial.array_index_to_world_values(da.arange(ra_dimsize),
                                         da.arange(dec_dimsize))
         
-        self.coords[dec_dim] = ("celestial.ra",), grid[1]
+        self.coords[dec_dim] = ("celesstial.ra",), grid[1]
         self.coords[ra_dim] = ("celestial.dec",), grid[0]
 
     def getdata(self, data_slice=None) -> np.ndarray:
@@ -176,14 +201,20 @@ class FitsData:
             data = self.phdu.section[tuple(data_slice)]
         else:
             data = self.phdu.data
-        
         self.open_arrays.append(data)
         
         return self.open_arrays[-1]
         
     def get_xds(self, data_slice=[],
-                transpose=[], chunks={}, **kwargs):
-
+                transpose=[], chunks=dict(RA=64,DEC=64), **kwargs):
+        
+        chunkit = {}
+        for key,val in chunks.items():
+            if key in self.coord_names:
+                key = self.coords[key].attrs["dim"]
+            chunkit[key] = val
+            
+        
         if len(data_slice) == 0:
             data_slice = [slice(None)]*self.ndim
         if len(transpose) == 0:
@@ -194,11 +225,9 @@ class FitsData:
             coords = self.coords,
             attrs = {
                 "header": dict(self.header.items()),
-                "pixel_scales": self.pixel_scales,
             },
             **kwargs,
-            chunks = chunks,
-        )
+        ).chunk(chunkit)
         
     def __close__(self):
         self.hdulist.close()
