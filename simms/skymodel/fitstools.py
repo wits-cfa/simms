@@ -9,7 +9,6 @@ from astropy.coordinates import SpectralCoord
 from astropy import units
 
 
-
 class FitsData:
     def __init__(self, fname: str, memap: bool = True):
         self.fname = File(fname)
@@ -151,13 +150,13 @@ class FitsData:
                 beam_info["bpa"][chan] = beam["BPA"]
                 
         elif header.get(f"BMAJ1", False):
-            bunit = self.wcs.celestial.world_axis_units[0]
+            bunit = self.coords["RA"].attrs["units"]
             for chan in range(self.nchan):
                 beam_info["bmaj"][chan] = header[f"BMAJ{chan+1}"]
                 beam_info["bmin"][chan] = header[f"BMIN{chan+1}"]
                 beam_info["bpa"][chan] = header[f"BPA{chan+1}"]
         elif header.get("BMAJ", False):
-            bunit = self.wcs.celestial.world_axis_units[0]
+            bunit = self.coords["RA"].attrs["units"]
             if self.spectral_coord == "VRAD":
                 freqs = self.get_freq_from_vrad()
             elif self.spectral_coord == "VOPT":
@@ -183,13 +182,20 @@ class FitsData:
         beam_info["bpa"] = (beam_info["bpa"]*bunit).to(units.rad).value
         
         self.beam_info = beam_info
-        return 0  
+        return 0 
     
     def add_coord(self, name, dim, dimgrid):
         self.coords[name] = dim, dimgrid
         
 
-    def set_spectral_dimension(self, idx, empty=False):
+    def set_spectral_dimension(self, idx:int, empty:bool=False):
+        """
+        set spectral coordinate data using the FITS WCS infomation
+
+        Args:
+            idx (int): Index of spectral dimension. 
+            empty (bool, optiona): Set the coordinate grid as an empty array. Defaults to False.
+        """
         dimsize = self.dshape[idx]
         
         coord = self.coord_names[idx]
@@ -204,7 +210,13 @@ class FitsData:
         self.spectral_refpix = self.header.get(f"CRPIX{self.ndim - idx}")
         
     def set_celestial_dimensions(self, empty:bool=True):
-            
+        """
+        set celestial coordinates data using the FITS WCS infomation
+
+        Args:
+            empty (bool, optiona): Set the coordinate grids as an empty array. Defaults to True.
+        """
+        
         for idx, diminfo in enumerate(self.dim_info):
             dim = diminfo["coordinate_type"]
             dim_number = diminfo["number"]
@@ -221,7 +233,6 @@ class FitsData:
         ra_dimsize = self.dshape[ra_idx]
         dec_dimsize = self.dshape[dec_idx]
         dtype = self.dim_info[ra_idx]["group"]
-        self.celestial_units = self.wcs.celestial.world_axis_units[0]
             
         if empty:
             self.coords[dec_dim] = ("celestial.dec",), da.empty(dec_dimsize, dtype=dtype)
