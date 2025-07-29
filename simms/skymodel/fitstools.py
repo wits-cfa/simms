@@ -26,6 +26,7 @@ class FitsData:
         self.coords = xr.Coordinates()
         self.open_arrays = []
         self.data = da.asarray(self.phdu.data)
+        self.data_units = self.header.get("BUNIT", "jy")
 
     @property
     def data(self):
@@ -48,9 +49,10 @@ class FitsData:
             "name": name,
             "pixel_size": self.pixel_scales[name],
             "dim": self.coords[name].dims[0],
-            "ref_pixel": self.header[f"CRPIX{idx+1}"],
+            "ref_pixel": int(self.header[f"CRPIX{idx+1}"]),
             "units": self.wcs.world_axis_units[::-1][idx],
-            "size": self.dshape[idx]
+            "size": self.dshape[idx],
+            "dim_idx": idx,
         }
     
     def register_dimensions(self, set_dims=["spectral", "celestial"]):
@@ -279,27 +281,38 @@ class FitsData:
     def get_xds(self, data_slice=[],
                 transpose=[], chunks=dict(RA=64,DEC=64), **kwargs):
         
-        chunkit = {}
+        dim_chunks = {}
+        # swap coords for dims in chunks
         for key,val in chunks.items():
             if key in self.coord_names:
                 key = self.coords[key].attrs["dim"]
-            chunkit[key] = val
+            dim_chunks[key] = val
             
+        if len(transpose) == 0:
+            transpose = self.dims
+            
+        # swap coords for dims in transpose
+        dim_transpose = []
+        for key in transpose:
+            if key in self.coord_names:
+                key = self.coords[key].attrs["dim"]
+            dim_transpose.append(key)
         
         if len(data_slice) == 0:
             data_slice = [slice(None)]*self.ndim
-        if len(transpose) == 0:
-            transpose = self.dims
+            
         data = da.asarray(self.data[tuple(data_slice)])
         
-        return xr.DataArray(data,
+        xds = xr.DataArray(data,
             coords = self.coords,
             attrs = {
                 "header": dict(self.header.items()),
             },
             **kwargs,
-        ).chunk(chunkit)
+        ).transpose(*dim_transpose)
         
+        return xds.chunk(dim_chunks)
+    
     def __close__(self):
         self.hdulist.close()
         for data in self.open_arrays:
