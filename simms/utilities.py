@@ -1,3 +1,7 @@
+import numpy as np
+from itertools import combinations
+from typing import Union, List
+
 class ValidationError(Exception):
     pass
 
@@ -38,3 +42,22 @@ class ObjDict(object):
                 setattr(self, item, getattr(items, item, None))
         # Now set the dictionary values as attributes
         self.__dict__.update(items)
+
+def get_noise(sefds: Union[List, float], dtime: int, dfreq: float):
+    """
+    This function computes the noise given an SEFD/s.
+    """
+
+    if isinstance(sefds, (int, float)):
+        noise = sefds / np.sqrt(2 * dfreq * dtime)
+        return noise
+
+    sefd_pairs = list(combinations(sefds, 2))
+    noises = []
+    for sefd1, sefd2 in sefd_pairs:
+        prod = sefd1 * sefd2
+        den = 2 * dfreq * dtime
+        noise = np.sqrt(prod / den)
+        noises.append(noise)
+
+    return noises

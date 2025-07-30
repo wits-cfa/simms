@@ -11,6 +11,7 @@ from daskms import xds_to_table
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 from tqdm.dask import TqdmCallback
+from simms.utilities import get_noise
 
 import simms
 from simms.constants import PI
@@ -112,9 +113,13 @@ def create_ms(
     ant1 = uvcoverage_data.antenna1 * ntimes
     ant2 = uvcoverage_data.antenna2 * ntimes
 
-    ra_dec = dm.direction(*pointing_direction)
+    if len(pointing_direction) == 3:
+            ra_dec = dm.direction(rf=pointing_direction[0], v0 = pointing_direction[1], v1=pointing_direction[2])
+    else:
+            ra_dec = dm.direction(rf='J2000', v0 = pointing_direction[1], v1=pointing_direction[2])
     ra = ra_dec["m0"]["value"]
     dec = ra_dec["m1"]["value"]
+    
     phase_dir = np.array([[[ra, dec]]])
 
     data = da.zeros(
@@ -181,26 +186,31 @@ def create_ms(
     proc_id = 0
     ds["PROCESSOR_ID"] = ("row"), da.full_like(ddid, fill_value=proc_id)
     
+    nbaselines = num_ants * (num_ants - 1) // 2
+    
     sefd = telescope_array.sefd
     
     if sefd:
-        noise = get_noise(sefd, ntimes, dtime, dfreq)
+        noise = get_noise(sefd, dtime, dfreq)
         dummy_data = np.random.randn(
             num_rows, num_chans, num_corr
         ) + 1j * np.random.randn(num_rows, num_chans, num_corr)
+        
         if isinstance(noise, (float, int)):
             noisy_data = da.array(dummy_data * noise, like=data).rechunk(
                 chunks=data.chunks
             )
+            
         else:
-            noise = np.array(noise)
-            noisy_data = da.array(dummy_data * noise[:, None, None], like=data).rechunk(
+            dummy_data_resh = dummy_data.reshape((ntimes,nbaselines,num_chans,num_corr))
+            noisy_dummy_data = dummy_data_resh * np.array(noise)[None,:,None,None]
+            noisy_result = noisy_dummy_data.reshape((ntimes*nbaselines, num_chans, num_corr))
+            noisy_data = da.array(noisy_result, like=data).rechunk(
                 chunks=data.chunks
             )
 
         ds[column] = (("row", "chan", "corr"), noisy_data)
 
-    nbaselines = num_ants * (num_ants - 1) // 2
     src_elevs = uvcoverage_data.source_elevations
     expanded_src_elevations = []
     
@@ -428,23 +438,3 @@ def create_ms(
         )
 
     log.info(f"{ms} successfully generated.")
-
-
-def get_noise(sefds: Union[List, float], ntime: int, dtime: int, dfreq: float):
-    """
-    This function computes the noise given an SEFD/s.
-    """
-
-    if isinstance(sefds, (int, float)):
-        noise = sefds / np.sqrt(2 * dfreq * dtime)
-        return noise
-
-    sefd_pairs = list(combinations(sefds, 2))
-    noises = []
-    for sefd1, sefd2 in sefd_pairs:
-        prod = sefd1 * sefd2
-        den = 2 * dfreq * dtime
-        noise = np.sqrt(prod / den)
-        noises.append(noise)
-
-    return noises * ntime
