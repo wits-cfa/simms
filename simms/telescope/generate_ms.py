@@ -77,6 +77,8 @@ def create_ms(
     antnames = telescope_array.names
     antlocation = telescope_array.antlocations
     
+    start_freq_unit = start_freq
+    dfreq_unit = dfreq
     if freq_range:
         start_freq = dm.frequency(v0=freq_range[0])["m0"]["value"]
         end_freq = dm.frequency(v0=freq_range[1])["m0"]["value"]
@@ -88,11 +90,14 @@ def create_ms(
         end_freq = start_freq + dfreq * (nchan -1)
         
     freqs = np.linspace(start_freq, end_freq, nchan)
-
+    
     uvcoverage_data = telescope_array.uvgen(
         pointing_direction,
         dtime,
         ntimes,
+        start_freq_unit,
+        dfreq_unit,
+        nchan,
         start_time,
         start_ha,
     )
