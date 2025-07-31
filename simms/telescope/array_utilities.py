@@ -119,9 +119,14 @@ class Array:
                 sensitivity_data = OmegaConf.load(self.sensitivity_file)
                 if 'sefd' in sensitivity_data:
                     self.sefd = sensitivity_data['sefd']
+            
+            if isinstance(sefd, (float, int)):
+                self.sefd = [sefd]
+            elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
+                self.sefd = sefd
 
         if self.tsys_over_eta and self.sefd is None:
-            self.sefd = list(2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
+            self.sefd = (2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
 
         elif self.tsys_over_eta is None and self.sefd is None:
             tsys_over_eta = self.layout.get("tsys_over_eta", None)
@@ -131,10 +136,10 @@ class Array:
                     self.tsys_over_eta = sensitivity_data['tsys_over_eta']
                     self.sefd = list(2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
 
-        if isinstance(sefd, (float, int)):
-            self.sefd = [sefd]
-        elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
-            self.sefd = sefd
+            if isinstance(sefd, (float, int)):
+                self.sefd = [sefd]
+            elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
+                self.sefd = sefd
 
             
             
