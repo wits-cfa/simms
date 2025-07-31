@@ -128,6 +128,3 @@ def custom_telescopes(layout: str,
     return OmegaConf.create(laysdict)
 
 SIMMS_TELESCOPES = simms_telescopes()
-
-# subarray_tels = custom_telescopes(layout='skamid', subarray_range=[0,5,2])#subarray_list=['M000','SKA001'])#subarray_range=[0,5,2])
-# print(f'subarray_tels = {subarray_tels}') 
