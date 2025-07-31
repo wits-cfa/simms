@@ -11,6 +11,7 @@ from daskms import xds_to_table
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 from tqdm.dask import TqdmCallback
+from simms.utilities import get_noise
 
 import simms
 from simms.constants import PI
@@ -46,9 +47,15 @@ def create_ms(
     correlations: str,
     row_chunks: int,
     sefd: float,
+    tsys_over_eta: float,
     column: str,
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
+    freq_range: str = None,
+    sfile: File = None,
+    subarray_list: List[str] = None,
+    subarray_range: List[int] = None,
+    subarray_file: File = None,
     low_source_limit: Union[float, str] = None,
     high_source_limit: Union[float, str] = None,
     low_antenna_limit: Union[float,str] = None,
@@ -57,19 +64,39 @@ def create_ms(
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
     remove_ms(ms)
-    telescope_array = autils.Array(telescope_name, sefd=sefd)
+    telescope_array = autils.Array(telescope_name, 
+                                   sefd=sefd,
+                                   tsys_over_eta=tsys_over_eta, 
+                                   sensitivity_file=sfile, 
+                                   subarray_list=subarray_list, 
+                                   subarray_range=subarray_range,
+                                   subarray_file=subarray_file)
     
     size = telescope_array.size
     mount = telescope_array.mount
     antnames = telescope_array.names
     antlocation = telescope_array.antlocations
-
+    
+    start_freq_unit = start_freq
+    dfreq_unit = dfreq
+    if freq_range:
+        start_freq = dm.frequency(v0=freq_range[0])["m0"]["value"]
+        end_freq = dm.frequency(v0=freq_range[1])["m0"]["value"]
+        nchan = int(freq_range[2])
+        dfreq = (end_freq - start_freq) / (nchan - 1)
+    else: 
+        start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
+        dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
+        end_freq = start_freq + dfreq * (nchan -1)
+        
+    freqs = np.linspace(start_freq, end_freq, nchan)
+    
     uvcoverage_data = telescope_array.uvgen(
         pointing_direction,
         dtime,
         ntimes,
-        start_freq,
-        dfreq,
+        start_freq_unit,
+        dfreq_unit,
         nchan,
         start_time,
         start_ha,
@@ -78,7 +105,7 @@ def create_ms(
     num_rows = uvcoverage_data.times.shape[0]
     num_row_chunks = row_chunks
 
-    num_chans = len(uvcoverage_data.freqs)
+    num_chans = len(freqs)
     num_corr = len(correlations)
     corr_types = np.array([[CORR_TYPES[x] for x in correlations]])
     # TODO(sphe) use casacore to determine this
@@ -91,9 +118,13 @@ def create_ms(
     ant1 = uvcoverage_data.antenna1 * ntimes
     ant2 = uvcoverage_data.antenna2 * ntimes
 
-    ra_dec = dm.direction(*pointing_direction)
+    if len(pointing_direction) == 3:
+            ra_dec = dm.direction(rf=pointing_direction[0], v0 = pointing_direction[1], v1=pointing_direction[2])
+    else:
+            ra_dec = dm.direction(rf='J2000', v0 = pointing_direction[1], v1=pointing_direction[2])
     ra = ra_dec["m0"]["value"]
     dec = ra_dec["m1"]["value"]
+    
     phase_dir = np.array([[[ra, dec]]])
 
     data = da.zeros(
@@ -116,12 +147,9 @@ def create_ms(
         chunks=(num_row_chunks, num_chans, num_corr),
     )
 
-    freqs = uvcoverage_data.freqs
     freqs = freqs.reshape(1, freqs.shape[0])
-    ref_freq = dm.frequency(v0=start_freq)["m0"]["value"]
-    chan_width = dm.frequency(v0=dfreq)["m0"]["value"]
-    channel_widths = da.full(freqs.shape, chan_width)
-    total_bandwidth = nchan * chan_width
+    channel_widths = da.full(freqs.shape, dfreq)
+    total_bandwidth = nchan * dfreq
     
     ds = {
         "DATA": (("row", "chan", "corr"), data),
@@ -163,26 +191,31 @@ def create_ms(
     proc_id = 0
     ds["PROCESSOR_ID"] = ("row"), da.full_like(ddid, fill_value=proc_id)
     
+    nbaselines = num_ants * (num_ants - 1) // 2
+    
     sefd = telescope_array.sefd
-
+    
     if sefd:
-        noise = get_noise(sefd, ntimes, dtime, chan_width)
+        noise = get_noise(sefd, dtime, dfreq)
         dummy_data = np.random.randn(
             num_rows, num_chans, num_corr
         ) + 1j * np.random.randn(num_rows, num_chans, num_corr)
+        
         if isinstance(noise, (float, int)):
             noisy_data = da.array(dummy_data * noise, like=data).rechunk(
                 chunks=data.chunks
             )
+            
         else:
-            noise = np.array(noise)
-            noisy_data = da.array(dummy_data * noise[:, None, None], like=data).rechunk(
+            dummy_data_resh = dummy_data.reshape((ntimes,nbaselines,num_chans,num_corr))
+            noisy_dummy_data = dummy_data_resh * np.array(noise)[None,:,None,None]
+            noisy_result = noisy_dummy_data.reshape((ntimes*nbaselines, num_chans, num_corr))
+            noisy_data = da.array(noisy_result, like=data).rechunk(
                 chunks=data.chunks
             )
 
         ds[column] = (("row", "chan", "corr"), noisy_data)
 
-    nbaselines = num_ants * (num_ants - 1) // 2
     src_elevs = uvcoverage_data.source_elevations
     expanded_src_elevations = []
     
@@ -206,7 +239,6 @@ def create_ms(
     
     ds["FLAG_ROW"] = (("row",), da.from_array(flag_row, chunks=num_row_chunks))        
 
-    
     main_table = daskms.Dataset(ds, coords={"ROWID": ("row", da.arange(num_rows))})
 
     write_main = xds_to_table(main_table, ms, columns="ALL", descriptor="ms(False)")
@@ -253,8 +285,8 @@ def create_ms(
         "CHAN_WIDTH": (("row", "chan"), channel_widths),
         "EFFECTIVE_BW": (("row", "chan"), channel_widths),
         "RESOLUTION": (("row", "chan"), channel_widths),
-        "REF_FREQ": (("row"), da.from_array([ref_freq])),
-        "MEAS_RES_FREQ": (("row"), da.from_array([ref_freq])),
+        "REF_FREQ": (("row"), da.from_array([start_freq])),
+        "MEAS_RES_FREQ": (("row"), da.from_array([start_freq])),
         "TOTAL_BANDWIDTH": (("row"), da.from_array([total_bandwidth])),
         "NUM_CHAN": (("row"), da.from_array([nchan])),
         "NAME": (("row"), da.from_array(["00"])),
@@ -411,23 +443,3 @@ def create_ms(
         )
 
     log.info(f"{ms} successfully generated.")
-
-
-def get_noise(sefds: Union[List, float], ntime: int, dtime: int, chan_width: float):
-    """
-    This function computes the noise given an SEFD/s.
-    """
-
-    if isinstance(sefds, (int, float)):
-        noise = sefds / np.sqrt(2 * chan_width * dtime)
-        return noise
-
-    sefd_pairs = list(combinations(sefds, 2))
-    noises = []
-    for sefd1, sefd2 in sefd_pairs:
-        prod = sefd1 * sefd2
-        den = 2 * chan_width * dtime
-        noise = np.sqrt(prod / den)
-        noises.append(noise)
-
-    return noises * ntime

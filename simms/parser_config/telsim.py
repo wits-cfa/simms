@@ -64,12 +64,26 @@ def runit(**kwargs):
     correlations = opts.correlations.split(",")
     rowchunks = opts.rowchunks
     sefd = opts.sefd
+    tsys_over_eta = opts.tsys_over_eta
     column = opts.column
     startha = opts.startha
     l_src_limit = opts.low_source_limit
     h_src_limit = opts.high_source_limit
+    freq_range = opts.freq_range
+    sfile = opts.sensitivity_file
+    if freq_range is not None:
+        freq_range = freq_range.split(",")
+    subarray_list = opts.subarray_list
+    subarray_range = opts.subarray_range
+    subarray_file = opts.subarray_file
+    
     generate_ms.create_ms(msname, telescope, direction, dtime,
                           ntimes, startfreq, dfreq, nchan,
                           correlations, rowchunks,
-                          sefd, column, starttime,startha,l_src_limit,
-                          h_src_limit)
+                          sefd, tsys_over_eta, column, starttime, startha,
+                          freq_range,
+                          sfile,
+                          subarray_list,
+                          subarray_range,
+                          subarray_file,
+                          l_src_limit, h_src_limit)
