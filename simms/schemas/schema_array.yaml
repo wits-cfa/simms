@@ -26,7 +26,7 @@ Array:
     dtype: List[Any]
     required: true
   groups:
-    info: Specify antenna groups. Each group can define its own size, mount, sefd, tsys_over_eta, or tsys_over_eta via a YAML file
+    info: Specify antenna groups. Each group can define its own size, mount, sefd, tsys_over_eta, or tsys_over_eta via a YAML file.
     dtype: List[str]
 
 Antenna:

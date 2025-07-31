@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Union
 
 import astropy.units as u
+from astropy.constants import k_B
 import numpy as np
 import os
 from astropy.time import Time
@@ -11,7 +12,7 @@ from omegaconf import OmegaConf
 from scabha.basetypes import File, List
 
 from simms import constants, get_logger
-from simms.telescope.layouts import SIMMS_TELESCOPES
+from simms.telescope.layouts import SIMMS_TELESCOPES, custom_telescopes
 from simms.utilities import ObjDict
 
 log = get_logger(name="telsim")
@@ -22,7 +23,12 @@ class Array:
     """
 
     def __init__(self, layout: Union[str, File], degrees: bool = True,
-                sefd: Union[int, float, List[Union[int, float]]]=None):
+                sefd: Union[int, float, List[Union[int, float]]]=None,
+                tsys_over_eta: Union[int, float, List[Union[int, float]]]=None,
+                sensitivity_file: File = None,
+                subarray_list: List[str] = None,
+                subarray_range: List[int] = None,
+                subarray_file: File = None):
         """
         layout: str|File
                     : specify an observatory as a str or a file.
@@ -44,8 +50,21 @@ class Array:
             self.layoutname = os.path.basename(self.layout.BASENAME)
         else:
             self.layout = SIMMS_TELESCOPES[layout]
+            
+        if subarray_list:
+            self.layout = custom_telescopes(layout=layout,
+                                            subarray_list=subarray_list)
+        elif subarray_range:
+            self.layout = custom_telescopes(layout=layout,
+                                            subarray_range=subarray_range)
+        elif subarray_file:
+            self.layout = custom_telescopes(layout=layout,
+                                            subarray_file=subarray_file)
+            
         self.sefd = sefd
-    
+        self.tsys_over_eta = tsys_over_eta
+        self.sensitivity_file = sensitivity_file
+
         self.__set_arrayinfo()
         if self.layout.coord_sys == "geodetic":
             self.set_itrf()
@@ -96,12 +115,33 @@ class Array:
         if self.sefd is None:
             sefd = self.layout.get("sefd", None)
             self.sefd = sefd
+            if self.sensitivity_file: 
+                sensitivity_data = OmegaConf.load(self.sensitivity_file)
+                if 'sefd' in sensitivity_data:
+                    self.sefd = sensitivity_data['sefd']
+            
+            if isinstance(sefd, (float, int)):
+                self.sefd = [sefd]
+            elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
+                self.sefd = sefd
+
+        if self.tsys_over_eta and self.sefd is None:
+            self.sefd = (2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
+
+        elif self.tsys_over_eta is None and self.sefd is None:
+            tsys_over_eta = self.layout.get("tsys_over_eta", None)
+            self.tsys_over_eta = tsys_over_eta 
+            if self.sensitivity_file: 
+                if 'tsys_over_eta' in sensitivity_data and 'sefd' not in sensitivity_data:
+                    self.tsys_over_eta = sensitivity_data['tsys_over_eta']
+                    self.sefd = list(2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
 
             if isinstance(sefd, (float, int)):
                 self.sefd = [sefd]
             elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
                 self.sefd = sefd
-    
+
+            
             
     def set_itrf(self):
         if not hasattr(self, "antlocations"):
@@ -217,8 +257,9 @@ class Array:
 
         return enu
 
-    def uvgen(self, pointing_direction, dtime, ntimes, start_freq, dfreq,
-            nchan, start_time=None, start_ha=None) -> ObjDict:
+    def uvgen(self, pointing_direction, dtime, ntimes, 
+              start_freq, dfreq, nchan,
+              start_time=None, start_ha=None) -> ObjDict:
         """
         Generate uvw coordimates
 
@@ -237,7 +278,7 @@ class Array:
                     : frequency interval.
         nchan: int
                     : number of channels.
-
+                    
         start_time: Union[str, List[str]]
                     : start time of the observation date and time ("YYYY/MM/DD 12:00:00", ["EPOCH", "YYYY/MM/DD 12:00:00"])
                         default is the current machine time.
@@ -272,8 +313,7 @@ class Array:
 
         start_time_sec = start_day.to_value("mjd") * 24 * 3600
         total_time = ntimes * dtime
-
-        time_entries = np.arange(start_time_sec, start_time_sec+total_time, dtime)
+        time_entries = np.array([start_time_sec + i * dtime for i in range(ntimes)])
 
         if start_ha:
             ih0 = start_ha * constants.PI
@@ -335,18 +375,20 @@ class Array:
             time_table.append(baseline_time)
 
         time_table = np.array(time_table).flatten()
-
+        
+         
         start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
         dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
         end_freq = start_freq + dfreq * (nchan -1)
-        frequency_entries = np.linspace(start_freq, end_freq, nchan)
-        
+            
+        freqs = np.linspace(start_freq, end_freq, nchan)
+            
         uvcoverage = ObjDict(
             {
                 "antenna1": antenna1_list,
                 "antenna2": antenna2_list,
                 "uvw": uvw,
-                "freqs": frequency_entries,
+                "freqs": freqs,
                 "times": time_table,
                 "source_elevations": source_elevations,
             
