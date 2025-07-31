@@ -1,58 +1,22 @@
 from typing import Optional, Union, List
-from scabha.basetypes import File, MS
+from scabha.basetypes import File
 from simms import BIN, get_logger
-from simms.utilities import FITSSkymodelError as SkymodelError
-from daskms import xds_from_table, xds_from_ms
+from simms.utilities import (
+    FITSSkymodelError as SkymodelError, 
+    )
 import numpy as np
 from numba import njit, prange
 from simms.skymodel.fitstools import FitsData
+from simms.skymodel.catalogue_reader import load_sources
 from simms.skymodel.source_factory import (
         StokesData,
-        radec2lm,
+        gauss_1d,
+        contspec,
 )
 from scipy.interpolate import RegularGridInterpolator
+from simms.skymodel.converters import radec2lm
 
 log = get_logger(BIN.skysim)
-
-
-def read_ms(ms: MS, spw_id: int, field_id: int, chunks: dict, sefd: float):
-    """
-    Reads MS info
-    Args:
-        ms: MS file
-        spw_id: spectral window ID
-        field_id: field ID
-        chunks: dask chunking strategy
-        sefd: system equivalent flux density; used if return_noise is True
-        input_column: whether to read a column for manipulation
-    Returns:
-        ms_dsl: xarray dataset list
-        ra0: RA of phase-tracking centre in radians
-        dec0: Dec of phase-tracking centre in radians
-        chan_freqs: MS channel frequencies
-        nrows: number of rows
-        nchan: number of channels
-        ncorr: number of correlations
-        noise: RMS noise
-    """
-    ms_dsl = xds_from_ms(ms, index_cols=["TIME", "ANTENNA1", "ANTENNA2"], chunks=chunks)
-    spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
-    field_ds = xds_from_table(f"{ms}::FIELD")[0]
-    
-    radec0 = field_ds.PHASE_DIR.data[field_id].compute()
-    ra0, dec0 = radec0[0][0], radec0[0][1]
-    chan_freqs = spw_ds.CHAN_FREQ.data[spw_id].compute()
-    nrow, nchan, ncorr = ms_dsl[0].DATA.data.shape
-    
-    df = spw_ds.CHAN_WIDTH.data[spw_id][0].compute()
-    
-    if sefd:
-        dt = ms_dsl[0].EXPOSURE.data[0].compute()
-        noise = sefd / np.sqrt(2*dt*df)
-    else:
-        noise = None
-        
-    return ms_dsl, ra0, dec0, chan_freqs, nrow, nchan, df, ncorr, noise
 
     
 @njit(parallel=True)
@@ -89,10 +53,38 @@ def compute_lm_coords(phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_co
         return non_zero_lm
     
     return lm
+
+def skymodel_from_catalogue(catfile:File, map_path, delimiter, 
+                chan_freqs: np.ndarray, full_stokes:bool=True,
+                ):
+    
+    sources = load_sources(catfile, map_path, delimiter)
+    mod_sources = []
+    for src in sources:
+        stokes = StokesData([src.stokes_i, src.stokes_q, src.stokes_u, src.stokes_v])
+        if src.line_peak:
+            specfunc = gauss_1d
+            kwargs = {
+                "x0" : src.line_peak,
+                "width": src.line_width,
+            }
+        else:
+            specfunc = contspec
+            kwargs = {
+                "coeff": src.cont_coeff_1,
+                "nu_ref": src.cont_reffreq,
+                
+            }
+        stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
+        setattr(src, "stokes", stokes)
+        mod_sources.append(src)
+        
+        return mod_sources
     
 
-def fits2skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
-                        ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, stokes: Optional[Union[int, str]]=0,
+
+def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
+                        ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, full_stokes:bool=True,
                         use_dft: Optional[bool]=None) -> tuple:
     """
     Processes FITS skymodel into DFT input
@@ -117,8 +109,10 @@ def fits2skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: f
     if isinstance(input_fitsimages, List):
         fds = FitsData(input_fitsimages[0])
         fds.register_dimensions(set_dims=['spectral', 'celestial'])
-        for fits_image in input_fitsimages[1:]:
-            fds.extend_stokes(fits_image)
+        # No need to read the rest of the files in not using full_stokes
+        if full_stokes:
+            for fits_image in input_fitsimages[1:]:
+                fds.extend_stokes(fits_image)
         
     else:
         fds = FitsData(input_fitsimages)
@@ -141,7 +135,7 @@ def fits2skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: f
     fits_d_nu = abs(fits_freqs[1] - fits_freqs[0])
     fits_start_freq = fits_freqs[0] - 0.5 * fits_d_nu
     fits_end_freq = fits_freqs[-1] + 0.5 * fits_d_nu
-   
+    
     ra_coords = fds.coords["RA"]
     dec_coords = fds.coords["DEC"]
     pixel_area = abs(ra_coords.pixel_size * dec_coords.pixel_size)
@@ -156,12 +150,10 @@ def fits2skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: f
     trgt_shape = ["STOKES", "RA", "DEC", "FREQ"] if has_stokes else ["RA", "DEC", "FREQ"]
     skymodel = fds.get_xds(transpose=trgt_shape).data
     
-    
     # get image shape
     n_pix_l = ra_coords.size 
     n_pix_m = dec_coords.size
 
-       
     # convert from intensity to Jy
     if fds.data_units == 'jy/beam':
         fds.register_beam_info()
@@ -196,7 +188,7 @@ def fits2skymodel(input_fitsimages: Union[File, List[File]], ra0: float, dec0: f
     stokes_v = skymodel.V
         
     # compute per-pixel brghtness matrix
-    if not has_stokes: # if no has_stokes is present
+    if not has_stokes or full_stokes is False: # if no has_stokes is present
         predict_image = np.zeros((n_pix_l, n_pix_m, nchan, ncorr)) # create pixel grid for sky model
         
         if ncorr == 2: # if ncorr is 2, we only need compute XX and duplicate to YY

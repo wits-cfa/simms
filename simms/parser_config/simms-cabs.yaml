@@ -25,7 +25,7 @@ cabs:
         info: Simulate all available stokes paraemters (correlations). If false, only consider stokes I
         default: true
         dtype:  bool
-        abreviation: pol
+        abbreviation: pol
       pol-basis:
         info: Polarization basis for the simulation. The default is circular polarization.
         dtype: str
@@ -55,12 +55,7 @@ cabs:
         dtype: str
         default: DATA
         abbreviation: col
-      simulated-column:
-        info: Name of the column containing previously simulated data to use for add/subtract modes.
-        dtype: str
-        abbreviation: sc
-        required: no  
-      row-chunk-size:
+      row-chunks:
         info: Chunking strategy for the simulation
         dtype: int
         default: 10000
@@ -70,7 +65,7 @@ cabs:
         dtype: int
         default: 0
         abbreviation: fi
-      spwid:
+      spw-id:
         info: Spectral Window ID
         dtype: int
         default: 0
