@@ -10,11 +10,13 @@ from simms.skymodel.fitstools import FitsData
 from simms.skymodel.catalogue_reader import load_sources
 from simms.skymodel.source_factory import (
         StokesData,
+        StokesDataFits,
         gauss_1d,
         contspec,
 )
 from scipy.interpolate import RegularGridInterpolator
 from simms.skymodel.converters import radec2lm
+from astropy import units
 
 log = get_logger(BIN.skysim)
 
@@ -73,7 +75,6 @@ def skymodel_from_catalogue(catfile:File, map_path, delimiter,
             kwargs = {
                 "coeff": src.cont_coeff_1,
                 "nu_ref": src.cont_reffreq,
-                
             }
         stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
         setattr(src, "stokes", stokes)
@@ -127,12 +128,26 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     
     if fds.spectral_coord == "VRAD":
         fits_freqs = fds.get_freq_from_vrad()
+        
+        dspec = fds.coords["VRAD"].pixel_size * getattr(units, 
+                                                    fds.coords["RAD"].units)
+        fits_d_nu = dspec.to(units.Hz,
+                        doppler_rest=fds.spectral_restfreq*units.Hz,
+                        doppler_convention="radio").value
+
     elif fds.spectral_coord == "VOPT":
         fits_freqs = fds.get_freq_from_vopt()
+        dspec = fds.coords["VOPT"].pixel_size * getattr(units, 
+                                                    fds.coords["VOPT"].units)
+        fits_d_nu = dspec.to(units.Hz,
+                        doppler_rest=fds.spectral_restfreq*units.Hz,
+                        doppler_convention="optical").value
     else:
         fits_freqs = fds.coords["FREQ"].data
+        fits_d_nu = fds.coords["FREQ"].pixel_size
     
-    fits_d_nu = abs(fits_freqs[1] - fits_freqs[0])
+    
+    nchan_fits = len(fits_freqs)
     fits_start_freq = fits_freqs[0] - 0.5 * fits_d_nu
     fits_end_freq = fits_freqs[-1] + 0.5 * fits_d_nu
     
@@ -153,6 +168,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     # get image shape
     n_pix_l = ra_coords.size 
     n_pix_m = dec_coords.size
+    dra_pix = ra_coords.pixel_size
+    ddec_pix = dec_coords.pixel_size
 
     # convert from intensity to Jy
     if fds.data_units == 'jy/beam':
@@ -171,17 +188,22 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data is in Jy")
         
         
-    if len(chan_freqs) != len(fits_freqs) or np.any(fits_freqs != chan_freqs):
+    if nchan_fits > 1 and (len(chan_freqs) != len(fits_freqs) or np.any(fits_freqs != chan_freqs)):
         # interpolate FITS cube
         log.warning(f"Interpolating FITS sky model onto MS channel frequency grid. This uses a lot of memory.")
-        fits_interp = RegularGridInterpolator((ra_coords.data, dec_coords.data, fits_freqs), skymodel)
+        ## The RA and Dec coordinates need to re-computed to ensure that they remain monotonically decreasing when passing zero
+        ra_grid = [ra_coords.data[0] + dra_pix*i for i in range(n_pix_l)]
+        dec_grid = [dec_coords.data[0] + ddec_pix*i for i in range(n_pix_m)]
+        fits_interp = RegularGridInterpolator((ra_grid, dec_grid, fits_freqs), skymodel)
+        
+        del ra_grid, dec_grid
         ra, dec, vv = np.meshgrid(ra_coords.data, dec_coords.data, chan_freqs, indexing="ij")
         radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
         skymodel = fits_interp(radecv).reshape(n_pix_l, n_pix_m, nchan)
 
     #TODO(mika,senkhosi): Is there a reason to have the above interpolation and conversions here, and not at the end of the function?
     
-    skymodel = StokesData(fds.coords["STOKES"], skymodel)
+    skymodel = StokesDataFits(fds.coords["STOKES"], skymodel)
     stokes_i = skymodel.I
     stokes_q = skymodel.Q
     stokes_u = skymodel.U

@@ -7,6 +7,7 @@ from simms.skymodel.source_factory import Source
 from daskms import xds_from_ms, xds_from_table
 from simms.skymodel.converters import radec2lm
 
+
 def vis_noise_from_sefd_and_ms(ms:Union[MS,str], sefd:float, spw_id:int=0, field_id:int=0):
     """
     Compute per visibility noise from an SEFD and MS 
@@ -190,7 +191,6 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
     else:
         vis = np.stack((vis_xx,vis_xy, vis_yx, vis_yy), axis=-1)
     
-    
     if noise_vis:
         vis = add_noise(vis, noise_vis)
     
@@ -198,9 +198,10 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
     
     
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.ndarray], chan_freqs: np.ndarray,
-                        polarisation: bool, use_dft: bool, mode: Union[None, str], input_vis: Union[None, np.ndarray],
-                        ncorr: int, delta_ra: Optional[int]=None, delta_dec: Optional[int]=None, do_wstacking: Optional[bool]=True,
-                        epsilon: Optional[float]=1e-7, noise: Optional[float]=None, nthreads: Optional[int]=8,):
+                        polarisation: bool, use_dft: bool, ncorr: int, delta_ra: Optional[int]=None, 
+                        delta_dec: Optional[int]=None, do_wstacking: Optional[bool]=True,
+                        epsilon: Optional[float]=1e-7, noise: Optional[float]=None, nthreads: Optional[int]=8,
+                        ):
     """
     Augmented version of im_to_vis
     Args:
@@ -265,7 +266,5 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
 
     if noise:
         vis = add_noise(vis, noise)
-    if isinstance(input_vis, np.ndarray):
-        vis = add_to_vis(input_vis, vis, subtract= mode == "subtract")
 
     return vis

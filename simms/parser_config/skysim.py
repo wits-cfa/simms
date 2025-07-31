@@ -28,11 +28,9 @@ log = get_logger(BIN.skysim, level="ERROR")
 command = BIN.skysim
 
 thisdir = os.path.dirname(__file__)
-
 source_files = glob.glob(f"{thisdir}/library/*.yaml")
 sources = [File(item) for item in source_files]
 parserfile = File(f"{thisdir}/{command}.yaml")
-
 config = paramfile_loader(parserfile, sources)[command]
 
 
@@ -152,9 +150,9 @@ def runit(**kwargs):
             msds.UVW.data, ("row", "uvw"),
             lm, ("npix", "lm") if use_dft else None,
             freqs, ("chan",),
-            polarisation, None,
-            use_dft, None,
-            ncorr, None,
+            polarisation = polarisation,
+            use_dft = use_dft,
+            ncorr = ncorr,
             delta_ra = delta_ra,
             delta_dec = delta_dec,
             epsilon = epsilon,

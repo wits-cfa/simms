@@ -101,7 +101,9 @@ class FitsData:
         Returns:
             astropy.SpectralCoord: Astropy SpectralCoord instance
         """
-        
+        #TODO(sphe,mika) Add command-line option for the rest frequency
+        ## then it doesn't have to be in the header.
+        ## If not specified and not in header, raise an exception.
         rest_freq_Hz = rest_freq_Hz or self.header["RESTFRQ"]
         return SpectralCoord(self.coords["VRAD"], 
                 unit=units.meter/units.second).to(units.Hz, 
@@ -189,7 +191,7 @@ class FitsData:
     def add_coord(self, name, dim, dimgrid):
         self.coords[name] = dim, dimgrid
         
-    def extend_stokes(self, filename: str, memmap:bool=True):
+    def extend_stokes(self, filename: str):
         # read new file
         hdulist = fits.open(filename)
         phdu = hdulist[0]
@@ -224,6 +226,8 @@ class FitsData:
         self.spectral_coord = coord
         self.spectral_units = self.wcs.spectral.world_axis_units[0]
         self.spectral_refpix = self.header.get(f"CRPIX{self.ndim - idx}")
+        self.spectral_restfreq = self.header.get("RESTFRQ", None)
+                                            
         
     def set_celestial_dimensions(self, empty:bool=True):
         """
@@ -258,8 +262,8 @@ class FitsData:
         grid = self.wcs.celestial.array_index_to_world_values(da.arange(ra_dimsize),
                                         da.arange(dec_dimsize))
         
-        self.coords[dec_dim] = ("celesstial.ra",), grid[1]
-        self.coords[ra_dim] = ("celestial.dec",), grid[0]
+        self.coords[dec_dim] = ("celesstial.dec",), grid[1]
+        self.coords[ra_dim] = ("celestial.ra",), grid[0]
 
     @property
     def data(self):
