@@ -257,7 +257,9 @@ class Array:
 
         return enu
 
-    def uvgen(self, pointing_direction, dtime, ntimes, start_time=None, start_ha=None) -> ObjDict:
+    def uvgen(self, pointing_direction, dtime, ntimes, 
+              start_freq, dfreq, nchan,
+              start_time=None, start_ha=None) -> ObjDict:
         """
         Generate uvw coordimates
 
@@ -270,6 +272,13 @@ class Array:
                     : integration time.
         ntimes: int
                     : number of times the sky should be snapped.
+        start_freq: Union[str,float]
+                    : starting freq of the observation.
+        dfreq: Union[str,float]
+                    : frequency interval.
+        nchan: int
+                    : number of channels.
+                    
         start_time: Union[str, List[str]]
                     : start time of the observation date and time ("YYYY/MM/DD 12:00:00", ["EPOCH", "YYYY/MM/DD 12:00:00"])
                         default is the current machine time.
@@ -367,11 +376,19 @@ class Array:
 
         time_table = np.array(time_table).flatten()
         
+         
+        start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
+        dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
+        end_freq = start_freq + dfreq * (nchan -1)
+            
+        freqs = np.linspace(start_freq, end_freq, nchan)
+            
         uvcoverage = ObjDict(
             {
                 "antenna1": antenna1_list,
                 "antenna2": antenna2_list,
                 "uvw": uvw,
+                "freqs": freqs,
                 "times": time_table,
                 "source_elevations": source_elevations,
             
