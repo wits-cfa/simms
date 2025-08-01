@@ -169,7 +169,6 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
     for source in sources:
         phase = calculate_phase_factor(source)
         bmatrix = source.stokes.get_brightness_matrix(ncorr, pol_basis=="linear")
-        
         vis_xx += bmatrix[0,...]*phase
         if ncorr == 2:
             if polarisation:
@@ -184,12 +183,12 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
             else:
                 vis_xy = np.zeros_like(vis_xx) 
                 vis_yx = np.zeros_like(vis_xx) 
-                vis_yy = vis_xx
+                vis_yy += vis_xx
                 
     if ncorr == 2:
         vis = np.stack((vis_xx, vis_yy), axis=-1)
     else:
-        vis = np.stack((vis_xx,vis_xy, vis_yx, vis_yy), axis=-1)
+        vis = np.stack((vis_xx, vis_xy, vis_yx, vis_yy), axis=-1)
     
     if noise_vis:
         vis = add_noise(vis, noise_vis)
@@ -222,6 +221,7 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
     Returns:
         vis: visibility array
     """
+    
     # if sparse, use DFT
     if use_dft:
         if polarisation:
@@ -230,8 +230,6 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
             image = image[..., 0]
             vis = dft_im_to_vis(image[..., np.newaxis], uvw, lm, chan_freqs, convention='casa')
             vis = stack_unpolarised_vis(vis[...,0], ncorr)
-
-    # else, use FFT
     else:
         image = np.transpose(image, axes=(3, 2, 0, 1))
         if polarisation:
@@ -263,7 +261,7 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
                 )
             
             vis = stack_unpolarised_vis(vis, ncorr)
-
+    
     if noise:
         vis = add_noise(vis, noise)
 

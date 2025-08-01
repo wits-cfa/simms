@@ -79,8 +79,8 @@ def skymodel_from_catalogue(catfile:File, map_path, delimiter,
         stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
         setattr(src, "stokes", stokes)
         mod_sources.append(src)
-        
-        return mod_sources
+    
+    return mod_sources
     
 
 
@@ -263,6 +263,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     
     # decide whether image is sparse enough for DFT
     sparsity = 1 - (non_zero_predict_image.size/predict_image.size)
+    
     
     if use_dft is None:
         if sparsity >= 0.8:

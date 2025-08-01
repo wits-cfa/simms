@@ -161,7 +161,7 @@ def runit(**kwargs):
             dtype = msds.DATA.data.dtype,
             concatenate=True,
         )
-         
+        
     elif opts.sefd:
         # Simulate noise if no skymodel is given
         simvis = da.blockwise(
