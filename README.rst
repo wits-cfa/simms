@@ -12,9 +12,7 @@ Tools for:
 2. Simulating sky models into them. 
 
 
-.. `Documentation Page <https://simms.readthedocs.io/>`_  
-.. =========================================================================================
-
+`Read The Docs <https://simms.readthedocs.io/>`_  
 
 
 .. |Pypi Version| image:: https://img.shields.io/pypi/v/simms.svg
