@@ -1,61 +1,10 @@
-
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 from simms.utilities import (
     CatalogueError,
     isnummber,
     )
-from simms.skymodel.converters import (
-    convert2float,
-    convert2Hz,
-    convert2Jy,
-    convert2rad,
-    convertdec2rad,
-    convertra2rad,
-    radec2lm
-)
-
-class CatSource: 
-    def __init__(self, name:str, ra:float, dec:float,
-            emaj:float, emin:float, pa:float):
-        """AI is creating summary for __init__
-
-        Args:
-            name (str): [description]
-            ra (float): [description]
-            dec (float): [description]
-            emaj (float): [description]
-            emin (float): [description]
-            pa (float): [description]
-        """
-        self.name = name
-        self.ra = convertra2rad(ra)
-        self.dec = convertdec2rad(dec)
-        self.shape = None
-        self.emaj = convert2rad(emaj,0)
-        self.emin = convert2rad(emin,0)
-        self.pa = convert2rad(pa,0)
-
-    def add_stokes(self, stokes_i:int, stokes_q:int, stokes_u:int, stokes_v:int): 
-        # Intensity
-        self.stokes_i = convert2Jy(stokes_i,0),
-        self.stokes_q = convert2Jy(stokes_q,0),
-        self.stokes_u = convert2Jy(stokes_u,0),
-        self.stokes_v = convert2Jy(stokes_v,0),
-        
-    def add_spectral(self, line_peak, line_width, line_restfreq,
-                cont_reffreq, cont_coeff_1, cont_coeff_2):
-    # Frequency info
-        self.line_peak = convert2Hz(line_peak,False)
-        self.line_width = convert2Hz(line_width,0)
-        self.line_restfreq = convert2Hz(line_restfreq, None)
-        self.cont_reffreq = convert2Hz(cont_reffreq, None)
-        self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
-        self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
-
-    @property
-    def is_point(self):
-        return self.emaj in  ('null',None) and self.emin in (None, 'null') 
+from simms.skymodel.source_factory import CatSource
 
 
 def catalogue2dict(catfile, map_path, delimiter):

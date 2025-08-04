@@ -264,7 +264,6 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     # decide whether image is sparse enough for DFT
     sparsity = 1 - (non_zero_predict_image.size/predict_image.size)
     
-    
     if use_dft is None:
         if sparsity >= 0.8:
             log.info(f"More than 80% of pixels have intensity < {(tol*1e6):.2f} μJy. DFT will be used for visibility prediction.")
@@ -296,4 +295,3 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         )
         
         return non_zero_predict_image, non_zero_lm, has_stokes, use_dft, None, None
-    
