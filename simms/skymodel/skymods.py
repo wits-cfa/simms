@@ -114,13 +114,11 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         if full_stokes:
             for fits_image in input_fitsimages[1:]:
                 fds.extend_stokes(fits_image)
-        
     else:
         fds = FitsData(input_fitsimages)
         fds.register_dimensions(set_dims=['spectral', 'celestial'])
     
     has_stokes = "STOKES" in fds.coord_names
-    # ra_coords, delta_ra, dec_coords, delta_dec = None, None, None, None
                 
     # computes edges of FITS and MS frequency axes
     ms_start_freq = chan_freqs[0] - 0.5*(ms_delta_nu)
@@ -163,7 +161,10 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     # reshape FITS data to (n_pix_l, n_pix_m, nchan)
     
     trgt_shape = ["STOKES", "RA", "DEC", "FREQ"] if has_stokes else ["RA", "DEC", "FREQ"]
-    skymodel = fds.get_xds(transpose=trgt_shape).data
+    if trgt_shape == ["STOKES", "RA", "DEC", "FREQ"]:
+        skymodel = fds.get_xds(transpose=trgt_shape).data
+    else:
+        skymodel = fds.get_xds(transpose=trgt_shape).data[np.newaxis, ...]
     
     # get image shape
     n_pix_l = ra_coords.size 
@@ -176,30 +177,35 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         fds.register_beam_info()
         beam_area = (np.pi * fds.beam_info["bmaj"] * fds.beam_info["bmin"]) / (4 * np.log(2)) #this should also be an array
         beam_area_pixels = beam_area / pixel_area
-        if has_stokes:
-            skymodel = skymodel / beam_area_pixels[np.newaxis, np.newaxis, np.newaxis, :]
-        else:
-            skymodel = skymodel / beam_area_pixels[np.newaxis, np.newaxis, :]
+        skymodel = skymodel / beam_area_pixels[np.newaxis, np.newaxis, np.newaxis, :]
         
     elif fds.data_units == '':
-        log.warning(f"FITS sky model has no BUNIT specified. Assuming data is in Jy")
+        log.warning(f"FITS sky model has no BUNIT specified. Assuming data are in Jy")
         
     else:
-        log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data is in Jy")
+        log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data are in Jy")
         
         
     if nchan_fits > 1 and (len(chan_freqs) != len(fits_freqs) or np.any(fits_freqs != chan_freqs)):
         # interpolate FITS cube
         log.warning(f"Interpolating FITS sky model onto MS channel frequency grid. This uses a lot of memory.")
         ## The RA and Dec coordinates need to re-computed to ensure that they remain monotonically decreasing when passing zero
-        ra_grid = [ra_coords.data[0] + dra_pix*i for i in range(n_pix_l)]
-        dec_grid = [dec_coords.data[0] + ddec_pix*i for i in range(n_pix_m)]
-        fits_interp = RegularGridInterpolator((ra_grid, dec_grid, fits_freqs), skymodel)
-        
-        del ra_grid, dec_grid
-        ra, dec, vv = np.meshgrid(ra_coords.data, dec_coords.data, chan_freqs, indexing="ij")
-        radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
-        skymodel = fits_interp(radecv).reshape(n_pix_l, n_pix_m, nchan)
+        for stokes in range(skymodel.shape[0]):
+            ra_grid = np.array([ra_coords.data[0] + dra_pix*i for i in range(n_pix_l)])
+            dec_grid = np.array([dec_coords.data[0] + ddec_pix*i for i in range(n_pix_m)])
+
+            fits_interp = RegularGridInterpolator((ra_grid, dec_grid, fits_freqs), skymodel[stokes])
+            # # Debug: Check bounds
+            # print(f"RA grid range: {ra_grid.min()} to {ra_grid.max()}")
+            # print(f"Dec grid range: {dec_grid.min()} to {dec_grid.max()}")
+            # print(f"Target RA range: {ra_coords.data.min()} to {ra_coords.data.max()}")
+            # print(f"Target Dec range: {dec_coords.data.min()} to {dec_coords.data.max()}")
+            del ra_grid, dec_grid
+            print(ra_coords.data)
+            print(dec_coords.data)
+            ra, dec, vv = np.meshgrid(ra_coords.data, dec_coords.data, chan_freqs, indexing="ij")
+            radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
+            skymodel[stokes] = fits_interp(radecv).reshape(n_pix_l, n_pix_m, nchan)
 
     #TODO(mika,senkhosi): Is there a reason to have the above interpolation and conversions here, and not at the end of the function?
     
@@ -208,11 +214,10 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     stokes_q = skymodel.Q
     stokes_u = skymodel.U
     stokes_v = skymodel.V
-        
+    
     # compute per-pixel brghtness matrix
-    if not has_stokes or full_stokes is False: # if no has_stokes is present
+    if not skymodel.is_polarised or full_stokes is False: # is sky model has no polarisation
         predict_image = np.zeros((n_pix_l, n_pix_m, nchan, ncorr)) # create pixel grid for sky model
-        
         if ncorr == 2: # if ncorr is 2, we only need compute XX and duplicate to YY
             predict_image[:, :, :, 0] = stokes_i
             predict_image[:, :, :, 1] = stokes_i
@@ -222,11 +227,11 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         else:
             raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
     
-    else: # if has_stokes is present
+    else: # if sky model is polarised
         predict_image = np.zeros((n_pix_l, n_pix_m, nchan, ncorr), dtype=np.complex128) # create pixel grid for sky model
         if basis == "linear":
             if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
-                log.warning("Only two correlations requested, but four are present in the FITS image directory. Using only Stokes I and Q.")
+                log.warning("Only two correlations in the MS, but four are present in the FITS sky model. Using only Stokes I and Q.")
                 predict_image[:, :, :, 0] = stokes_i + stokes_q
                 predict_image[:, :, :, 1] = stokes_i - stokes_q
             elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
@@ -238,7 +243,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                 raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
         elif basis == "circular":
             if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
-                log.warning("Only two correlations requested, but four are present in the FITS image directory. Using only Stokes I and V.")
+                log.warning("Only two correlations in the MS, but four are present in the FITS sky model. Using only Stokes I and V.")
                 predict_image[:, :, :, 0] = stokes_i + stokes_v
                 predict_image[:, :, :, 1] = stokes_i - stokes_v
             elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
@@ -249,10 +254,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
             else:
                 raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
         else:
-            raise ValueError(f"Unrecognised has_stokes basis '{basis}'. Use 'linear' or 'circular'.")
-
-
-    #TODO(mika,senkhosi) there are two many reshaping operations. If you know the actual target (required by im_to_vis), then reshape in the original data to that shape from the start.
+            raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
     
     # reshape predict_image to im_to_vis expectations
     reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, nchan, ncorr)
@@ -277,12 +279,12 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                 tol_mask
             )
             
-            return non_zero_predict_image, non_zero_lm, has_stokes, use_dft, None, None
+            return non_zero_predict_image, non_zero_lm, skymodel.is_polarised, use_dft, None, None
         else:
             log.info(f"More than 20% of pixels have intensity > {(tol*1e6):.2f} μJy. FFT will be used for visibility prediction.")
             use_dft = False
             
-            return predict_image, None, has_stokes, use_dft, ra_coords.pixel_size, dec_coords.pixel_size,
+            return predict_image, None, skymodel.is_polarised, use_dft, ra_coords.pixel_size, dec_coords.pixel_size,
     else:
         log.info(f"Filtered out {sparsity*100:.2f}% of pixels using {(tol*1e6):.2f}-μJy tolerance.")
         non_zero_lm = compute_lm_coords(
@@ -294,4 +296,4 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
             tol_mask
         )
         
-        return non_zero_predict_image, non_zero_lm, has_stokes, use_dft, None, None
+        return non_zero_predict_image, non_zero_lm, skymodel.is_polarised, use_dft, None, None

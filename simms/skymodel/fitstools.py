@@ -3,11 +3,14 @@ import dask.array as da
 import xarray as xr
 import numpy as np
 from astropy.wcs import WCS
+from simms import BIN, get_logger
 from scabha.basetypes import File
 from astropy.table import Table
 from astropy.coordinates import SpectralCoord
 from astropy import units
 
+
+log = get_logger(BIN.skysim)
 
 class FitsData:
     def __init__(self, fname: str, memmap: bool = True):
@@ -26,7 +29,7 @@ class FitsData:
         self.coords = xr.Coordinates()
         self.open_arrays = []
         self.data = da.asarray(self.phdu.data)
-        self.data_units = self.header.get("BUNIT", "jy")
+        self.data_units = self.header.get("BUNIT", "jy").lower()
 
     @property
     def data(self):
@@ -43,7 +46,6 @@ class FitsData:
         Args:
             name (str): Name (or label) of coordinate to set
         """
-        
         idx = self.coord_names.index(name)
         self.coords[name].attrs = {
             "name": name,
@@ -129,7 +131,6 @@ class FitsData:
         self.beam_info = {
             "bmaj": <array>,
             "bmin": <array>,
-            "bpa": <array>, 
         }
         """
         header = self.header
@@ -143,22 +144,20 @@ class FitsData:
         beam_info = {}
         beam_info["bmaj"] = np.zeros(self.nchan)
         beam_info["bmin"] = np.zeros(self.nchan)
-        beam_info["bpa"] = np.zeros(self.nchan)
-    
+
         if beam_table:
             bunit = beam_table["BMAJ"].unit
             for chan in range(self.nchan):
                 beam = beam_table[chan]
                 beam_info["bmaj"][chan] = beam["BMAJ"]
                 beam_info["bmin"][chan] = beam["BMIN"]
-                beam_info["bpa"][chan] = beam["BPA"]
                 
         elif header.get(f"BMAJ1", False):
             bunit = self.coords["RA"].attrs["units"]
             for chan in range(self.nchan):
                 beam_info["bmaj"][chan] = header[f"BMAJ{chan+1}"]
                 beam_info["bmin"][chan] = header[f"BMIN{chan+1}"]
-                beam_info["bpa"][chan] = header[f"BPA{chan+1}"]
+
         elif header.get("BMAJ", False):
             bunit = self.coords["RA"].attrs["units"]
             if self.spectral_coord == "VRAD":
@@ -172,9 +171,10 @@ class FitsData:
                 scale_factor = freqs[self.spectral_refpix]/freqs[chan]
                 beam_info["bmaj"][chan] = header[f"BMAJ"] * scale_factor
                 beam_info["bmin"][chan] = header[f"BMIN"] * scale_factor
-                beam_info["bpa"][chan] = header[f"BPA"]
+
         else:
-            #TODO(mika): Print warning
+            log.warning(f"FITS sky model has BUNIT Jy/beam but not beam info has been provided"
+                        "in the header or given in beam table.")
             return
         
         # convert to radians
@@ -183,7 +183,6 @@ class FitsData:
         
         beam_info["bmaj"] = (beam_info["bmaj"]*bunit).to(units.rad).value
         beam_info["bmin"] = (beam_info["bmin"]*bunit).to(units.rad).value
-        beam_info["bpa"] = (beam_info["bpa"]*bunit).to(units.rad).value
         
         self.beam_info = beam_info
         return 0 
@@ -196,7 +195,7 @@ class FitsData:
         hdulist = fits.open(filename)
         phdu = hdulist[0]
         axis = "STOKES"
-    
+
         idx = self.coord_names.index(axis)
         slc = [slice(None)]*self.ndim
         slc[idx] = 0
@@ -208,11 +207,15 @@ class FitsData:
         
         # update shape
         self.dshape = self.data.shape
-        
-        # update coord
+
+        # update coord - convert to dict, update, and recreate
         dim_size = self.dshape[idx]
-        self.coords[axis] = ("stokes,"), da.arange(dim_size)
+        coords_dict = dict(self.coords)
+        coords_dict[axis] = (axis, da.arange(dim_size))
+        self.coords = xr.Coordinates(coords_dict)
+        self.set_coord_attrs(axis)
         
+
     def set_spectral_dimension(self, idx, empty=False):
         dimsize = self.dshape[idx]
         
@@ -225,7 +228,7 @@ class FitsData:
         self.nchan = dimsize
         self.spectral_coord = coord
         self.spectral_units = self.wcs.spectral.world_axis_units[0]
-        self.spectral_refpix = self.header.get(f"CRPIX{self.ndim - idx}")
+        self.spectral_refpix = int(self.header.get(f"CRPIX{self.ndim - idx}"))
         self.spectral_restfreq = self.header.get("RESTFRQ", None)
                                             
         
@@ -262,7 +265,7 @@ class FitsData:
         grid = self.wcs.celestial.array_index_to_world_values(da.arange(ra_dimsize),
                                         da.arange(dec_dimsize))
         
-        self.coords[dec_dim] = ("celesstial.dec",), grid[1]
+        self.coords[dec_dim] = ("celestial.dec",), grid[1]
         self.coords[ra_dim] = ("celestial.ra",), grid[0]
 
     @property
