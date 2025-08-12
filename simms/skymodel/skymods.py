@@ -5,6 +5,8 @@ from simms.utilities import (
     FITSSkymodelError as SkymodelError, 
     )
 import numpy as np
+import dask.array as da
+import xarray as xr
 from numba import njit, prange
 from simms.skymodel.fitstools import FitsData
 from simms.skymodel.catalogue_reader import load_sources
@@ -14,7 +16,6 @@ from simms.skymodel.source_factory import (
         gauss_1d,
         contspec,
 )
-from scipy.interpolate import RegularGridInterpolator
 from simms.skymodel.converters import radec2lm
 from astropy import units
 
@@ -185,27 +186,26 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     else:
         log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data are in Jy")
         
+    interp_stokes = []
+    for stokes in range(skymodel.shape[0]):
+        ra_grid = np.array([ra_coords.data[0] + dra_pix*i for i in range(n_pix_l)])
+        dec_grid = np.array([dec_coords.data[0] + ddec_pix*i for i in range(n_pix_m)])
         
-    if nchan_fits > 1 and (len(chan_freqs) != len(fits_freqs) or np.any(fits_freqs != chan_freqs)):
-        # interpolate FITS cube
-        log.warning(f"Interpolating FITS sky model onto MS channel frequency grid. This uses a lot of memory.")
-        ## The RA and Dec coordinates need to re-computed to ensure that they remain monotonically decreasing when passing zero
-        for stokes in range(skymodel.shape[0]):
-            ra_grid = np.array([ra_coords.data[0] + dra_pix*i for i in range(n_pix_l)])
-            dec_grid = np.array([dec_coords.data[0] + ddec_pix*i for i in range(n_pix_m)])
+        data = xr.DataArray(
+            skymodel[stokes],
+            coords={"ra": ra_grid, "dec": dec_grid, "freq": fits_freqs},
+            dims=["ra", "dec", "freq"]
+        )
+        
+        interp_data = data.interp(
+            ra=ra_grid,
+            dec=dec_grid,
+            freq=chan_freqs
+        )
+        interp_stokes.append(interp_data.data)
 
-            fits_interp = RegularGridInterpolator((ra_grid, dec_grid, fits_freqs), skymodel[stokes])
-            # # Debug: Check bounds
-            # print(f"RA grid range: {ra_grid.min()} to {ra_grid.max()}")
-            # print(f"Dec grid range: {dec_grid.min()} to {dec_grid.max()}")
-            # print(f"Target RA range: {ra_coords.data.min()} to {ra_coords.data.max()}")
-            # print(f"Target Dec range: {dec_coords.data.min()} to {dec_coords.data.max()}")
-            del ra_grid, dec_grid
-            print(ra_coords.data)
-            print(dec_coords.data)
-            ra, dec, vv = np.meshgrid(ra_coords.data, dec_coords.data, chan_freqs, indexing="ij")
-            radecv = np.vstack((ra.ravel(), dec.ravel(), vv.ravel())).T
-            skymodel[stokes] = fits_interp(radecv).reshape(n_pix_l, n_pix_m, nchan)
+    # combine into new array with shape (n_stokes, n_pix_l, n_pix_m, len(chan_freqs))
+    skymodel = da.stack(interp_stokes, axis=0)
 
     #TODO(mika,senkhosi): Is there a reason to have the above interpolation and conversions here, and not at the end of the function?
     
@@ -291,8 +291,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
             phase_centre,
             n_pix_l,
             n_pix_m, 
-            ra_coords, 
-            dec_coords, 
+            ra_coords.data, 
+            dec_coords.data, 
             tol_mask
         )
         
