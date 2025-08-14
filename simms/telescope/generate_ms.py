@@ -47,12 +47,12 @@ def create_ms(
     correlations: str,
     row_chunks: int,
     sefd: float,
-    tsys_over_eta: float,
     column: str,
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
     freq_range: str = None,
     sfile: File = None,
+    tsys_over_eta: float=None,
     subarray_list: List[str] = None,
     subarray_range: List[int] = None,
     subarray_file: File = None,
@@ -194,26 +194,43 @@ def create_ms(
     nbaselines = num_ants * (num_ants - 1) // 2
     
     sefd = telescope_array.sefd
+    noise_freqs = telescope_array.noise_freqs
+    
     
     if sefd:
-        noise = get_noise(sefd, dtime, dfreq)
+        
         dummy_data = np.random.randn(
             num_rows, num_chans, num_corr
         ) + 1j * np.random.randn(num_rows, num_chans, num_corr)
         
-        if isinstance(noise, (float, int)):
-            noisy_data = da.array(dummy_data * noise, like=data).rechunk(
-                chunks=data.chunks
-            )
+        if noise_freqs:
+            x = noise_freqs
+            y = sefd
+            fit_parms = np.polyfit(x, y, 4)
+            fit_func = np.poly1d(fit_parms)
+            freq_mhz = freqs / 1e6
+            sefd_chan = fit_func(freq_mhz)
+            noise_chan = sefd_chan / np.sqrt(2 * dfreq * dtime)
+            noisy_data = da.array(dummy_data * noise_chan[0][None, :, None], like=data).rechunk(chunks=data.chunks)
+   
+        elif not noise_freqs:
+            noise = get_noise(sefd, dtime, dfreq)
             
-        else:
-            dummy_data_resh = dummy_data.reshape((ntimes,nbaselines,num_chans,num_corr))
-            noisy_dummy_data = dummy_data_resh * np.array(noise)[None,:,None,None]
-            noisy_result = noisy_dummy_data.reshape((ntimes*nbaselines, num_chans, num_corr))
-            noisy_data = da.array(noisy_result, like=data).rechunk(
-                chunks=data.chunks
-            )
-
+            
+            if isinstance(noise, (float, int)):
+                noisy_data = da.array(dummy_data * noise, like=data).rechunk(
+                    chunks=data.chunks
+                )
+                
+            else:
+                dummy_data_resh = dummy_data.reshape((ntimes,nbaselines,num_chans,num_corr))
+                noisy_dummy_data = dummy_data_resh * np.array(noise)[None,:,None,None]
+                noisy_result = noisy_dummy_data.reshape((ntimes*nbaselines, num_chans, num_corr))
+                noisy_data = da.array(noisy_result, like=data).rechunk(
+                    chunks=data.chunks
+                )
+            
+ 
         ds[column] = (("row", "chan", "corr"), noisy_data)
 
     src_elevs = uvcoverage_data.source_elevations
