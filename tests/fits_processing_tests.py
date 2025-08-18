@@ -260,7 +260,7 @@ class TestFITSProcessing(unittest.TestCase):
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
         test_filename = f'test_{uuid.uuid4()}.fits'
-        print(f"test_stokes_I_processing_with_interp_bounds_error: {test_filename}")
+        print(f"test_stokes_I_processing_with_interp_bounds_error created the file: {test_filename}")
         self.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
         
