@@ -131,7 +131,7 @@ def runit(**kwargs):
             raise ParameterError("FITS file/directory does not exist")
         
         # process FITS sky model
-        image, lm, polarisation, use_dft, delta_ra, delta_dec = skymodel_from_fits(
+        image, lm, polarisation, expand_freq_dim, use_dft, delta_ra, delta_dec = skymodel_from_fits(
             fs, 
             ra0, 
             dec0, 
@@ -151,6 +151,7 @@ def runit(**kwargs):
             lm, ("npix", "lm") if use_dft else None,
             freqs, ("chan",),
             polarisation = polarisation,
+            expand_freq_dim = expand_freq_dim,
             use_dft = use_dft,
             ncorr = ncorr,
             delta_ra = delta_ra,
