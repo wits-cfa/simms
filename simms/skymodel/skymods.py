@@ -1,4 +1,4 @@
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Dict
 from scabha.basetypes import File
 from simms import BIN, get_logger
 from simms.utilities import (
@@ -8,7 +8,7 @@ import numpy as np
 import dask.array as da
 import xarray as xr
 from numba import njit, prange
-from simms.skymodel.fitstools import FitsData
+from fitstoolz.reader import FitsData
 from simms.skymodel.catalogue_reader import load_sources
 from simms.skymodel.source_factory import (
         StokesData,
@@ -87,7 +87,7 @@ def skymodel_from_catalogue(catfile:File, map_path, delimiter,
 
 def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
                         ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, full_stokes:bool=True,
-                        use_dft: Optional[bool]=None) -> tuple:
+                        use_dft: Optional[bool]=None, stack_axis="STOKES", stack_axis_index=None) -> tuple:
     """
     Processes FITS skymodel into DFT input
     Args:
@@ -99,8 +99,9 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         ncorr (int): number of correlations
         basis (str): polarisation basis ("linear" or "circular")
         tol (float): tolerance for pixel brightness
-        stokes Union[int,str]: Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). 
+        stokes (Union[int,str]): Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). 
                             If 'all', all Stokes parameters are used.
+        stack_axis (str|Dict): Stack FITS images along this axis if multiple input images given. If Dict, then these should be options to 'fitstoolz.reader.FitsData.add_axis()'
     Returns:
         predict_image (np.ndarray): pixel-by-pixel brightness matrix for each channel and correlation
         lm (np.ndarray): (l, m) coordinate grid for DFT
@@ -110,14 +111,30 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     
     if isinstance(input_fitsimages, List):
         fds = FitsData(input_fitsimages[0])
-        fds.register_dimensions(set_dims=['spectral', 'celestial'])
-        # No need to read the rest of the files in not using full_stokes
-        if full_stokes:
-            for fits_image in input_fitsimages[1:]:
-                fds.extend_stokes(fits_image)
+        if isinstance(stack_axis, Dict):
+            stack_options = dict(stack_axis)
+            stack_axis = stack_options["name"]
+            fds.add_axis(**stack_axis)
+        elif not isinstance(stack_axis, str):
+            raise TypeError(f"Option 'stack_axis' must either be a string or a dictionary. Found {type(stack_axis)}")
+        elif stack_axis not in fds.coord_names:
+            if stack_axis == "STOKES":
+                stack_options = {
+        "name" : "STOKES",
+        "idx": 0,
+        "axis_grid": da.asarray([0]),
+        "coord_type": "stokes",
+        "attrs": dict(ref_pixel=0, units="jy", size=1, dim="stokes", pixel_size=1),
+    }
+                fds.add_axis(**stack_options)
+            else:
+                raise RuntimeError(f"Input skymodel FITS images cannot combined along the given axis '{stack_axis}' because it doesn't exist in the input images")
+        else:
+            raise ValueError("stack_axis value unknown. Please review it.")
+        
+        fds.expand_along_axis_from_files(stack_axis,input_fitsimages[1:])
     else:
         fds = FitsData(input_fitsimages)
-        fds.register_dimensions(set_dims=['spectral', 'celestial'])
     
     has_stokes = "STOKES" in fds.coord_names
                 
@@ -145,8 +162,6 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         fits_freqs = fds.coords["FREQ"].data
         fits_d_nu = fds.coords["FREQ"].pixel_size
     
-    
-    nchan_fits = len(fits_freqs)
     fits_start_freq = fits_freqs[0] - 0.5 * fits_d_nu
     fits_end_freq = fits_freqs[-1] + 0.5 * fits_d_nu
     
@@ -159,8 +174,6 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                             f"are out of bounds of FITS image frequencies[{fits_start_freq/1e9:.6f} GHz, {fits_end_freq/1e9:.6f} GHz]. "
                             "Cannot interpolate FITS image onto MS frequency grid.")
     
-    # reshape FITS data to (n_pix_l, n_pix_m, nchan)
-    
     trgt_shape = ["STOKES", "RA", "DEC", "FREQ"] if has_stokes else ["RA", "DEC", "FREQ"]
     if trgt_shape == ["STOKES", "RA", "DEC", "FREQ"]:
         skymodel = fds.get_xds(transpose=trgt_shape).data
@@ -170,13 +183,12 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     # get image shape
     n_pix_l = ra_coords.size 
     n_pix_m = dec_coords.size
-    dra_pix = ra_coords.pixel_size
-    ddec_pix = dec_coords.pixel_size
 
     # convert from intensity to Jy
     if fds.data_units == 'jy/beam':
-        fds.register_beam_info()
-        beam_area = (np.pi * fds.beam_info["bmaj"] * fds.beam_info["bmin"]) / (4 * np.log(2)) #this should also be an array
+        bmaj = fds.beam_table["BMAJ"].to("rad").value
+        bmin = fds.beam_table["BMIN"].to("rad").value
+        beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2)) #this should also be an array
         beam_area_pixels = beam_area / pixel_area
         skymodel = skymodel / beam_area_pixels[np.newaxis, np.newaxis, np.newaxis, :]
         
@@ -188,8 +200,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         
     interp_stokes = []
     for stokes in range(skymodel.shape[0]):
-        ra_grid = np.array([ra_coords.data[0] + dra_pix*i for i in range(n_pix_l)])
-        dec_grid = np.array([dec_coords.data[0] + ddec_pix*i for i in range(n_pix_m)])
+        ra_grid = fds.coords["RA"].data * getattr(units, fds.coords["RA"].units).to("rad").value
+        dec_grid = fds.coords["DEC"].data * getattr(units, fds.coords["DEC"].units).to("rad").value
         
         data = xr.DataArray(
             skymodel[stokes],

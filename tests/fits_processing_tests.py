@@ -184,7 +184,7 @@ class TestFITSProcessing(unittest.TestCase):
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
 
-             
+            
     def test_stokes_I_with_freq_interp_processing(self):
         """
         Tests if Stokes I only FITS file is processed correctly with frequencies not matching MS channel frequencies
