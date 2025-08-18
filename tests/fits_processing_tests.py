@@ -236,6 +236,10 @@ class TestFITSProcessing(unittest.TestCase):
         cover the full range of the MS frequency axis.
         Validates:
             - error message
+        Note:
+        This test triggers a SkymodelError before the FITS dataset is closed,
+        which causes a ResourceWarning about an unclosed file. This is expected
+        and harmless for this test.
         """
         # we make the FITS frequencies [1e9, 2e9]
         
@@ -256,6 +260,7 @@ class TestFITSProcessing(unittest.TestCase):
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
         test_filename = f'test_{uuid.uuid4()}.fits'
+        print(f"test_stokes_I_processing_with_interp_bounds_error: {test_filename}")
         self.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
         

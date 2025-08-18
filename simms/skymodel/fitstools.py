@@ -193,27 +193,30 @@ class FitsData:
     def extend_stokes(self, filename: str):
         # read new file
         hdulist = fits.open(filename)
-        phdu = hdulist[0]
-        axis = "STOKES"
+        try:
+            phdu = hdulist[0]
+            axis = "STOKES"
 
-        idx = self.coord_names.index(axis)
-        slc = [slice(None)]*self.ndim
-        slc[idx] = 0
-        axis_data = da.from_array(phdu.section[tuple(slc)])
-        
-        # extend data
-        slc[idx] = da.newaxis
-        self.data = da.concatenate((self.data, axis_data[tuple(slc)]), axis=idx)
-        
-        # update shape
-        self.dshape = self.data.shape
+            idx = self.coord_names.index(axis)
+            slc = [slice(None)]*self.ndim
+            slc[idx] = 0
+            axis_data = da.from_array(phdu.section[tuple(slc)])
+            
+            # extend data
+            slc[idx] = da.newaxis
+            self.data = da.concatenate((self.data, axis_data[tuple(slc)]), axis=idx)
+            
+            # update shape
+            self.dshape = self.data.shape
 
-        # update coord - convert to dict, update, and recreate
-        dim_size = self.dshape[idx]
-        coords_dict = dict(self.coords)
-        coords_dict[axis] = (axis, da.arange(dim_size))
-        self.coords = xr.Coordinates(coords_dict)
-        self.set_coord_attrs(axis)
+            # update coord - convert to dict, update, and recreate
+            dim_size = self.dshape[idx]
+            coords_dict = dict(self.coords)
+            coords_dict[axis] = (axis, da.arange(dim_size))
+            self.coords = xr.Coordinates(coords_dict)
+            self.set_coord_attrs(axis)
+        finally:
+            hdulist.close()
         
 
     def set_spectral_dimension(self, idx, empty=False):

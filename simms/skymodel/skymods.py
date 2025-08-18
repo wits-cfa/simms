@@ -165,6 +165,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     else:
         skymodel = fds.get_xds(transpose=trgt_shape).data[np.newaxis, ...]
     
+    fds.close()
+    
     # get image shape
     n_pix_l = ra_coords.size 
     n_pix_m = dec_coords.size
@@ -180,9 +182,10 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         
     elif fds.data_units == '':
         log.warning(f"FITS sky model has no BUNIT specified. Assuming data are in Jy")
-        
-    else:
+
+    elif fds.data_units != 'jy':
         log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data are in Jy")
+    
             
     if nchan_fits > 1:
         expand_freq_dim = False
@@ -211,7 +214,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         expand_freq_dim = nchan > 1
     
     #TODO(mika,senkhosi): Is there a reason to have the above interpolation and conversions here, and not at the end of the function?
-    
+
     skymodel = StokesDataFits(fds.coords["STOKES"], skymodel)
     stokes_i = skymodel.I
     stokes_q = skymodel.Q
