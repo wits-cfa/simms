@@ -141,7 +141,19 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     # computes edges of FITS and MS frequency axes
     ms_start_freq = chan_freqs[0] - 0.5*(ms_delta_nu)
     ms_end_freq = chan_freqs[-1] + 0.5*(ms_delta_nu)
-    
+    # If FITS file doesn't have a spectral axis, assume 1 frequency at MS-centre equal to MS bandwidth
+    if not hasattr(fds, "spectral_coord"):
+        crval = ms_start_freq + (ms_end_freq - ms_start_freq)/2
+        fds.add_axis("FREQ", 0, coord_type="spectral",
+                axis_grid=da.asarray( [crval] ),
+                attrs = {
+                    "pixel_size": ms_end_freq - ms_start_freq,
+                    "size": 1,
+                    "units": "Hz",
+                    "ref_pixel": 0,
+                }
+        )
+        
     if fds.spectral_coord == "VRAD":
         fits_freqs = fds.get_freq_from_vrad()
         
@@ -186,11 +198,15 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
 
     # convert from intensity to Jy
     if fds.data_units == 'jy/beam':
-        bmaj = fds.beam_table["BMAJ"].to("rad").value
-        bmin = fds.beam_table["BMIN"].to("rad").value
-        beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2)) #this should also be an array
-        beam_area_pixels = beam_area / pixel_area
-        skymodel = skymodel / beam_area_pixels[np.newaxis, np.newaxis, np.newaxis, :]
+        if fds.beam_table:
+            bmaj = fds.beam_table["BMAJ"].to("rad").value
+            bmin = fds.beam_table["BMIN"].to("rad").value
+            beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2)) #this should also be an array
+            beam_area_pixels = beam_area / pixel_area
+            skymodel = skymodel / beam_area_pixels[np.newaxis, np.newaxis, np.newaxis, :]
+        else:
+            log.warning(f"FITS sky model units (BUNIT) are '{fds.data_units}', but no beam information found. Assuming data are in Jy")
+            
         
     elif fds.data_units == '':
         log.warning(f"FITS sky model has no BUNIT specified. Assuming data are in Jy")
@@ -200,9 +216,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         
     interp_stokes = []
     for stokes in range(skymodel.shape[0]):
-        ra_grid = fds.coords["RA"].data * getattr(units, fds.coords["RA"].units).to("rad").value
-        dec_grid = fds.coords["DEC"].data * getattr(units, fds.coords["DEC"].units).to("rad").value
-        
+        ra_grid = fds.coords["RA"].data * getattr(units, fds.coords["RA"].units).to("rad")
+        dec_grid = fds.coords["DEC"].data * getattr(units, fds.coords["DEC"].units).to("rad")
         data = xr.DataArray(
             skymodel[stokes],
             coords={"ra": ra_grid, "dec": dec_grid, "freq": fits_freqs},
