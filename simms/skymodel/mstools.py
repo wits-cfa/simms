@@ -197,8 +197,8 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
     
     
 def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.ndarray], chan_freqs: np.ndarray,
-                        polarisation: bool, use_dft: bool, ncorr: int, delta_ra: Optional[int]=None, 
-                        delta_dec: Optional[int]=None, do_wstacking: Optional[bool]=True,
+                        polarisation: bool, expand_freq_dim: bool, use_dft: bool, ncorr: int,
+                        delta_ra: Optional[int]=None, delta_dec: Optional[int]=None, do_wstacking: Optional[bool]=True,
                         epsilon: Optional[float]=1e-7, noise: Optional[float]=None, nthreads: Optional[int]=8,
                         ):
     """
@@ -221,7 +221,6 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
     Returns:
         vis: visibility array
     """
-    
     # if sparse, use DFT
     if use_dft:
         if polarisation:
@@ -232,10 +231,11 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
             vis = stack_unpolarised_vis(vis[...,0], ncorr)
     else:
         image = np.transpose(image, axes=(3, 2, 0, 1))
+        predict_nchan = 1 if expand_freq_dim else chan_freqs.size
         if polarisation:
-            vis = np.zeros((uvw.shape[0], chan_freqs.size, ncorr), dtype=np.complex128)
+            vis = np.zeros((uvw.shape[0], predict_nchan, ncorr), dtype=np.complex128)
             for corr in range(ncorr):
-                for chan in range(chan_freqs.size):
+                for chan in range(predict_nchan):
                     vis[:, chan, corr] = fft_im_to_vis(
                         uvw,
                         np.array([chan_freqs[chan]]),
@@ -247,8 +247,8 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
                         nthreads=nthreads
                     )
         else:
-            vis = np.zeros((uvw.shape[0], chan_freqs.size), dtype=np.complex128)
-            for chan in range(chan_freqs.size):
+            vis = np.zeros((uvw.shape[0], predict_nchan), dtype=np.complex128)
+            for chan in range(predict_nchan):
                 vis[:, chan] = fft_im_to_vis(
                     uvw,
                     np.array([chan_freqs[chan]]),
@@ -262,6 +262,9 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
             
             vis = stack_unpolarised_vis(vis, ncorr)
     
+    if expand_freq_dim:
+        vis = np.repeat(vis, chan_freqs.size, axis=1)
+        
     if noise:
         vis = add_noise(vis, noise)
 

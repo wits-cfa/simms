@@ -11,7 +11,6 @@ from simms.skymodel.skymods import skymodel_from_fits
 from simms.utilities import FITSSkymodelError as SkymodelError
 
 
-
 log = get_logger(BIN.skysim)
 
 
@@ -57,16 +56,16 @@ class TestFITSProcessing(unittest.TestCase):
         # create a FITS file with Stokes I only
         wcs = WCS(naxis=4)
         wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
-        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0], 1.0])
+        wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, 3e9, 1.0])
         wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1, 1.0]
-        wcs.wcs.crval = [0, 0, self.chan_freqs[0], 1.0]
+        wcs.wcs.crval = [0, 0, self.chan_freqs[1], 1.0]
         
         # make header
         header = wcs.to_header()
         header['BUNIT'] = 'Jy'
         
         # make image
-        image = np.zeros((1, self.nchan, self.img_size, self.img_size))
+        image = np.zeros((1, 1, self.img_size, self.img_size))
         image[:, :, self.img_size//2, self.img_size//2] = 1.0 # put a point source at the center
         
         # write to FITS file
@@ -76,13 +75,12 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
-        
+        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         # create expected intensities
-        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
-        expected_intensities[self.img_size//2, self.img_size//2, :, :] = 1.0
-        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
+        expected_intensities = np.zeros((self.img_size, self.img_size, 1, self.ncorr))
+        expected_intensities[self.img_size//2, self.img_size//2, 0, :] = 1.0
+        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, 1, self.ncorr)
         non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
         expected_intensities = expected_intensities[non_zero_mask]
         
@@ -126,7 +124,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         
         # create expected intensities
@@ -171,7 +169,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -218,7 +216,7 @@ class TestFITSProcessing(unittest.TestCase):
         
         log.setLevel(logging.ERROR) # suppress warning messages
         # process the FITS file
-        intensities, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -238,6 +236,10 @@ class TestFITSProcessing(unittest.TestCase):
         cover the full range of the MS frequency axis.
         Validates:
             - error message
+        Note:
+        This test triggers a SkymodelError before the FITS dataset is closed,
+        which causes a ResourceWarning about an unclosed file. This is expected
+        and harmless for this test.
         """
         # we make the FITS frequencies [1e9, 2e9]
         
@@ -258,6 +260,7 @@ class TestFITSProcessing(unittest.TestCase):
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
         test_filename = f'test_{uuid.uuid4()}.fits'
+        print(f"test_stokes_I_processing_with_interp_bounds_error created the file: {test_filename}")
         self.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
         
@@ -303,7 +306,7 @@ class TestFITSProcessing(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        intensities, _, _, _, _, _ = skymodel_from_fits(test_skymodels, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_skymodels, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr), dtype=np.complex128)
@@ -410,7 +413,7 @@ class TestFITSProcessing(unittest.TestCase):
     #     hdu.writeto(test_filename, overwrite=True)
         
     #     # process the FITS file
-    #     intensities, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+    #     intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
     #     # create expected intensities
     #     expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -543,7 +546,7 @@ class TestFITSProcessing(unittest.TestCase):
         self.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
         
-        intensities, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         # Calculate expected scaling
         bmaj_rad = np.deg2rad(header['BMAJ'])
@@ -560,6 +563,7 @@ class TestFITSProcessing(unittest.TestCase):
         
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
+        
 
     def test_bmaj1_bmin1_cube_scaling(self):
         """
@@ -590,7 +594,7 @@ class TestFITSProcessing(unittest.TestCase):
         self.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
         
-        intensities, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
         
@@ -608,6 +612,7 @@ class TestFITSProcessing(unittest.TestCase):
         
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
+        
 
     def test_beam_table_scaling(self):
         """
@@ -636,6 +641,7 @@ class TestFITSProcessing(unittest.TestCase):
         beam_table['BMAJ'].unit = 'arcsec'
         beam_table['BMIN'].unit = 'arcsec'
         beam_table.write('beam_table.fits', overwrite=True)
+        self.test_files.append('beam_table.fits')
         
         # Write image and beam table to same FITS file (multi-extension)
         hdu = fits.PrimaryHDU(image, header=header)
@@ -645,7 +651,7 @@ class TestFITSProcessing(unittest.TestCase):
         self.test_files.append(test_filename)
         hdul.writeto(test_filename, overwrite=True)
         
-        intensities, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
         
         pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
         
@@ -657,12 +663,10 @@ class TestFITSProcessing(unittest.TestCase):
             scale = 1.0 / (beam_area / pixel_area)
             expected_intensities[self.img_size//2, self.img_size//2, i, :] = scale
         
-        print(expected_intensities[self.img_size//2, self.img_size//2, i, :])
         expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
         
         non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
         expected_intensities = expected_intensities[non_zero_mask]
         
-        print(expected_intensities.shape, intensities.shape)
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
