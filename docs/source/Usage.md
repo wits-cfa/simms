@@ -1,8 +1,10 @@
 
 [Draft]
 
-You can use `telsim` to create an empty Measurement Set (MS) using, and `skysim`to simulate visibilities and subtract from or add them from/to a 
- DATA column.
+SIMMS is a powerful simulation framework built around two key tools: `telsim` and `skysim`.
+
+- **`telsim`**: Creates an empty Measurement Set (MS).
+- **`skysim`**: Populates this MS by simulating visibilities, given a sky model. `skysim` also has an addtional feature that lets you add or subtract from an existing data column. 
 
 ### Basic Simulation
 
@@ -12,7 +14,7 @@ skysim --ms smallvis.ms --catalogue skymodel.txt --column SIMULATED_DATA --sefd 
 ```
 
 Let's break down what this command does:
-- `--ms smallvis.ms`: The MS where visibilities will be stored: You should alread have the MS created (e.g., using `telsim`)
+- `--ms smallvis.ms`: The MS where visibilities will be stored: You should already have the MS created (e.g., using `telsim`)
 - `--catalogue skymodel.txt`: Your source catalogue containing the sky model
 - `--column SIMULATED_DATA`: The column where simulated visibilities will be written
 - `--sefd 421`: Adds thermal noise based on this System Equivalent Flux Density (SEFD) value
@@ -42,9 +44,9 @@ You only need to specify the simulated column and the target column to add or su
    skysim --ms smallvis.ms --sc SIMULATED_DATA --ic CORRECTED_DATA --column RESIDUALS --mode subtract 
    ```
 Where: 
-- `--sc` - is simulated column (The name `Simulated`is just an example assuming a column you just simulated, but it can be any column you choose to add or subtract)
-- `--ic` - is the input column you want to subtract/add from/to
-- `column` - in the add/subtract case is the column where your residuals will be saved at
+- `--sc` - is simulated column (The name `Simulated`is an example assuming you will be using a column you just simulated, but it can be any column you choose to add or subtract)
+- `--ic` - is the input column you want to subtract/add from
+- `column` - in the add/subtract case, is the column where your residuals will be saved at
 - `mode:` specifies whether to add/subtract or simulate (the default is simulate: skysim will just simulate if mode is not specified)
 
 
