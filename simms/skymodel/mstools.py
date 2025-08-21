@@ -184,7 +184,7 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
                 vis_xy = np.zeros_like(vis_xx) 
                 vis_yx = np.zeros_like(vis_xx) 
                 vis_yy += vis_xx
-                
+    
     if ncorr == 2:
         vis = np.stack((vis_xx, vis_yy), axis=-1)
     else:

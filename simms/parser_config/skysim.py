@@ -81,19 +81,6 @@ def runit(**kwargs):
         sources = skymodel_from_catalogue(cat, map_path=map_path, delimiter=opts.cat_delim,
                                     chan_freqs=freqs, full_stokes=opts.polarisation)
         
-## These checks should be done in skymods/source factory 
-#       # check for polarisation information
-#       if any(catsky[col][1] for col in ['stokes_q', 'stokes_u', 'stokes_v']):
-#           polarisation = True
-#       else:
-#           polarisation = False
-#       # TODO: Consider adding condition that all elements are non-zero and not "null" or None
-#       
-#       # warn user if polarisation is detected but only two correlations are requested    
-#       if polarisation and ncorr == 2:
-#           log.warning("Q, U and/or V detected but only two correlations requested. U and V will be absent from the output MS.")
-
-        
         simvis = da.blockwise(
             compute_vis, ("row", "chan", "corr"),
             sources, ("source",),
@@ -109,13 +96,15 @@ def runit(**kwargs):
             dtype=msds.DATA.data.dtype,
             concatenate=True,
         )
-        
+    # TODO(Sphe,Senkhosi) This is too taylored to a specific use case and input file schema.
+    # We need more generic API for handling multiple FITS images as input.
+    # Something like we do in skymods.skymodel_from_fits(stack_axis)
     elif fs:
         if os.path.exists(fs):
             if os.path.isdir(fs):
                 fs = []
                 try:
-                    fs.append(glob(f"{fs}/*I.fits")[0])
+                    fs.append(glob(f"{fs}/*I.fits")[0]) # the wildcard pattern must be a user input
                     fs.append(glob(f"{fs}/*Q.fits")[0])
                     fs.append(glob(f"{fs}/*U.fits")[0])
                     fs.append(glob(f"{fs}/*V.fits")[0])
@@ -131,7 +120,7 @@ def runit(**kwargs):
             raise ParameterError("FITS file/directory does not exist")
         
         # process FITS sky model
-        image, lm, polarisation, expand_freq_dim, use_dft, delta_ra, delta_dec = skymodel_from_fits(
+        predict = skymodel_from_fits(
             fs, 
             ra0, 
             dec0, 
@@ -146,16 +135,16 @@ def runit(**kwargs):
         
         simvis = da.blockwise(
             augmented_im_to_vis, ("row", "chan", "corr"),
-            image, ("npix", "chan", "corr") if use_dft else ("l", "m", "chan", "corr"),
+            predict.image, ("npix", "chan", "corr") if predict.use_dft else ("l", "m", "chan", "corr"),
             msds.UVW.data, ("row", "uvw"),
-            lm, ("npix", "lm") if use_dft else None,
+            predict.lm, ("npix", "lm") if predict.use_dft else None,
             freqs, ("chan",),
-            polarisation = polarisation,
-            expand_freq_dim = expand_freq_dim,
-            use_dft = use_dft,
+            polarisation = predict.is_polarisation,
+            expand_freq_dim = predict.expand_freq_dim,
+            use_dft = predict.use_dft,
             ncorr = ncorr,
-            delta_ra = delta_ra,
-            delta_dec = delta_dec,
+            delta_ra = predict.ra_pixel_size,
+            delta_dec = predict.dec_pixel_size,
             epsilon = epsilon,
             do_wstacking = opts.do_wstacking,
             noise = vis_noise,

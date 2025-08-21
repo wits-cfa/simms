@@ -91,10 +91,11 @@ class TestPredictFromFITS(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        brightness_matrix, lm, _, _, _, _ = skymodel_from_fits(test_filename, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
+        predict =  skymodel_from_fits(test_filename, self.ra0, self.dec0, self.freqs,
+                                self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
         
         # predict visibilities
-        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        vis = im_to_vis(predict.image, self.uvw, predict.lm, self.freqs)
         
         # check the output
         assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
@@ -135,10 +136,11 @@ class TestPredictFromFITS(unittest.TestCase):
         
         # process the FITS file
         log.setLevel(logging.ERROR)
-        brightness_matrix, lm, _, _, _, _ = skymodel_from_fits(test_filename, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
+        predict = skymodel_from_fits(test_filename, self.ra0, self.dec0, self.freqs,
+                                self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
         
         # predict visibilities
-        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        vis = im_to_vis(predict.image, self.uvw, predict.lm, self.freqs)
         
         # check the output
         assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
@@ -185,10 +187,11 @@ class TestPredictFromFITS(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        brightness_matrix, lm, _, _, _, _ = skymodel_from_fits(test_skymodels, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
+        predict = skymodel_from_fits(test_skymodels, self.ra0, self.dec0, self.freqs,
+                                self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
         
         # predict visibilities
-        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        vis = im_to_vis(predict.image, self.uvw, predict.lm, self.freqs)
         
         # check the output
         assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
@@ -236,10 +239,11 @@ class TestPredictFromFITS(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        brightness_matrix, lm, _, _, _, _ = skymodel_from_fits(test_skymodels, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'circular')
+        predict = skymodel_from_fits(test_skymodels, self.ra0, self.dec0, self.freqs,
+                                self.freqs[1]-self.freqs[0], self.ncorr, 'circular')
         
         # predict visibilities
-        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        vis = im_to_vis(predict.image, self.uvw, predict.lm, self.freqs)
         
         # check the output
         assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)

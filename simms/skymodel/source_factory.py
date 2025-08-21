@@ -164,10 +164,19 @@ class Source(CatSource):
     
 
 class StokesDataFits(StokesData):
-    def __init__(self, coord:xr.DataArray, data:np.ndarray, pol_basis="linear"):
+    def __init__(self, coord:xr.DataArray, dim_idx:int,
+            data:np.ndarray, pol_basis="linear"):
+        """_summary_
+
+        Args:
+            coord (xr.DataArray): _description_
+            dim_idx (int): _description_
+            data (np.ndarray): _description_
+            pol_basis (str, optional): _description_. Defaults to "linear".
+        """
         self.data = data
         self.nstokes = coord.size
-        self.idx = coord.dim_idx
+        self.idx = dim_idx
         ndim = len(data.shape)
         self.__dslice__ = [slice(None)]*ndim
         self.pol_basis = pol_basis

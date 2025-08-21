@@ -18,6 +18,7 @@ from simms.skymodel.source_factory import (
 )
 from simms.skymodel.converters import radec2lm
 from astropy import units
+from simms.utilities import ObjDict
 
 log = get_logger(BIN.skysim)
 
@@ -87,7 +88,7 @@ def skymodel_from_catalogue(catfile:File, map_path, delimiter,
 
 def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
                         ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, full_stokes:bool=True,
-                        use_dft: Optional[bool]=None, stack_axis="STOKES", stack_axis_index=None) -> tuple:
+                        use_dft: Optional[bool]=None, stack_axis="STOKES") -> tuple:
     """
     Processes FITS skymodel into DFT input
     Args:
@@ -109,6 +110,14 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     phase_centre = np.array([ra0, dec0])
     nchan = chan_freqs.size
     
+    dummy_stokes = {
+        "name" : "STOKES",
+        "idx": 0,
+        "axis_grid": da.asarray([0]),
+        "coord_type": "stokes",
+        "attrs": dict(ref_pixel=0, units="jy", size=1, dim="stokes", pixel_size=1),
+    }
+
     if isinstance(input_fitsimages, List):
         fds = FitsData(input_fitsimages[0])
         if isinstance(stack_axis, Dict):
@@ -119,14 +128,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
             raise TypeError(f"Option 'stack_axis' must either be a string or a dictionary. Found {type(stack_axis)}")
         elif stack_axis not in fds.coord_names:
             if stack_axis == "STOKES":
-                stack_options = {
-        "name" : "STOKES",
-        "idx": 0,
-        "axis_grid": da.asarray([0]),
-        "coord_type": "stokes",
-        "attrs": dict(ref_pixel=0, units="jy", size=1, dim="stokes", pixel_size=1),
-    }
-                fds.add_axis(**stack_options)
+                fds.add_axis(**dummy_stokes)
             else:
                 raise RuntimeError(f"Input skymodel FITS images cannot combined along the given axis '{stack_axis}' because it doesn't exist in the input images")
         else:
@@ -136,7 +138,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     else:
         fds = FitsData(input_fitsimages)
     
-    has_stokes = "STOKES" in fds.coord_names
+    if "STOKES" not in fds.coord_names:
+        fds.add_axis(**dummy_stokes)
                 
     # computes edges of FITS and MS frequency axes
     ms_start_freq = chan_freqs[0] - 0.5*(ms_delta_nu)
@@ -180,6 +183,9 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     
     ra_coords = fds.coords["RA"]
     dec_coords = fds.coords["DEC"]
+    
+    ra_grid = np.squeeze(ra_coords.data.compute() * getattr(units, ra_coords.units).to("rad"))
+    dec_grid = np.squeeze(dec_coords.data.compute() * getattr(units, dec_coords.units).to("rad"))
     pixel_area = abs(ra_coords.pixel_size * dec_coords.pixel_size)
     
     if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
@@ -187,12 +193,9 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                             f"are out of bounds of FITS image frequencies[{fits_start_freq/1e9:.6f} GHz, {fits_end_freq/1e9:.6f} GHz]. "
                             "Cannot interpolate FITS image onto MS frequency grid.")
     
-    # reshape FITS data to (n_pix_l, n_pix_m, nchan)
-    trgt_shape = ["STOKES", "RA", "DEC", "FREQ"] if has_stokes else ["RA", "DEC", "FREQ"]
-    if trgt_shape == ["STOKES", "RA", "DEC", "FREQ"]:
-        skymodel = fds.get_xds(transpose=trgt_shape).data
-    else:
-        skymodel = fds.get_xds(transpose=trgt_shape).data[np.newaxis, ...]
+    
+    trgt_shape = ["STOKES", "RA", "DEC", "FREQ"]
+    skymodel = fds.get_xds(transpose=trgt_shape).data
     
     fds.close()
     
@@ -218,15 +221,12 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     elif fds.data_units != 'jy':
         log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data are in Jy")
     
-            
     if nchan_fits > 1:
         expand_freq_dim = False
         if nchan != nchan_fits or np.any(chan_freqs != fits_freqs):
             interp_stokes = []
             for stokes in range(skymodel.shape[0]):
                 
-                ra_grid = fds.coords["RA"].data * getattr(units, fds.coords["RA"].units).to("rad")
-                dec_grid = fds.coords["DEC"].data * getattr(units, fds.coords["DEC"].units).to("rad")
                 
                 data = xr.DataArray(
                     skymodel[stokes],
@@ -246,9 +246,9 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     else:
         expand_freq_dim = nchan > 1
     
-    #TODO(mika,senkhosi): Is there a reason to have the above interpolation and conversions here, and not at the end of the function?
-
-    skymodel = StokesDataFits(fds.coords["STOKES"], skymodel)
+    
+    skymodel = StokesDataFits(fds.coords["STOKES"], dim_idx=0, data=skymodel, pol_basis=basis)
+    # The stokes parameters in this class will be transposed to the correct basis. 
     stokes_i = skymodel.I
     stokes_q = skymodel.Q
     stokes_u = skymodel.U
@@ -269,32 +269,17 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     
     else: # if sky model is polarised
         predict_image = np.zeros((n_pix_l, n_pix_m, 1 if expand_freq_dim else nchan, ncorr), dtype=np.complex128)
-        if basis == "linear":
-            if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
-                log.warning("Only two correlations in the MS, but four are present in the FITS sky model. Using only Stokes I and Q.")
-                predict_image[:, :, :, 0] = stokes_i + stokes_q
-                predict_image[:, :, :, 1] = stokes_i - stokes_q
-            elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
-                predict_image[:, :, :, 0] = stokes_i + stokes_q
-                predict_image[:, :, :, 1] = stokes_u + 1j * stokes_v
-                predict_image[:, :, :, 2] = stokes_u - 1j * stokes_v
-                predict_image[:, :, :, 3] = stokes_i - stokes_q
-            else:
-                raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
-        elif basis == "circular":
-            if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
-                log.warning("Only two correlations in the MS, but four are present in the FITS sky model. Using only Stokes I and V.")
-                predict_image[:, :, :, 0] = stokes_i + stokes_v
-                predict_image[:, :, :, 1] = stokes_i - stokes_v
-            elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
-                predict_image[:, :, :, 0] = stokes_i + stokes_v
-                predict_image[:, :, :, 1] = stokes_q + 1j * stokes_u
-                predict_image[:, :, :, 2] = stokes_q - 1j * stokes_u
-                predict_image[:, :, :, 3] = stokes_i - stokes_v
-            else:
-                raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+        if ncorr == 2: # if ncorr is 2, we only need compute XX and YY correlations
+            log.warning("Only two correlations in the MS, but four are present in the FITS sky model. Using only Stokes I and Q.")
+            predict_image[:, :, :, 0] = stokes_i + stokes_q
+            predict_image[:, :, :, 1] = stokes_i - stokes_q
+        elif ncorr == 4: # if ncorr is 4, we need to compute all correlations
+            predict_image[:, :, :, 0] = stokes_i + stokes_q
+            predict_image[:, :, :, 1] = stokes_u + 1j * stokes_v
+            predict_image[:, :, :, 2] = stokes_u - 1j * stokes_v
+            predict_image[:, :, :, 3] = stokes_i - stokes_q
         else:
-            raise ValueError(f"Unrecognised polarisation basis '{basis}'. Use 'linear' or 'circular'.")
+            raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
     
     # reshape predict_image to im_to_vis expectations
     reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, 1 if expand_freq_dim else nchan, ncorr)
@@ -314,26 +299,45 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                 phase_centre,
                 n_pix_l,
                 n_pix_m, 
-                ra_coords.data, 
-                dec_coords.data, 
+                ra_grid,
+                dec_grid, 
                 tol_mask
             )
 
-            return non_zero_predict_image, non_zero_lm, skymodel.is_polarised, expand_freq_dim, use_dft, None, None
+            return ObjDict({
+                "image": non_zero_predict_image,
+                "lm": non_zero_lm, 
+                "is_polarised": skymodel.is_polarised,
+                "expand_freq_dim": expand_freq_dim,
+                "use_dft": use_dft,
+            })
         else:
             log.info(f"More than 20% of pixels have intensity > {(tol*1e6):.2f} μJy. FFT will be used for visibility prediction.")
             use_dft = False
             
-            return predict_image, None, skymodel.is_polarised, expand_freq_dim, use_dft, ra_coords.pixel_size, dec_coords.pixel_size,
+            return ObjDict({
+                "image": predict_image,
+                "is_polarised": skymodel.is_polarised,
+                "expand_freq_dim": expand_freq_dim,
+                "use_dft": use_dft,
+                "ra_pixel_size": ra_coords.pixel_size,
+                "dec_pixel_size": dec_coords.pixel_size,
+            })
     else:
         log.info(f"Filtered out {sparsity*100:.2f}% of pixels using {(tol*1e6):.2f}-μJy tolerance.")
         non_zero_lm = compute_lm_coords(
             phase_centre,
             n_pix_l,
             n_pix_m, 
-            ra_coords.data, 
-            dec_coords.data, 
+            ra_grid,
+            dec_grid,
             tol_mask
         )
         
-        return non_zero_predict_image, non_zero_lm, skymodel.is_polarised, expand_freq_dim, use_dft, None, None
+        return ObjDict({
+                "image": non_zero_predict_image,
+                "lm": non_zero_lm, 
+                "is_polarised": skymodel.is_polarised,
+                "expand_freq_dim": expand_freq_dim,
+                "use_dft": use_dft,
+            })
