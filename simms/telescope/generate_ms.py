@@ -12,6 +12,8 @@ from omegaconf import OmegaConf
 from scabha.basetypes import File
 from tqdm.dask import TqdmCallback
 from simms.utilities import get_noise
+from scipy.interpolate import interp1d
+from scipy import interpolate
 
 import simms
 from simms.constants import PI
@@ -48,6 +50,8 @@ def create_ms(
     row_chunks: int,
     sefd: float,
     column: str,
+    smooth:str,
+    fit_order:int,
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
     freq_range: str = None,
@@ -58,8 +62,6 @@ def create_ms(
     subarray_file: File = None,
     low_source_limit: Union[float, str] = None,
     high_source_limit: Union[float, str] = None,
-    low_antenna_limit: Union[float,str] = None,
-    high_antenna_limit: Union[float,str] = None,
 ):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
@@ -203,15 +205,24 @@ def create_ms(
             num_rows, num_chans, num_corr
         ) + 1j * np.random.randn(num_rows, num_chans, num_corr)
         
+        # Lifted from https://github.com/SpheMakh/msutils/blob/master/MSUtils/ClassESW.py
         if noise_freqs:
             x = noise_freqs
             y = sefd
-            fit_parms = np.polyfit(x, y, 4)
-            fit_func = np.poly1d(fit_parms)
             freq_mhz = freqs / 1e6
+            if smooth == 'polyn':
+                fit_parms = np.polyfit(x, y, fit_order)
+                fit_func = np.poly1d(fit_parms)
+            elif smooth=='spline':
+                sorted_x, sorted_y = zip(*sorted(zip(x, y)))
+                fit_parms = interpolate.splrep(sorted_x, sorted_y, s=fit_order)
+                fit_func = lambda freqs: interpolate.splev(freqs, fit_parms, der=0)
+            
             sefd_chan = fit_func(freq_mhz)
             noise_chan = sefd_chan / np.sqrt(2 * dfreq * dtime)
-            noisy_data = da.array(dummy_data * noise_chan[0][None, :, None], like=data).rechunk(chunks=data.chunks)
+            if len(noise_chan.shape) > 1:
+                noise_chan = noise_chan[0]
+            noisy_data = da.array(dummy_data * noise_chan[None, :, None], like=data).rechunk(chunks=data.chunks)
    
         elif not noise_freqs:
             noise = get_noise(sefd, dtime, dfreq)

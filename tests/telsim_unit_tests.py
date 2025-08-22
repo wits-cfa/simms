@@ -14,7 +14,7 @@ def check_max_bl():
               ntimes=10, 
               start_freq='1420MHz', 
               dfreq='1MHz', 
-              nchan=4,
+              nchan=2,
               correlations=['XX','XY'], 
               row_chunks=10000,
               sefd=425,
@@ -74,10 +74,7 @@ def check_uv_coverage():
     
 def check_circle_or_ellipse(u, v):
     """
-    Check if UV points form a circle or ellipse.
-    Parameters:
-        u, v: Arrays of U and V coordinates in the UV plane.
-
+    Check if UV points form a circle, ellipse or line.
     """
  
     center_u = np.mean(u)
