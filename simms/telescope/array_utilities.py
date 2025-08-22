@@ -47,7 +47,8 @@ class Array:
             fname = File(layout)
             if fname.EXISTS:
                 self.layout = OmegaConf.load(fname)
-            self.layoutname = os.path.basename(self.layout.BASENAME)
+            else:
+                raise FileNotFoundError(f"Layout file {fname} not found.")
         else:
             self.layout = SIMMS_TELESCOPES[layout]
             
