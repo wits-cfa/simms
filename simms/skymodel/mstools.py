@@ -221,24 +221,31 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
     Returns:
         vis: visibility array
     """
+    if expand_freq_dim:
+        
+        predict_nchan = 1
+        predict_freqs = chan_freqs[:1]
+    else:
+        predict_nchan = chan_freqs.size
+        predict_freqs= chan_freqs
+        
     # if sparse, use DFT
     if use_dft:
         if polarisation:
-            vis = dft_im_to_vis(image, uvw, lm, chan_freqs, convention='casa')
+            vis = dft_im_to_vis(image, uvw, lm, predict_freqs, convention='casa')
         else:
             image = image[..., 0]
-            vis = dft_im_to_vis(image[..., np.newaxis], uvw, lm, chan_freqs, convention='casa')
+            vis = dft_im_to_vis(image[..., np.newaxis], uvw, lm, predict_freqs, convention='casa')
             vis = stack_unpolarised_vis(vis[...,0], ncorr)
     else:
         image = np.transpose(image, axes=(3, 2, 0, 1))
-        predict_nchan = 1 if expand_freq_dim else chan_freqs.size
         if polarisation:
             vis = np.zeros((uvw.shape[0], predict_nchan, ncorr), dtype=np.complex128)
             for corr in range(ncorr):
                 for chan in range(predict_nchan):
                     vis[:, chan, corr] = fft_im_to_vis(
                         uvw,
-                        np.array([chan_freqs[chan]]),
+                        np.array([predict_freqs[chan]]),
                         image[corr, chan],
                         pixsize_x=np.abs(delta_ra),
                         pixsize_y=delta_dec,
@@ -251,7 +258,7 @@ def augmented_im_to_vis(image: np.ndarray, uvw: np.ndarray, lm: Union[None, np.n
             for chan in range(predict_nchan):
                 vis[:, chan] = fft_im_to_vis(
                     uvw,
-                    np.array([chan_freqs[chan]]),
+                    np.array([predict_freqs[chan]]),
                     image[0, chan],
                     pixsize_x=np.abs(delta_ra),
                     pixsize_y=delta_dec,

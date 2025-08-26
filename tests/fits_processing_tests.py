@@ -75,8 +75,8 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
-        
+        predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities = predict.intensities
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, 1, self.ncorr))
         expected_intensities[self.img_size//2, self.img_size//2, 0, :] = 1.0
@@ -124,7 +124,8 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities = predict.image
         
         
         # create expected intensities
@@ -169,7 +170,8 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities = predict.image
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -216,7 +218,8 @@ class TestFITSProcessing(unittest.TestCase):
         
         log.setLevel(logging.ERROR) # suppress warning messages
         # process the FITS file
-        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities = predict.image
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -306,7 +309,8 @@ class TestFITSProcessing(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_skymodels, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities = skymodel_from_fits(test_skymodels, 0, 0, self.chan_freqs,
+                            self.ms_delta_nu, self.ncorr, self.basis)["image"]
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr), dtype=np.complex128)
@@ -546,7 +550,8 @@ class TestFITSProcessing(unittest.TestCase):
         self.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
         
-        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities = predict.image
         
         # Calculate expected scaling
         bmaj_rad = np.deg2rad(header['BMAJ'])
@@ -594,7 +599,8 @@ class TestFITSProcessing(unittest.TestCase):
         self.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
         
-        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities = predict.intensities
         
         pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
         
@@ -651,7 +657,8 @@ class TestFITSProcessing(unittest.TestCase):
         self.test_files.append(test_filename)
         hdul.writeto(test_filename, overwrite=True)
         
-        intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
+        intensities = predict.image
         
         pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
         

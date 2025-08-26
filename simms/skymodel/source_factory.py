@@ -26,16 +26,21 @@ def gauss_1d(xaxis:np.ndarray, peak:float, width:float, x0:float):
 
 
 class StokesData:
-    def __init__(self, data:List):
+    def __init__(self, data:List, linear_basis=True):
         self.data = np.array(data)
-
+        self.linear_basis = linear_basis
+        if linear_basis:
+            self.param_string = "IQUV"
+        else:
+            self.param_string = "IVQU"
+            
     def set_spectrum(self, freqs, specfunc,
                 full_pol=True, **kwargs):
         
         nchan = len(freqs)
         if full_pol:
             spectrum = np.zeros([4,nchan], dtype=freqs.dtype)
-            for idx,stokes_param in enumerate("IQUV"):
+            for idx, stokes_param in enumerate(self.param_string):
                 flux = getattr(self, stokes_param)
                 spectrum[idx,...] = specfunc(freqs=freqs, flux=flux, **kwargs)
         else:
@@ -53,13 +58,13 @@ class StokesData:
         Returns:
             int: Data along given stokes parameter. Retruns zero if no data found
         """
-        stokes_types = dict(I=0, Q=1, U=2, V=3)
         
-        if x not in stokes_types.keys():
+        
+        if x not in self.param_string:
             raise RuntimeError(f"Uknown Stokes paramter '{x}'")
         
         try:
-            xdata =  self.data[stokes_types[x]]
+            xdata =  self.data[self.param_string.index(x)]
         except IndexError:
             xdata = 0
         
@@ -75,23 +80,36 @@ class StokesData:
         Returns:
             np.ndarray: [description]
         """
-
-        dshape = [ncorr] + list(self.I.shape)
-        bmatrix = np.ones(dshape, dtype=self.data.dtype) * 1j 
-        if linear_pol_basis:
-            stokes_params = "IQUV"
-        else:
-            stokes_params = "IVQU"
+        
+        dshape = list(self.data.shape)
+        dshape[self.idx] = ncorr
+        
+        bmatrix = np.zeros(dshape, dtype=np.complex128)
+        
+        def tslice(i):
+            dslice = [slice(None)] * self.data.ndim
+            dslice[self.idx] = i
+            return tuple(dslice)
         
         if ncorr == 2:
-            bmatrix[0,...] = self.I + getattr(self, stokes_params[1])
-            bmatrix[1,...] = self.I - getattr(self, stokes_params[1])
+            if linear_pol_basis:
+                bmatrix[tslice(0)] = self.I + self.Q
+                bmatrix[tslice(1)] = self.I - self.Q
+            else:
+                bmatrix[tslice(0)] = self.I + self.V
+                bmatrix[tslice(1)] = self.I - self.V
         else:
-            bmatrix[0,...] = self.I + getattr(self, stokes_params[1])
-            bmatrix[1,...] = getattr(self, stokes_params[2]) + 1j*getattr(self, stokes_params[3])
-            bmatrix[2,...] = getattr(self, stokes_params[2]) - 1j*getattr(self, stokes_params[3])
-            bmatrix[3,...] = self.I - getattr(self, stokes_params[1])
-        
+            if linear_pol_basis:
+                bmatrix[tslice(0)] = self.I + self.Q
+                bmatrix[tslice(1)] = self.U + 1j*self.V
+                bmatrix[tslice(2)] = self.U - 1j*self.V
+                bmatrix[tslice(3)] = self.I - self.Q
+            else:
+                bmatrix[tslice(0)] = self.I + self.V
+                bmatrix[tslice(1)] = self.Q + 1j*self.U
+                bmatrix[tslice(2)] = self.Q - 1j*self.U
+                bmatrix[tslice(3)] = self.I - self.V
+                
         return bmatrix
             
     @property
@@ -165,7 +183,7 @@ class Source(CatSource):
 
 class StokesDataFits(StokesData):
     def __init__(self, coord:xr.DataArray, dim_idx:int,
-            data:np.ndarray, pol_basis="linear"):
+            data:np.ndarray):
         """_summary_
 
         Args:
@@ -179,7 +197,6 @@ class StokesDataFits(StokesData):
         self.idx = dim_idx
         ndim = len(data.shape)
         self.__dslice__ = [slice(None)]*ndim
-        self.pol_basis = pol_basis
     
     def __stokes_x__(self, x:str):
         """ Get intensity data for stokes parameter x = I|Q|U|V
@@ -190,7 +207,10 @@ class StokesDataFits(StokesData):
         Returns:
             np.ndarray | int: Data along given stokes parameter. Retruns zero if no data found
         """
+        
         stokes_types = dict(I=0, Q=1, U=2, V=3)
+
+            
         if x not in stokes_types.keys():
             raise RuntimeError(f"Uknown Stokes paramter '{x}'")
         
