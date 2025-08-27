@@ -38,6 +38,7 @@ class StokesData:
                 full_pol=True, **kwargs):
         
         nchan = len(freqs)
+        self.idx = 0
         if full_pol:
             spectrum = np.zeros([4,nchan], dtype=freqs.dtype)
             for idx, stokes_param in enumerate(self.param_string):
@@ -119,7 +120,6 @@ class StokesData:
     @property
     def Q(self):
         return self.__stokes_x__("Q")
-    
     
     @property
     def U(self):
