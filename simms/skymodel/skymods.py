@@ -131,8 +131,6 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                 fds.add_axis(**dummy_stokes)
             else:
                 raise RuntimeError(f"Input skymodel FITS images cannot combined along the given axis '{stack_axis}' because it doesn't exist in the input images")
-        else:
-            raise ValueError("stack_axis value unknown. Please review it.")
         
         fds.expand_along_axis_from_files(stack_axis,input_fitsimages[1:])
     else:
@@ -180,20 +178,22 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     nchan_fits = len(fits_freqs)
     fits_start_freq = fits_freqs[0] - 0.5 * fits_d_nu
     fits_end_freq = fits_freqs[-1] + 0.5 * fits_d_nu
-    
+
     ra_coords = fds.coords["RA"]
     dec_coords = fds.coords["DEC"]
-    
+
     ra_grid = np.squeeze(ra_coords.data.compute() * getattr(units, ra_coords.units).to("rad"))
     dec_grid = np.squeeze(dec_coords.data.compute() * getattr(units, dec_coords.units).to("rad"))
-    pixel_area = abs(ra_coords.pixel_size * dec_coords.pixel_size)
+    ra_pixel_size = ra_coords.pixel_size * getattr(units, ra_coords.units).to("rad")
+    dec_pixel_size = dec_coords.pixel_size * getattr(units, dec_coords.units).to("rad")
+    pixel_area = abs(ra_pixel_size * dec_pixel_size)
     
     if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
         raise SkymodelError(f"Some MS frequencies [{ms_start_freq/1e9:.6f} GHz, {ms_end_freq/1e9:.6f} GHz] "
                             f"are out of bounds of FITS image frequencies[{fits_start_freq/1e9:.6f} GHz, {fits_end_freq/1e9:.6f} GHz]. "
                             "Cannot interpolate FITS image onto MS frequency grid.")
-    
-    
+
+
     trgt_shape = ["RA", "DEC", "FREQ", "STOKES"]
     skymodel = fds.get_xds(transpose=trgt_shape).data
     
@@ -223,12 +223,12 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     if nchan_fits > 1:
         expand_freq_dim = False
         if nchan != nchan_fits or np.any(chan_freqs != fits_freqs):
+            log.warning("Interpolating FITS sky model onto MS frequency grid.  This can use a lot of memory.")
             interp_stokes = []
-            for stokes in range(skymodel.shape[0]):
-                
+            for stokes in range(skymodel.shape[-1]):
                 
                 data = xr.DataArray(
-                    skymodel[stokes],
+                    skymodel[..., stokes],
                     coords={"ra": ra_grid, "dec": dec_grid, "freq": fits_freqs},
                     dims=["ra", "dec", "freq"]
                 )
@@ -241,7 +241,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                 interp_stokes.append(interp_data.data)
 
             # combine into new array with shape (n_stokes, n_pix_l, n_pix_m, len(chan_freqs))
-            skymodel = da.stack(interp_stokes, axis=0)
+            skymodel = da.stack(interp_stokes, axis=3)
     else:
         expand_freq_dim = nchan > 1
     
@@ -249,11 +249,10 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     # The stokes parameters in this class will be transposed to the correct basis.  
     
     predict_image = skymodel.get_brightness_matrix(ncorr, linear_pol_basis = basis == "linear")
-        
-    # reshape predict_image to im_to_vis expectations
     
+    # reshape predict_image to im_to_vis expectations
     reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, 1 if expand_freq_dim else nchan, ncorr)
-
+    
     # get only pixels with brightness > tol
     tol_mask = np.any(np.abs(reshaped_predict_image) > tol, axis=(1, 2))
     non_zero_predict_image = reshaped_predict_image[tol_mask]
@@ -289,8 +288,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                 "is_polarised": skymodel.is_polarised,
                 "expand_freq_dim": expand_freq_dim,
                 "use_dft": use_dft,
-                "ra_pixel_size": ra_coords.pixel_size,
-                "dec_pixel_size": dec_coords.pixel_size,
+                "ra_pixel_size": ra_pixel_size,
+                "dec_pixel_size": dec_pixel_size,
             })
     else:
         log.info(f"Filtered out {sparsity*100:.2f}% of pixels using {(tol*1e6):.2f}-μJy tolerance.")

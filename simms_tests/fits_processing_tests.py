@@ -7,6 +7,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.table import Table
 from simms import BIN, get_logger
+from simms.skymodel.converters import convert2rad
 from simms.skymodel.skymods import skymodel_from_fits
 from simms.utilities import FITSSkymodelError as SkymodelError
 
@@ -20,13 +21,13 @@ class TestFITSProcessing(unittest.TestCase):
         """Set up common test parameters before each test method runs."""
         # Common parameters used across tests
         self.img_size = 256
-        self.cell_size = 3e-6  # arcsec
-        self.chan_freqs = np.array([1e9, 2e9, 3e9])
+        self.cell_size = 2  # arcsec
+        self.chan_freqs = np.array([0.9e9, 1e9, 1.1e9])
         self.nchan = len(self.chan_freqs)
         self.ncorr = 2
         self.ms_delta_nu = self.chan_freqs[1] - self.chan_freqs[0]
         self.basis = 'linear'
-        self.tol = 1e-9
+        self.tol = 1e-7
         
         # Store temporary files to be cleaned up
         self.test_files = []
@@ -76,7 +77,8 @@ class TestFITSProcessing(unittest.TestCase):
         
         # process the FITS file
         predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
-        intensities = predict.intensities
+        intensities = predict.image
+        
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, 1, self.ncorr))
         expected_intensities[self.img_size//2, self.img_size//2, 0, :] = 1.0
@@ -310,7 +312,7 @@ class TestFITSProcessing(unittest.TestCase):
             
         # process the FITS files
         intensities = skymodel_from_fits(test_skymodels, 0, 0, self.chan_freqs,
-                            self.ms_delta_nu, self.ncorr, self.basis)["image"]
+                            self.ms_delta_nu, self.ncorr, self.basis).image
         
         # create expected intensities
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr), dtype=np.complex128)
@@ -537,6 +539,7 @@ class TestFITSProcessing(unittest.TestCase):
         header['BUNIT'] = 'Jy/beam'
         header['BMAJ'] = 0.01  # degrees
         header['BMIN'] = 0.005 # degrees
+        header['BPA'] = 0.0
         header['CUNIT1'] = 'DEG'
         header['CUNIT2'] = 'DEG'
         header['CUNIT3'] = 'Hz'
@@ -590,6 +593,7 @@ class TestFITSProcessing(unittest.TestCase):
         for i in range(self.nchan):
             header[f'BMAJ{i+1}'] = 0.01 + 0.001*i
             header[f'BMIN{i+1}'] = 0.005 + 0.001*i
+            header[f'BPA{i+1}'] = 0.0  # Position angle, not used in scaling
         
         image = np.zeros((1, self.nchan, self.img_size, self.img_size))
         image[:, :, self.img_size//2, self.img_size//2] = 1.0
@@ -600,7 +604,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
-        intensities = predict.intensities
+        intensities = predict.image
         
         pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
         
@@ -642,10 +646,12 @@ class TestFITSProcessing(unittest.TestCase):
         
         # Create beam table
         beam_table = Table()
-        beam_table['BMAJ'] = [5 + 0.01*i for i in range(self.nchan)]
-        beam_table['BMIN'] = [6 + 0.01*i for i in range(self.nchan)]
+        beam_table['BMAJ'] = [15 + 0.1*i for i in range(self.nchan)]
+        beam_table['BMIN'] = [16 + 0.1*i for i in range(self.nchan)]
+        beam_table['BPA'] = [0.0]*self.nchan
         beam_table['BMAJ'].unit = 'arcsec'
         beam_table['BMIN'].unit = 'arcsec'
+        beam_table['BPA'].unit = 'deg'
         beam_table.write('beam_table.fits', overwrite=True)
         self.test_files.append('beam_table.fits')
         
@@ -664,10 +670,10 @@ class TestFITSProcessing(unittest.TestCase):
         
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
         for i in range(self.nchan):
-            bmaj_rad = np.deg2rad(beam_table['BMAJ'][i])
-            bmin_rad = np.deg2rad(beam_table['BMIN'][i])
+            bmaj_rad = beam_table['BMAJ'][i]*np.pi/(180*3600)
+            bmin_rad = beam_table['BMIN'][i]*np.pi/(180*3600)
             beam_area = (np.pi * bmaj_rad * bmin_rad) / (4 * np.log(2))
-            scale = 1.0 / (beam_area / pixel_area)
+            scale = pixel_area / beam_area
             expected_intensities[self.img_size//2, self.img_size//2, i, :] = scale
         
         expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
@@ -675,5 +681,7 @@ class TestFITSProcessing(unittest.TestCase):
         non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
         expected_intensities = expected_intensities[non_zero_mask]
         
+        # print(intensities[np.where(intensities != 0)])
+        # print(expected_intensities[np.where(expected_intensities != 0)])
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
