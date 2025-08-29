@@ -15,7 +15,10 @@ authors = [
 readme = "README.rst"
 license = "GNU GPL v2"
 include = [{ path = "tests" }]
-packages = [{ include = "simms", "simms_tests" }]
+packages = [
+  { include = "simms" },
+  { include = "simms_tests" }
+]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
