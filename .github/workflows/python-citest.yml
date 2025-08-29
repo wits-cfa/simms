@@ -35,5 +35,5 @@ jobs:
         cd tests/cont-int && stimela run test-skysim.yaml recipe
     - name: Unit tests
       run: |
-        python -m unittest discover -s tests/ -p *_tests.py
+        python -m unittest discover -s simms_tests/ -p *_tests.py
 
