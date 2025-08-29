@@ -209,3 +209,11 @@ cabs:
         info: A list containing the start frequency, end frequency, and number of channels, e.g., startfreq,endfreq,nchan.
         dtype: str
         abbreviation: fr
+      smooth: 
+        info: If you have provided a sensitivity file with frequencies and their corresponding sefd or tsys_over_eta, then we will fit to get the approximate sefd matching the MS frequencies. There are two fitting options, polyn and spline.
+        dtype: str
+      fit_order:
+        info: The fitting order to use when approximating the MS frequencies SEFDs. 
+        dtype: int
+        abbreviation: fo
+        
