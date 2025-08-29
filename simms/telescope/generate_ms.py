@@ -50,8 +50,8 @@ def create_ms(
     row_chunks: int,
     sefd: float,
     column: str,
-    smooth:str,
-    fit_order:int,
+    smooth:str = None,
+    fit_order:int = None,
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
     freq_range: str = None,
@@ -406,6 +406,7 @@ def create_ms(
         "TIME": (("row"), da.from_array(uvcoverage_data.times)),
         "INTERVAL": (("row"), da.from_array(np.full(num_rows, dtime))),
         "TRACKING": (("row"), da.from_array(np.full(num_rows, True))),
+        # "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
     }
 
     pntng_table = daskms.Dataset(pntng_ds)
@@ -416,15 +417,16 @@ def create_ms(
             write_pntng,
         )
 
-    dir_ds = {
-        "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
-    }
+    # # check this
+    # dir_ds = {
+    #     "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
+    # }
 
-    dir_table = daskms.Dataset(dir_ds)
+    # dir_table = daskms.Dataset(dir_ds)
 
-    write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"], descriptor=ms_desc)
-    with TqdmCallback(desc=f"Writing the DIRECTION column to POINTING table to {ms}"):
-        dask.compute(write_dir)
+    # write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"], descriptor=ms_desc)
+    # with TqdmCallback(desc=f"Writing the DIRECTION column to POINTING table to {ms}"):
+    #     dask.compute(write_dir)
         
     # add PROCESSOR table
     processor_table = daskms.Dataset({
