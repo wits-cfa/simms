@@ -29,10 +29,10 @@ jobs:
         pip install .
     - name: CI Test for telsim
       run: |
-        cd tests/cont-int && stimela run test-telsim.yaml recipe
+        cd simms_tests/cont-int && stimela run test-telsim.yaml recipe
     - name: CI Test for skysim
       run: |
-        cd tests/cont-int && stimela run test-skysim.yaml recipe
+        cd simms_tests/cont-int && stimela run test-skysim.yaml recipe
     - name: Unit tests
       run: |
         python -m unittest discover -s simms_tests/ -p *_tests.py
