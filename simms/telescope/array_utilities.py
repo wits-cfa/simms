@@ -47,7 +47,8 @@ class Array:
             fname = File(layout)
             if fname.EXISTS:
                 self.layout = OmegaConf.load(fname)
-            self.layoutname = os.path.basename(self.layout.BASENAME)
+            else:
+                raise FileNotFoundError(f"Layout file {fname} not found.")
         else:
             self.layout = SIMMS_TELESCOPES[layout]
             
@@ -64,6 +65,7 @@ class Array:
         self.sefd = sefd
         self.tsys_over_eta = tsys_over_eta
         self.sensitivity_file = sensitivity_file
+        self.noise_freqs = None
 
         self.__set_arrayinfo()
         if self.layout.coord_sys == "geodetic":
@@ -119,6 +121,11 @@ class Array:
                 sensitivity_data = OmegaConf.load(self.sensitivity_file)
                 if 'sefd' in sensitivity_data:
                     self.sefd = sensitivity_data['sefd']
+                
+                if 'freq' in sensitivity_data:
+                    self.noise_freqs = sensitivity_data['freq']
+            
+    
             
             if isinstance(sefd, (float, int)):
                 self.sefd = [sefd]
