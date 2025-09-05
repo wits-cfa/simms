@@ -3,6 +3,7 @@
 
 # USAGE 
 [Note: fits related examples I have not tested yet]
+
 ## Table of Contents
 
 - [Basic Simulation](#basic-simulation)
