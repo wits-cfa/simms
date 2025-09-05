@@ -2,7 +2,7 @@
 # skysim: Understanding the Complete Process - in a nutshell
 
 [a draft]
-[Might need to change the foramt to .sst?]
+[Might need to change the format to .sst?]
 
 ## Table of Contents
 
@@ -137,7 +137,7 @@ skysim writes the computed visibilities back to your MS:
 ```
 MS Reading (daskms)
       ↓
-Sky Model Input (Catalog/FITS)
+Sky Model Input (Catalogue/FITS)
       ↓
 Source Objects Creation
       ↓
@@ -159,9 +159,11 @@ When working with MS files containing multiple fields or spectral windows, you c
 
 - Field ID (```--field-id```): select which field
 - Spectral Window Id (--spwid): select which spw to use
+
 ```skysim -ms smallvis.ms --cat skymodel.txt --colum SIMULATED --field-id 1 --spwid 0```
 
 2. DFT vs FFT: For computational effieciency
+
 When provided a fits for the simulation, skysim automatically will choose between Direct Fourier Transform (DFT) and Fast Fourier Transform (FFT) based on image sparsity.
 - DFT: used for sparse images where > 80% of pixels are below the brightness threshold
 - FFT: Used for dense images
