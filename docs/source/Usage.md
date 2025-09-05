@@ -3,8 +3,14 @@
 
 # USAGE 
 [Note: fits related examples I have not tested yet]
+## Table of Contents
 
-SIMMS is a powerful simulation framework built around two key tools: `telsim` and `skysim`.
+- [Basic Simulation](#basic-simulation)
+- [Common Use Cases](#common-use-cases)
+- [Subtracting from or Adding to an Existing Column](#subtracting-from-or-adding-to-an-existing-column)
+- [Advanced Use Cases](#advanced-use-cases)
+
+SIMMS is a simulation framework built around two key tools: `telsim` and `skysim`.
 
 - **`telsim`**: Creates an empty Measurement Set (MS)
 - **`skysim`**: Populates this MS by simulating visibilities, given a sky model. `skysim` also has an additional feature that lets you add or subtract from an existing data column
