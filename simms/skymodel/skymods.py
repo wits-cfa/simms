@@ -210,7 +210,9 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
             bmin = fds.beam_table["BMIN"].to("rad").value
             beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2)) #this should also be an array
             beam_area_pixels = beam_area / pixel_area
-            skymodel = skymodel / beam_area_pixels[np.newaxis, np.newaxis, np.newaxis, :]
+            skymodel = skymodel / beam_area_pixels[np.newaxis, np.newaxis, :, np.newaxis]
+            
+            #check only the the value of the 
         else:
             log.warning(f"FITS sky model units (BUNIT) are '{fds.data_units}', but no beam information found. Assuming data are in Jy")
         
@@ -246,9 +248,10 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         expand_freq_dim = nchan > 1
     
     skymodel = StokesDataFits(fds.coords["STOKES"], dim_idx=-1, data=skymodel)
-    # The stokes parameters in this class will be transposed to the correct basis.  
+    # The stokes parameters in this class will be transposed to the correct basis.
     
     predict_image = skymodel.get_brightness_matrix(ncorr, linear_pol_basis = basis == "linear")
+     
     
     # reshape predict_image to im_to_vis expectations
     reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, 1 if expand_freq_dim else nchan, ncorr)

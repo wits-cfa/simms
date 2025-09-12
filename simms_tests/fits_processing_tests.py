@@ -580,7 +580,7 @@ class TestFITSProcessing(unittest.TestCase):
         wcs = WCS(naxis=4)
         wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
         wcs.wcs.cdelt = np.array([-self.cell_size/3600, self.cell_size/3600, self.chan_freqs[1]-self.chan_freqs[0], 1.0])
-        wcs.wcs.crpix = [self.img_size/2, self.img_size/2, 1, 1.0]
+        wcs.wcs.crpix = [ self.img_size/2, self.img_size/2, 1, 1.0]
         wcs.wcs.crval = [0, 0, self.chan_freqs[0], 1.0]
 
         header = wcs.to_header()
@@ -604,8 +604,7 @@ class TestFITSProcessing(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         predict = skymodel_from_fits(test_filename, 0, 0, self.chan_freqs, self.ms_delta_nu, self.ncorr, self.basis)
-        intensities = predict.image
-        
+        intensities = predict.image.real
         pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
         
         expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
@@ -680,8 +679,6 @@ class TestFITSProcessing(unittest.TestCase):
         
         non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
         expected_intensities = expected_intensities[non_zero_mask]
-        
-        # print(intensities[np.where(intensities != 0)])
-        # print(expected_intensities[np.where(expected_intensities != 0)])
+
         assert intensities.shape == expected_intensities.shape
         assert np.allclose(intensities, expected_intensities)
