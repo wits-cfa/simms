@@ -16,7 +16,7 @@ recipe:
   steps:
     printhelp:
       cab:
-        command: skysim --help
+        command: simms skysim --help
     basic:
       cab: skysim
       params:
