@@ -28,10 +28,7 @@ stimela = ">=2.0"
 codex-africanus = { version="^0.3.7", extras=["complete"] }
 
 [tool.poetry.scripts]
-skysim = "simms.parser_config.skysim:runit"
-telsim = "simms.parser_config.telsim:runit"
-#observe = "simms.parser_config.observe:runit"
-
+simms = "simms.parser_config:cli"
 
 [build-system]
 requires = ["setuptools", "poetry-core"]
