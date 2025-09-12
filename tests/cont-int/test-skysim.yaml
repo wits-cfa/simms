@@ -18,20 +18,20 @@ recipe:
       cab:
         command: simms skysim --help
     basic:
-      cab: simms skysim
+      cab: skysim
       params:
         ms: =recipe.ms
         catalogue: =recipe.skymodel
         column: DATA
     withnoise:
-      cab: simms skysim
+      cab: skysim
       params:
         ms: =recipe.ms
         catalogue: =recipe.skymodel
         column: NOISY_DATA
         sefd: 512
     subtract:
-      cab: simms skysim
+      cab: skysim
       params:
         _use: recipe.steps.basic.params
         mode: subtract
