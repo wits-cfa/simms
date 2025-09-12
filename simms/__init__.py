@@ -27,7 +27,7 @@ def get_logger(name, level="WARNING"):
 
 LOG = get_logger("simms")
 
-BIN = OmegaConf.create({"skysim": "skysim",
+BIN = OmegaConf.create({"simms": "simms",
+                        "skysim": "skysim",
                         "telsim": "telsim",
-
                         })

@@ -1,11 +1,10 @@
 import glob
 import os
-
 import click
+from . import cli
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 from scabha.schema_utils import clickify_parameters, paramfile_loader
-
 import simms
 from simms import BIN, get_logger
 from simms.telescope import generate_ms, layouts
@@ -19,7 +18,6 @@ telescope_params = glob.glob(f"{thisdir}/library/*.yaml")
 telescope_files = [File(item) for item in telescope_params]
 parserfile = File(f"{thisdir}/{command}.yaml")
 config = paramfile_loader(parserfile, telescope_files)[command]
-
 
 def print_data_database(ctx, param, value):
     """
@@ -38,9 +36,7 @@ def print_data_database(ctx, param, value):
                 print(f"  Subarrays: {subarray_string}")
     raise SystemExit()
     
-                
-# lambda ctx, param, value: (click.echo("This is the message displayed before exiting."), sys.exit(0)) if value else None,
-@click.command(command)
+@cli.command(command)
 @click.version_option(str(simms.__version__))
 @click.option('--list', "-ls",
     is_flag = True,
@@ -49,7 +45,7 @@ def print_data_database(ctx, param, value):
     help='Displays a message and then exits the program.'
 )
 @clickify_parameters(config)
-def runit(**kwargs):
+def telsim_runit(**kwargs):
     opts = OmegaConf.create(kwargs)
                 
     msname = opts.ms

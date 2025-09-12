@@ -19,7 +19,7 @@ recipe:
   steps:
     helpinfo:
       cab:
-        command: telsim --help
+        command: simms telsim --help
     basic:
       cab: telsim
       params:
