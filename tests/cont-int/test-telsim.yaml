@@ -21,7 +21,7 @@ recipe:
       cab:
         command: simms telsim --help
     basic:
-      cab: telsim
+      cab: simms telsim
       params:
         ms: =recipe.msname
         telescope: =recipe.telescope
@@ -30,7 +30,7 @@ recipe:
         dtime: 4
         nchan: 3
     addnoise:
-      cab: telsim
+      cab: simms telsim
       params:
         _use: recipe.steps.basic.params
         sefd: 410
