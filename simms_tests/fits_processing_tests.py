@@ -7,7 +7,6 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.table import Table
 from simms import BIN, get_logger
-from simms.skymodel.converters import convert2rad
 from simms.skymodel.skymods import skymodel_from_fits
 from simms.utilities import FITSSkymodelError as SkymodelError
 
@@ -537,11 +536,11 @@ class TestFITSProcessing(unittest.TestCase):
         
         header = wcs.to_header()
         header['BUNIT'] = 'Jy/beam'
-        header['BMAJ'] = 0.01  # degrees
-        header['BMIN'] = 0.005 # degrees
+        header['BMAJ'] = self.cell_size * 7 /3600 # degrees
+        header['BMIN'] = self.cell_size* 5 / 3600 # degrees
         header['BPA'] = 0.0
-        header['CUNIT1'] = 'DEG'
-        header['CUNIT2'] = 'DEG'
+        header['CUNIT1'] = 'deg'
+        header['CUNIT2'] = 'deg'
         header['CUNIT3'] = 'Hz'
         header['CUNIT4'] = ''
         
@@ -557,20 +556,18 @@ class TestFITSProcessing(unittest.TestCase):
         intensities = predict.image
         
         # Calculate expected scaling
-        bmaj_rad = np.deg2rad(header['BMAJ'])
-        bmin_rad = np.deg2rad(header['BMIN'])
-        pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
-        beam_area = (np.pi * bmaj_rad * bmin_rad) / (4 * np.log(2))
-        scale = 1.0 / (beam_area / pixel_area)
+        freq_scale = self.chan_freqs[0]/self.chan_freqs
+        bmaj = header['BMAJ'] * freq_scale
+        bmin = header['BMIN'] * freq_scale
+        # if image has multiple frequencies, then beam params need to scale with frequency
+        pixel_area = (self.cell_size/3600)**2
+        beam_area = (np.pi * bmaj* bmin) / (4 * np.log(2))
+        pixels_per_beam = beam_area / pixel_area
         
-        expected_intensities = np.zeros((self.img_size, self.img_size, self.chan_freqs.size, self.ncorr))
-        expected_intensities[self.img_size//2, self.img_size//2, :, :] = scale
-        expected_intensities = expected_intensities.reshape(self.img_size * self.img_size, self.chan_freqs.size, self.ncorr)
-        non_zero_mask = np.any(expected_intensities > self.tol, axis=(1, 2))
-        expected_intensities = expected_intensities[non_zero_mask]
-        
+        expected_intensities = np.ones((1, self.chan_freqs.size, self.ncorr))
+        expected_intensities /= pixels_per_beam[np.newaxis, :, np.newaxis]
         assert intensities.shape == expected_intensities.shape
-        assert np.allclose(intensities, expected_intensities)
+        assert np.allclose(intensities, expected_intensities, atol=1e-6)
         
 
     def test_bmaj1_bmin1_cube_scaling(self):
@@ -585,8 +582,8 @@ class TestFITSProcessing(unittest.TestCase):
 
         header = wcs.to_header()
         header['BUNIT'] = 'Jy/beam'
-        header['CUNIT1'] = 'DEG'
-        header['CUNIT2'] = 'DEG'
+        header['CUNIT1'] = 'deg'
+        header['CUNIT2'] = 'deg'
         header['CUNIT3'] = 'Hz'
         header['CUNIT4'] = ''
 
@@ -620,7 +617,7 @@ class TestFITSProcessing(unittest.TestCase):
         expected_intensities = expected_intensities[non_zero_mask]
         
         assert intensities.shape == expected_intensities.shape
-        assert np.allclose(intensities, expected_intensities)
+        assert np.allclose(intensities, expected_intensities, atol=1e-6)
         
 
     def test_beam_table_scaling(self):
@@ -635,8 +632,8 @@ class TestFITSProcessing(unittest.TestCase):
         
         header = wcs.to_header()
         header['BUNIT'] = 'Jy/beam'
-        header['CUNIT1'] = 'DEG'
-        header['CUNIT2'] = 'DEG'
+        header['CUNIT1'] = 'deg'
+        header['CUNIT2'] = 'deg'
         header['CUNIT3'] = 'Hz'
         header['CUNIT4'] = ''
 

@@ -194,7 +194,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                             "Cannot interpolate FITS image onto MS frequency grid.")
 
 
-    trgt_shape = ["RA", "DEC", "FREQ", "STOKES"]
+    trgt_shape = ["STOKES", "RA", "DEC", "FREQ"]
     skymodel = fds.get_xds(transpose=trgt_shape).data
     
     fds.close()
@@ -209,8 +209,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
             bmaj = fds.beam_table["BMAJ"].to("rad").value
             bmin = fds.beam_table["BMIN"].to("rad").value
             beam_area = (np.pi * bmaj * bmin) / (4 * np.log(2)) #this should also be an array
-            beam_area_pixels = beam_area / pixel_area
-            skymodel = skymodel / beam_area_pixels[np.newaxis, np.newaxis, :, np.newaxis]
+            pixels_per_beam = beam_area / pixel_area 
+            skymodel = skymodel / pixels_per_beam[np.newaxis, np.newaxis, np.newaxis, :]
             
             #check only the the value of the 
         else:
@@ -227,10 +227,10 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         if nchan != nchan_fits or np.any(chan_freqs != fits_freqs):
             log.warning("Interpolating FITS sky model onto MS frequency grid.  This can use a lot of memory.")
             interp_stokes = []
-            for stokes in range(skymodel.shape[-1]):
+            for stokes in range(fds.coords["STOKES"].size):
                 
                 data = xr.DataArray(
-                    skymodel[..., stokes],
+                    skymodel[stokes,...],
                     coords={"ra": ra_grid, "dec": dec_grid, "freq": fits_freqs},
                     dims=["ra", "dec", "freq"]
                 )
@@ -243,18 +243,19 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                 interp_stokes.append(interp_data.data)
 
             # combine into new array with shape (n_stokes, n_pix_l, n_pix_m, len(chan_freqs))
-            skymodel = da.stack(interp_stokes, axis=3)
+            skymodel = da.stack(interp_stokes, axis=0)
     else:
         expand_freq_dim = nchan > 1
     
-    skymodel = StokesDataFits(fds.coords["STOKES"], dim_idx=-1, data=skymodel)
+    skymodel = StokesDataFits(fds.coords["STOKES"], dim_idx=0, data=skymodel)
     # The stokes parameters in this class will be transposed to the correct basis.
     
     predict_image = skymodel.get_brightness_matrix(ncorr, linear_pol_basis = basis == "linear")
-     
-    
-    # reshape predict_image to im_to_vis expectations
-    reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, 1 if expand_freq_dim else nchan, ncorr)
+    predict_nchan = 1 if expand_freq_dim else nchan
+    # first transpose stokes axis to the end,
+    predict_image = np.transpose(predict_image, (1,2,3,0))
+    # then reshape predict_image to im_to_vis expectations
+    reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, predict_nchan, ncorr)
     
     # get only pixels with brightness > tol
     tol_mask = np.any(np.abs(reshaped_predict_image) > tol, axis=(1, 2))
