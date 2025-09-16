@@ -8,20 +8,20 @@ from scipy.optimize import least_squares
 def check_max_bl():
     
     create_ms(ms='test-mk.ms', 
-              telescope_name='meerkat', 
-              pointing_direction=['J2000','0deg','0deg'], 
-              dtime=1,
-              ntimes=10, 
-              start_freq='1420MHz', 
-              dfreq='1MHz', 
-              nchan=2,
-              correlations=['XX','YY'], 
-              row_chunks=10000,
-              sefd=425,
-              column='DATA', 
-              start_time='2025-03-06T12:25:00',
-              smooth=None,
-              fit_order=None)
+            telescope_name='meerkat', 
+            pointing_direction=['J2000','0deg','0deg'], 
+            dtime=1,
+            ntimes=10, 
+            start_freq='1420MHz', 
+            dfreq='1MHz', 
+            nchan=2,
+            correlations=['XX','YY'], 
+            row_chunks=10000,
+            sefd=425,
+            column='DATA', 
+            start_time='2025-03-06T12:25:00',
+            smooth=None,
+            fit_order=None)
 
     ds = xds_from_table('../tests/test-mk.ms')[0]
     uvw = ds.UVW.values
@@ -46,19 +46,19 @@ def check_uv_coverage():
     
     array = array_utilities.Array('kat-7')
     array_data_line = array.uvgen(pointing_direction=['J2000','0deg','0deg'],dtime=2,ntimes=5000,start_freq='1420MHz',
-                  dfreq='2MHz',nchan=10)
+                dfreq='2MHz',nchan=10)
     
     line = check_circle_or_ellipse(array_data_line.uvw[::21,0], array_data_line.uvw[::21,1])
     assert line['is_line'] == True and line['is_circle'] == False and line['is_ellipse'] == False
     
     array_data_circle = array.uvgen(pointing_direction=['J2000','0deg','-90deg'],dtime=2,ntimes=5000,start_freq='1420MHz',
-                  dfreq='2MHz',nchan=10)
+                dfreq='2MHz',nchan=10)
     
     circle = check_circle_or_ellipse(array_data_circle.uvw[::21,0], array_data_circle.uvw[::21,1])
     assert circle['is_circle'] == True and circle['is_ellipse'] == False and circle['is_line'] == False
     
     array_data_circle_n = array.uvgen(pointing_direction=['J2000','0deg','90deg'],dtime=2,ntimes=5000,start_freq='1420MHz',
-                  dfreq='2MHz',nchan=10)
+                dfreq='2MHz',nchan=10)
     
     circle_n = check_circle_or_ellipse(array_data_circle_n.uvw[::21,0], array_data_circle_n.uvw[::21,1])
     assert circle_n['is_circle'] == True and circle_n['is_ellipse'] == False and circle_n['is_line'] == False
@@ -66,7 +66,7 @@ def check_uv_coverage():
     
     
     array_data_ellipse = array.uvgen(pointing_direction=['J2000','0deg','-30deg'],dtime=2,ntimes=5000,start_freq='1420MHz',
-                  dfreq='2MHz',nchan=10)
+                dfreq='2MHz',nchan=10)
     
     ellipse = check_circle_or_ellipse(array_data_ellipse.uvw[::21,0], array_data_ellipse.uvw[::21,1])
     assert ellipse['is_circle'] == False and ellipse['is_ellipse'] == True and ellipse['is_line'] == False
@@ -78,10 +78,10 @@ def check_circle_or_ellipse(u, v):
     """
     Check if UV points form a circle, ellipse or line.
     """
- 
+
     center_u = np.mean(u)
     center_v = np.mean(v)
-   
+
     distances = np.sqrt((u - center_u)**2 + (v - center_v)**2)
     mean_distance = np.mean(distances)
     std_distance = np.std(distances)  
@@ -165,4 +165,3 @@ if __name__ == "__main__":
     check_max_bl()
     check_uv_coverage()
     check_stupid_things()
-    

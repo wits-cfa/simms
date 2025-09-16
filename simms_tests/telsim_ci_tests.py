@@ -1,10 +1,7 @@
 import numpy as np
-import astropy
-from simms.telescope.generate_ms import create_ms
 import subprocess
 from astropy.io import fits
 from simms.constants import C
-from scipy.optimize import curve_fit
 import os
 
 
@@ -41,31 +38,30 @@ def check_noise_image():
     output_filename = 'test-mk-pfb-result'
     log_directory = 'pfb-imaging/logs'
     output_folder = 'pfb-imaging'
-   
+
     
     fov  =  1.22 * (C /1420e6)/(13.5)
     fov  = fov * 180/np.pi
     
     
     subprocess.run([
-       "pfb","init",
-       "--output-filename", output_filename,
-       "--product", "I",
-       "--ms", mspath,
-       "--log-directory", log_directory,
-       "--fits-output-folder",output_folder,
-      #  "--freq-range", '1e9:2e9',
-       "--data-column", "DATA",
-       "--flag-column", 'FLAG',
-       "--overwrite",
-       "--channels-per-image", "1",
-       "--no-fits-cubes",
-       "--fits-mfs",
-       "--scans","[1]",
-       "--ddids","[0]",
-       "--fields","[0]",
-       "--freq-range","1.4e9:1.44e9",
-       "--max-field-of-view", str(fov),  
+        "pfb","init",
+        "--output-filename", output_filename,
+        "--product", "I",
+        "--ms", mspath,
+        "--log-directory", log_directory,
+        "--fits-output-folder",output_folder,
+        "--data-column", "DATA",
+        "--flag-column", 'FLAG',
+        "--overwrite",
+        "--channels-per-image", "1",
+        "--no-fits-cubes",
+        "--fits-mfs",
+        "--scans","[1]",
+        "--ddids","[0]",
+        "--fields","[0]",
+        "--freq-range","1.4e9:1.44e9",
+        "--max-field-of-view", str(fov),  
         ])
     
     subprocess.run([
@@ -83,14 +79,14 @@ def check_noise_image():
     "--cell-size","3",
     "--nx", "256",
     "--ny", "256",
-   "--product" , "I",
-   "--filter-counts-level", "0"
+    "--product" , "I",
+    "--filter-counts-level", "0"
     ])
     
     base_dir = os.path.dirname(__file__) 
     file_path = os.path.abspath(os.path.join(base_dir, 'pfb-imaging', f'{output_filename}_I_main_dirty_time0000_mfs.fits'))
     hdu = fits.open(file_path)
-   
+
     data = hdu[0].data[0,0,:,:]
     img_noise = np.std(data)  * np.sqrt(2) #In pfb-imaging, they did not account for the account of 2
     
@@ -98,4 +94,4 @@ def check_noise_image():
     
 if __name__ == "__main__":
     check_noise_image()
-   
+

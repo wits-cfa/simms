@@ -8,7 +8,9 @@ cabs:
         info: Measurement set
         dtype: MS
         required: yes
-        must_exist: no
+        must_exist: yes
+        policies:
+          positional: true
       catalogue: 
         info: Catalogue file containing sources. A full description of accepted units can be found in the documentation.
         dtype: File
@@ -19,6 +21,11 @@ cabs:
         dtype: Union[File, List[File]]
         required: no
         abbreviation: fs
+      polarisation:
+        info: Simulate all available stokes paraemters (correlations). If false, only consider stokes I
+        default: true
+        dtype:  bool
+        abbreviation: pol
       pol-basis:
         info: Polarization basis for the simulation. The default is circular polarization.
         dtype: str
@@ -48,12 +55,7 @@ cabs:
         dtype: str
         default: DATA
         abbreviation: col
-      simulated-column:
-        info: Name of the column containing previously simulated data to use for add/subtract modes.
-        dtype: str
-        abbreviation: sc
-        required: no  
-      row-chunk-size:
+      row-chunks:
         info: Chunking strategy for the simulation
         dtype: int
         default: 10000
@@ -63,14 +65,13 @@ cabs:
         dtype: int
         default: 0
         abbreviation: fi
-      spwid:
+      spw-id:
         info: Spectral Window ID
         dtype: int
         default: 0
       sefd:
         info: Add noise using the this SEFD value
         dtype: float
-        # TODO: Add default value
       cat-species:
         info: type of catalogue e.g. PyBDSF
         dtype: str
