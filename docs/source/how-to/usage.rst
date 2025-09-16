@@ -26,7 +26,7 @@ Say, we wanted to simulate a 30 minute MeerKAT observation at 1.4 GHz. Let's als
 
 .. code-block:: bash
 
-    telsim --telescope meerkat --start-freq 1.4GHz --dfreq 1MHz --direction J2000,23h59m0s,-30d0m0s --dtime 5 --ntime  360 my-meerkat-obs.ms
+    simms telsim --telescope meerkat --start-freq 1.4GHz --dfreq 1MHz --direction J2000,23h59m0s,-30d0m0s --dtime 5 --ntime  360 my-meerkat-obs.ms
 
 Note that ``--ntimes`` is the number of exposures that make up the observation time period i.e, :raw-math:`$$\frac{30 \times 60}{5} = 360$$` exposures. The output MS is ``my-meerkat-obs.ms``
 
@@ -34,4 +34,4 @@ The other application is ``skysim``. This simulates a catalogue of sources (or s
    
 .. code-block:: bash
 
-    skysim --catalogue my-skymodel.txt my-meerkat-obs.ms
+    simms skysim --catalogue my-skymodel.txt my-meerkat-obs.ms
