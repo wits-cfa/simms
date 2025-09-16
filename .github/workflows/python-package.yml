@@ -39,5 +39,5 @@ jobs:
         poetry run flake8 simms simms_tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test command
       run: |
-        poetry run telsim --help
-        poetry run skysim --help
+        poetry run simms telsim --help
+        poetry run simms skysim --help

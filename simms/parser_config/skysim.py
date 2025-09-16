@@ -4,6 +4,7 @@ import simms
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 from scabha.basetypes import File
 import click
+from . import cli
 from omegaconf import OmegaConf
 from simms import BIN, get_logger 
 import glob
@@ -33,11 +34,10 @@ sources = [File(item) for item in source_files]
 parserfile = File(f"{thisdir}/{command}.yaml")
 config = paramfile_loader(parserfile, sources)[command]
 
-
-@click.command(command)
+@cli.command(command)
 @click.version_option(str(simms.__version__))
 @clickify_parameters(config)
-def runit(**kwargs):
+def skysim_runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     ms = opts.ms
     cat = opts.catalogue

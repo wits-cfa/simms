@@ -1,7 +1,7 @@
 cabs:
   skysim:
     info: Create empty MS using simms
-    command: skysim
+    command: simms skysim
 
     inputs:
       ms:
@@ -103,7 +103,7 @@ cabs:
 
   telsim:
     info: Create empty MS using simms
-    command: telsim
+    command: simms telsim
     inputs:
       ms:
         info: Observation name/id/label
