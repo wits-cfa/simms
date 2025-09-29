@@ -14,10 +14,10 @@ Table of Contents
 - `Subtracting from or Adding to an Existing Column <#subtracting-from-or-adding-to-an-existing-column>`_
 - `Advanced Use Cases <#advanced-use-cases>`_
 
-SIMMS is a simulation framework built around two key tools: ``telsim`` and ``skysim``.
+**simms** is a simulation framework built around two key tools: ``telsim`` and ``skysim``.
 
-- **``telsim``**: Creates an empty Measurement Set (MS)
-- **``skysim``**: Populates this MS by simulating visibilities, given a sky model. ``skysim`` also has an additional feature that lets you add or subtract from an existing data column
+- **telsim**: Creates an empty Measurement Set (MS)
+- **skysim**: Populates this MS by simulating visibilities, given a sky model. ``skysim`` also has an additional feature that lets you add or subtract from an existing data column
 
 Basic Simulation
 ----------------
