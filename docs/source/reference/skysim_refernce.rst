@@ -1,11 +1,11 @@
+.. _skysim_reference:
 
-skysim: Understanding the Complete Process - in a Nutshell
-==========================================================
+Array Telescope Simulation (``telsim``)
+========================================
 
-*(a draft)*
 
 Table of Contents
------------------
+---------------------
 
 - `Step 1: Reading the Measurement Set <#step-1-reading-the-measurement-set>`_
 - `Step 2: Sky Model Input <#step-2-sky-model-input>`_

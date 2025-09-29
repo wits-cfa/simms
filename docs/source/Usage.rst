@@ -1,13 +1,11 @@
 USAGE
-=====
-
-[Draft]
+=======
 
 .. note::
    FITS-related examples, I have not fully tested yet.
 
 Table of Contents
------------------
+-------------------
 
 - `Basic Simulation <#basic-simulation>`_
 - `Common Use Cases <#common-use-cases>`_
