@@ -4,7 +4,7 @@ from numba import njit
 import numpy as np
 from typing import Union
 
-def convert2rad(string):
+def convert2rad(string, null_value=None):
     if string is not None and string != 'null':
         try:
             float(string)
@@ -15,8 +15,9 @@ def convert2rad(string):
             angle = qa(string)
             angle_rad = angle.canonical().get_value()
         return angle_rad
+    return null_value
     
-def convertra2rad(string):
+def convertra2rad(string, null_value=None):
     dm = measures()
     if string not in [None, "null"]:
         try:
@@ -27,9 +28,10 @@ def convertra2rad(string):
         finally:
             ra_rad = dm.direction(v0=f"{string}")["m0"]["value"]
         return ra_rad
+    return null_value
 
 
-def convertdec2rad(string):
+def convertdec2rad(string, null_value=None):
     dm = measures()
     if string not in [None, "null"]:
         try:
@@ -40,6 +42,7 @@ def convertdec2rad(string):
         finally:
             dec_rad = dm.direction(v1=f"{string}")["m1"]["value"]
         return dec_rad
+    return null_value
 
 
 def convert2Jy(string, null_value=None):
@@ -56,11 +59,13 @@ def convert2Jy(string, null_value=None):
     else:
         return null_value
 
-def convert2Hz(string):
+def convert2Hz(string, null_value=None):
     if string is not None and string != 'null':
         freq = qa(string)
         freq_hz = freq.canonical().get_value()
         return freq_hz
+    else:
+        return null_value
     
 def convert2float(string, null_value=None):
     if string in [None, "null"]:

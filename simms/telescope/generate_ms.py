@@ -12,6 +12,8 @@ from omegaconf import OmegaConf
 from scabha.basetypes import File
 from tqdm.dask import TqdmCallback
 from simms.utilities import get_noise
+from scipy.interpolate import interp1d
+from scipy import interpolate
 
 import simms
 from simms.constants import PI
@@ -47,19 +49,19 @@ def create_ms(
     correlations: str,
     row_chunks: int,
     sefd: float,
-    tsys_over_eta: float,
     column: str,
+    smooth:str = None,
+    fit_order:int = None,
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
     freq_range: str = None,
     sfile: File = None,
+    tsys_over_eta: float=None,
     subarray_list: List[str] = None,
     subarray_range: List[int] = None,
     subarray_file: File = None,
     low_source_limit: Union[float, str] = None,
     high_source_limit: Union[float, str] = None,
-    low_antenna_limit: Union[float,str] = None,
-    high_antenna_limit: Union[float,str] = None,
 ):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
@@ -194,26 +196,52 @@ def create_ms(
     nbaselines = num_ants * (num_ants - 1) // 2
     
     sefd = telescope_array.sefd
+    noise_freqs = telescope_array.noise_freqs
+    
     
     if sefd:
-        noise = get_noise(sefd, dtime, dfreq)
+        
         dummy_data = np.random.randn(
             num_rows, num_chans, num_corr
         ) + 1j * np.random.randn(num_rows, num_chans, num_corr)
         
-        if isinstance(noise, (float, int)):
-            noisy_data = da.array(dummy_data * noise, like=data).rechunk(
-                chunks=data.chunks
-            )
+        # Lifted from https://github.com/SpheMakh/msutils/blob/master/MSUtils/ClassESW.py
+        if noise_freqs:
+            x = noise_freqs
+            y = sefd
+            freq_mhz = freqs / 1e6
+            if smooth == 'polyn':
+                fit_parms = np.polyfit(x, y, fit_order)
+                fit_func = np.poly1d(fit_parms)
+            elif smooth=='spline':
+                sorted_x, sorted_y = zip(*sorted(zip(x, y)))
+                fit_parms = interpolate.splrep(sorted_x, sorted_y, s=fit_order)
+                fit_func = lambda freqs: interpolate.splev(freqs, fit_parms, der=0)
             
-        else:
-            dummy_data_resh = dummy_data.reshape((ntimes,nbaselines,num_chans,num_corr))
-            noisy_dummy_data = dummy_data_resh * np.array(noise)[None,:,None,None]
-            noisy_result = noisy_dummy_data.reshape((ntimes*nbaselines, num_chans, num_corr))
-            noisy_data = da.array(noisy_result, like=data).rechunk(
-                chunks=data.chunks
-            )
-
+            sefd_chan = fit_func(freq_mhz)
+            noise_chan = sefd_chan / np.sqrt(2 * dfreq * dtime)
+            if len(noise_chan.shape) > 1:
+                noise_chan = noise_chan[0]
+            noisy_data = da.array(dummy_data * noise_chan[None, :, None], like=data).rechunk(chunks=data.chunks)
+   
+        elif not noise_freqs:
+            noise = get_noise(sefd, dtime, dfreq)
+            
+            
+            if isinstance(noise, (float, int)):
+                noisy_data = da.array(dummy_data * noise, like=data).rechunk(
+                    chunks=data.chunks
+                )
+                
+            else:
+                dummy_data_resh = dummy_data.reshape((ntimes,nbaselines,num_chans,num_corr))
+                noisy_dummy_data = dummy_data_resh * np.array(noise)[None,:,None,None]
+                noisy_result = noisy_dummy_data.reshape((ntimes*nbaselines, num_chans, num_corr))
+                noisy_data = da.array(noisy_result, like=data).rechunk(
+                    chunks=data.chunks
+                )
+            
+ 
         ds[column] = (("row", "chan", "corr"), noisy_data)
 
     src_elevs = uvcoverage_data.source_elevations
@@ -378,6 +406,7 @@ def create_ms(
         "TIME": (("row"), da.from_array(uvcoverage_data.times)),
         "INTERVAL": (("row"), da.from_array(np.full(num_rows, dtime))),
         "TRACKING": (("row"), da.from_array(np.full(num_rows, True))),
+        # "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
     }
 
     pntng_table = daskms.Dataset(pntng_ds)
@@ -388,15 +417,16 @@ def create_ms(
             write_pntng,
         )
 
-    dir_ds = {
-        "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
-    }
+    # # check this
+    # dir_ds = {
+    #     "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
+    # }
 
-    dir_table = daskms.Dataset(dir_ds)
+    # dir_table = daskms.Dataset(dir_ds)
 
-    write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"], descriptor=ms_desc)
-    with TqdmCallback(desc=f"Writing the DIRECTION column to POINTING table to {ms}"):
-        dask.compute(write_dir)
+    # write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"], descriptor=ms_desc)
+    # with TqdmCallback(desc=f"Writing the DIRECTION column to POINTING table to {ms}"):
+    #     dask.compute(write_dir)
         
     # add PROCESSOR table
     processor_table = daskms.Dataset({

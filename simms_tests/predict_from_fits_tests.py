@@ -5,19 +5,17 @@ import logging
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
-from africanus.dft import im_to_vis
+from simms.skymodel.mstools import augmented_im_to_vis as im_to_vis
 from simms import BIN, get_logger
 from simms.telescope.array_utilities import Array
-from simms.skymodel.skymods import process_fits_skymodel
-
+from simms.skymodel.skymods import skymodel_from_fits
 
 log = get_logger(BIN.skysim)
-
 
 class TestPredictFromFITS(unittest.TestCase):
     
     def setUp(self):
-        """"Set up test inputs."""
+        """Set up test inputs."""
         self.nchan = 16
         self.n_times = 75
         self.n_baselines = 64*63/2
@@ -91,10 +89,19 @@ class TestPredictFromFITS(unittest.TestCase):
         hdu.writeto(test_filename, overwrite=True)
         
         # process the FITS file
-        brightness_matrix, lm, _, _, _, _ = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
+        predict =  skymodel_from_fits(test_filename, self.ra0, self.dec0, self.freqs,
+                                self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
         
         # predict visibilities
-        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        vis = im_to_vis(predict.image, self.uvw, predict.lm, self.freqs,
+                    predict.is_polarised,
+                    expand_freq_dim=predict.expand_freq_dim,
+                    ncorr=self.ncorr,
+                    epsilon=1e-7,
+                    use_dft=predict.use_dft,
+                    )
+        
+        vis = np.absolute(vis)
         
         # check the output
         assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
@@ -135,10 +142,19 @@ class TestPredictFromFITS(unittest.TestCase):
         
         # process the FITS file
         log.setLevel(logging.ERROR)
-        brightness_matrix, lm, _, _, _, _ = process_fits_skymodel(test_filename, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
+        predict = skymodel_from_fits(test_filename, self.ra0, self.dec0, self.freqs,
+                                self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
         
         # predict visibilities
-        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        vis = im_to_vis(predict.image, self.uvw, predict.lm, self.freqs,
+                    predict.is_polarised,
+                    expand_freq_dim=predict.expand_freq_dim,
+                    use_dft=predict.use_dft,
+                    ncorr=self.ncorr,
+                    epsilon=1e-7,
+                    )
+        
+        vis = np.absolute(vis)
         
         # check the output
         assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
@@ -185,17 +201,25 @@ class TestPredictFromFITS(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        brightness_matrix, lm, _, _, _, _ = process_fits_skymodel(test_skymodels, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'linear')
+        predict = skymodel_from_fits(test_skymodels, self.ra0, self.dec0, self.freqs,
+                                self.freqs[1]-self.freqs[0], self.ncorr, basis='linear')
         
         # predict visibilities
-        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        vis = im_to_vis(predict.image, self.uvw, predict.lm, self.freqs,
+                    predict.is_polarised,
+                    expand_freq_dim=predict.expand_freq_dim,
+                    use_dft=predict.use_dft,
+                    ncorr=self.ncorr,
+                    epsilon=1e-7)
+
+        vis = np.absolute(vis)
         
         # check the output
         assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
-        assert np.allclose(vis[:, :, 0], stokes_params[0][1] + stokes_params[1][1], atol=1e-6)      # I + Q
-        assert np.allclose(vis[:, :, 1], stokes_params[2][1] + 1j*stokes_params[3][1], atol=1e-6)   # U + iV
-        assert np.allclose(vis[:, :, 2], stokes_params[2][1] - 1j*stokes_params[3][1], atol=1e-6)   # U - iV
-        assert np.allclose(vis[:, :, 3], stokes_params[0][1] - stokes_params[1][1], atol=1e-6)      # I - Q
+        assert np.allclose(vis[:, :, 0], np.abs(stokes_params[0][1] + stokes_params[1][1]), atol=1e-6)      # I + Q
+        assert np.allclose(vis[:, :, 1], np.abs(stokes_params[2][1] + 1j*stokes_params[3][1]), atol=1e-6)   # U + iV
+        assert np.allclose(vis[:, :, 2], np.abs(stokes_params[2][1] - 1j*stokes_params[3][1]), atol=1e-6)   # U - iV
+        assert np.allclose(vis[:, :, 3], np.abs(stokes_params[0][1] - stokes_params[1][1]), atol=1e-6)      # I - Q
 
     def test_fits_predicting_all_stokes_circular_basis(self):
         """
@@ -236,14 +260,22 @@ class TestPredictFromFITS(unittest.TestCase):
             test_skymodels.append(test_filename)
             
         # process the FITS files
-        brightness_matrix, lm, _, _, _, _ = process_fits_skymodel(test_skymodels, self.ra0, self.dec0, self.freqs, self.freqs[1]-self.freqs[0], self.ncorr, 'circular')
+        predict = skymodel_from_fits(test_skymodels, self.ra0, self.dec0, self.freqs,
+                                self.freqs[1]-self.freqs[0], self.ncorr, basis='circular')
         
         # predict visibilities
-        vis = im_to_vis(brightness_matrix, self.uvw, lm, self.freqs)
+        vis = im_to_vis(predict.image, self.uvw, predict.lm, self.freqs,
+                    predict.is_polarised,
+                    expand_freq_dim=predict.expand_freq_dim,
+                    ncorr=self.ncorr,
+                    use_dft=predict.use_dft,
+                    epsilon=1e-7)
+
+        vis = np.absolute(vis)
         
         # check the output
         assert vis.shape == (self.n_baselines * self.n_times, self.nchan, self.ncorr)
-        assert np.allclose(vis[:, :, 0], stokes_params[0][1] + stokes_params[3][1], atol=1e-6)      # I + V
-        assert np.allclose(vis[:, :, 1], stokes_params[1][1] + 1j*stokes_params[2][1], atol=1e-6)   # Q + iU
-        assert np.allclose(vis[:, :, 2], stokes_params[1][1] - 1j*stokes_params[2][1], atol=1e-6)   # Q - iU
-        assert np.allclose(vis[:, :, 3], stokes_params[0][1] - stokes_params[3][1], atol=1e-6)      # I - V
+        assert np.allclose(vis[:, :, 0], np.abs(stokes_params[0][1] + stokes_params[3][1]), atol=1e-6)      # I + V
+        assert np.allclose(vis[:, :, 1], np.abs(stokes_params[1][1] + 1j*stokes_params[2][1]), atol=1e-6)   # Q + iU
+        assert np.allclose(vis[:, :, 2], np.abs(stokes_params[1][1] - 1j*stokes_params[2][1]), atol=1e-6)   # Q - iU
+        assert np.allclose(vis[:, :, 3], np.abs(stokes_params[0][1] - stokes_params[3][1]), atol=1e-6)      # I - V

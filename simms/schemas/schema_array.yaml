@@ -25,7 +25,13 @@ Array:
     info: List of antenna locations in the coordinate system specified by 'coord_sys'. 
     dtype: List[Any]
     required: true
-  groups:
+  sefd:
+    info: A value or a List of SEFDs. The SEFDs can be antenna dependent or frequency dependent. If frequency dependent, provide the SEFD with the corresponding frequency.
+    dtype: Union[float,List[np.array]]
+  tsys_over_eta:
+    info: A value or a List of system temperatures over efficiency. The Tsys/eta can be antenna dependent or frequency dependent. If frequency dependent, provide the Tsys/eta with the corresponding frequency.
+    dtype: Union[float,List[np.array]]
+  subarray:
     info: Specify antenna groups. Each group can define its own size, mount, sefd, tsys_over_eta, or tsys_over_eta via a YAML file.
     dtype: List[str]
 
@@ -35,7 +41,7 @@ Antenna:
     info: Name of antenna or a group/type of antennas
     dtype: str
     required: true
-  group:
+  subarray:
     info: Antennas (strings or indicices)
     dtype: List[Union[str,int]]
   mount:

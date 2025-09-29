@@ -16,7 +16,7 @@ recipe:
   steps:
     printhelp:
       cab:
-        command: skysim --help
+        command: simms skysim --help
     basic:
       cab: skysim
       params:
@@ -30,12 +30,12 @@ recipe:
         catalogue: =recipe.skymodel
         column: NOISY_DATA
         sefd: 512
-    subtract:
-      cab: skysim
-      params:
-        _use: recipe.steps.basic.params
-        mode: subtract
-        input-column: DATA
-        simulated-column: NOISY_DATA
-        column: DENOISED_DATA
+    # subtract:
+    #   cab: skysim
+    #   params:
+    #     _use: recipe.steps.basic.params
+    #     mode: subtract
+    #     input-column: DATA
+    #     simulated-column: NOISY_DATA
+    #     column: DENOISED_DATA
     

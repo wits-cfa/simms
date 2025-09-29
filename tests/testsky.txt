@@ -1,3 +1,0 @@
-#format: name ra dec stokes_i emaj emin pa
-A 0h0m0s  -30d0m0s 2 30arcsec 6arcsec 45
-B 23h59m10s  -30d01m0s 1 null null null

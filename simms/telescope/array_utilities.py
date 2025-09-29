@@ -47,7 +47,8 @@ class Array:
             fname = File(layout)
             if fname.EXISTS:
                 self.layout = OmegaConf.load(fname)
-            self.layoutname = os.path.basename(self.layout.BASENAME)
+            else:
+                raise FileNotFoundError(f"Layout file {fname} not found.")
         else:
             self.layout = SIMMS_TELESCOPES[layout]
             
@@ -64,6 +65,7 @@ class Array:
         self.sefd = sefd
         self.tsys_over_eta = tsys_over_eta
         self.sensitivity_file = sensitivity_file
+        self.noise_freqs = None
 
         self.__set_arrayinfo()
         if self.layout.coord_sys == "geodetic":
@@ -119,6 +121,11 @@ class Array:
                 sensitivity_data = OmegaConf.load(self.sensitivity_file)
                 if 'sefd' in sensitivity_data:
                     self.sefd = sensitivity_data['sefd']
+                
+                if 'freq' in sensitivity_data:
+                    self.noise_freqs = sensitivity_data['freq']
+            
+    
             
             if isinstance(sefd, (float, int)):
                 self.sefd = [sefd]
@@ -291,15 +298,14 @@ class Array:
         """
         dm = measures()
         
-        positions_global = self.antlocations
         latitude = self.lat0
 
         if len(pointing_direction) == 3:
             ra_dec = dm.direction(rf=pointing_direction[0], v0 = pointing_direction[1], v1=pointing_direction[2])
         else:
             ra_dec = dm.direction(rf='J2000', v0 = pointing_direction[1], v1=pointing_direction[2])
-        ra = ra_dec["m0"]["value"]
-        dec = ra_dec["m1"]["value"]
+        ra0 = ra_dec["m0"]["value"]
+        dec0 = ra_dec["m1"]["value"]
         
         
         if not start_time:
@@ -321,7 +327,7 @@ class Array:
             # obs_location = EarthLocation(lon=longitude * u.rad, lat=latitude * u.rad)
             gmst = start_day.sidereal_time(kind="mean", longitude=0*u.deg)
             gmst_rad = gmst.to_value("rad")
-            gha = gmst_rad - ra
+            gha = gmst_rad - ra0
             gha = gha % (2 * constants.PI)
 
             start_day_rads = start_day.to_value("mjd")%1 
@@ -332,12 +338,12 @@ class Array:
         h0 = ih0 + np.linspace(-total_time_rad/2, total_time_rad/2, ntimes)
         
         source_elevations = self.get_source_elevation(
-            latitude, dec, h0)
+            latitude, dec0, h0)
     
 
 
         # Transformation matrix
-        dec = np.ones(ntimes) * dec
+        dec = np.ones(ntimes) * dec0
         transform_matrix = np.array(
             [
                 [np.sin(h0), np.cos(h0), np.zeros(ntimes)],
@@ -391,7 +397,8 @@ class Array:
                 "freqs": freqs,
                 "times": time_table,
                 "source_elevations": source_elevations,
-            
+                "ra0": ra0,
+                "dec0": dec0,
             }
         )
         
