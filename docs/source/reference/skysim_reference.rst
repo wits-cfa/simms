@@ -1,28 +1,17 @@
 .. _skysim_reference:
 
-Array Telescope Simulation (``telsim``)
+Sky Simulation (``skysim``)
 ========================================
 
-
-Table of Contents
----------------------
-
-- `Step 1: Reading the Measurement Set <#step-1-reading-the-measurement-set>`_
-- `Step 2: Sky Model Input <#step-2-sky-model-input>`_
-- `Step 3: Creating Source Objects <#step-3-creating-source-objects>`_
-- `Step 4: Direction Cosine Transformation <#step-4-direction-cosine-transformation>`_
-- `Step 5: Visibility Computation <#step-5-visibility-computation>`_
-- `Step 6: Final Write <#step-6-final-write>`_
-- `Data Flow Summary <#data-flow-summary>`_
-- `Additional Features <#additional-features>`_
-- `DFT vs FFT <#dft-vs-fft>`_
-- `Best Practices <#best-practices>`_
-- `Command-Line Abbreviations <#command-line-abbreviations>`_
+.. contents::
+   :local:
+   :depth: 2
 
 Step 1: Reading the Measurement Set
 -----------------------------------
 
-Everything begins with reading the MS: granted the MS is created using ``telsim`` or you have an existing MS of your own: ``skysim`` takes your MS and uses ``daskms`` to read the ms tables and subtables.
+Everything begins with reading the MS: granted the MS is created using ``telsim`` or you have an existing MS of your own:
+``skysim`` takes your MS and uses ``daskms`` to read the ms tables and subtables.
 
 - The phase center: The RA/DEC of the observation's pointing centre
 - Channel frequencies: The frequency setup of the MS
@@ -72,7 +61,6 @@ Step 3: Creating Source Objects
 -------------------------------
 
 For each source, skysim creates:
-
 
 1. **Basic Source Object**::
 

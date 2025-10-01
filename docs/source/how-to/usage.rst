@@ -1,18 +1,14 @@
 .. _usage:
 
-Usage
+Usage 
 =======
 
 .. note::
    FITS-related examples, I have not fully tested yet.
 
-Table of Contents
--------------------
-
-- `Basic Simulation <#basic-simulation>`_
-- `Common Use Cases <#common-use-cases>`_
-- `Subtracting from or Adding to an Existing Column <#subtracting-from-or-adding-to-an-existing-column>`_
-- `Advanced Use Cases <#advanced-use-cases>`_
+.. contents::
+   :local:
+   :depth: 2
 
 **simms** is a simulation framework built around two key tools: ``telsim`` and ``skysim``.
 
