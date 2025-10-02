@@ -1,6 +1,7 @@
 import os
 from glob import glob
 import simms
+import numpy as np
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 from scabha.basetypes import File
 import click
@@ -174,7 +175,26 @@ def skysim_runit(**kwargs):
             outvis = simvis
     else:
         outvis = simvis 
+        
+    if opts.transient:
+        
+        unique_times, inv_idx = np.unique(msds.TIME.values, return_inverse=True)
+        transient_profile = exoplanet_transient_logistic(
+            start_time=unique_times.min(), end_time=unique_times.max(), ntimes=unique_times.shape[0],
+            transient_start=opts.transient[0],
+            transient_absorb=opts.transient[1],
+            transient_ingress=opts.transient[2],
+            transient_period=opts.transient[3],
+            baseline=1.0
+        )
+        
+        if transient_profile.shape[0] != unique_times.shape[0]:
+            raise ValueError("Transient profile length does not match number of unique times.")
+        modulation = transient_profile[inv_idx]
+        
+        outvis = outvis * modulation[:, np.newaxis,np.newaxis]
     
+    print(f"simvis:{simvis.shape}")
     ms_dsl = [                      
     msds.assign(**{
                 opts.column: (("row", "chan", "corr"), outvis),
@@ -185,3 +205,53 @@ def skysim_runit(**kwargs):
 
     with TqdmCallback(desc="Computing and writing visibilities"):
         da.compute(writes)
+
+
+def exoplanet_transient_logistic(
+    start_time, end_time, ntimes,
+    transient_start,
+    transient_absorb,
+    transient_ingress,
+    transient_period,
+    baseline
+):
+
+    times = np.linspace(start_time, end_time, ntimes)
+
+    def logistic_step(z, L=10.0):
+        "Logistic function mapped to [0, 1] using internal steepness scaling L."
+        z = np.clip(z, 0, 1)
+        k = L  # steepness across [0, 1]
+        raw = 1 / (1 + np.exp(-k * (z - 0.5)))
+        f0 = 1 / (1 + np.exp(k / 2))
+        f1 = 1 / (1 + np.exp(-k / 2))
+        normalized = (raw - f0) / (f1 - f0)
+        return normalized
+
+    intensity = np.full_like(times, baseline, dtype=np.float64)
+
+    ingress_start = transient_start
+    ingress_end = ingress_start + transient_ingress
+
+    egress_end = transient_start + transient_period
+    egress_start = egress_end - transient_ingress
+
+    plateau_start = ingress_end
+    plateau_end = egress_start
+
+    # Ingress
+    mask_ingress = (times >= ingress_start) & (times < ingress_end)
+    z_ingress = (times[mask_ingress] - ingress_start) / transient_ingress
+    intensity[mask_ingress] = baseline - transient_absorb * logistic_step(z_ingress, L=10)
+
+    # Flat bottom
+    mask_plateau = (times >= plateau_start) & (times < plateau_end)
+    intensity[mask_plateau] = baseline - transient_absorb
+
+    # Egress
+    mask_egress = (times >= egress_start) & (times < egress_end)
+    z_egress = (times[mask_egress] - egress_start) / transient_ingress
+    intensity[mask_egress] = baseline - transient_absorb * (1 - logistic_step(z_egress, L=10))
+
+    
+    return intensity

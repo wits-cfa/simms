@@ -31,6 +31,11 @@ cabs:
         dtype: str
         default: linear
         choices: ['linear', 'circular']
+      transient:
+        info: List containing transient parameters. If None, no transient modulation is applied. Required values [transient_start, transient_absorb, transient_ingress, transient_period].
+        dtype: List[float]
+        default: []
+
       pixel-tol:
         info: minimum brightness for a pixel to be considered in direct Fourier transform
         dtype: float
