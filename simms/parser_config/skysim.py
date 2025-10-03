@@ -179,19 +179,25 @@ def skysim_runit(**kwargs):
     if opts.transient:
         
         unique_times, inv_idx = np.unique(msds.TIME.values, return_inverse=True)
+        t0 = unique_times.min()
+        unique_times_rel = unique_times - t0
+
         transient_profile = exoplanet_transient_logistic(
-            start_time=unique_times.min(), end_time=unique_times.max(), ntimes=unique_times.shape[0],
-            transient_start=opts.transient[0],
+            start_time=unique_times_rel.min(),
+            end_time=unique_times_rel.max(),
+            ntimes=unique_times_rel.shape[0],
+            transient_start=opts.transient[0],  # now relative to obs start
             transient_absorb=opts.transient[1],
             transient_ingress=opts.transient[2],
             transient_period=opts.transient[3],
             baseline=1.0
         )
-        
+
         if transient_profile.shape[0] != unique_times.shape[0]:
             raise ValueError("Transient profile length does not match number of unique times.")
-        modulation = transient_profile[inv_idx]
         
+        modulation = transient_profile[inv_idx]
+    
         outvis = outvis * modulation[:, np.newaxis,np.newaxis]
     
     print(f"simvis:{simvis.shape}")
