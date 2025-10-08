@@ -23,7 +23,7 @@ def check_max_bl():
             smooth=None,
             fit_order=None)
 
-    ds = xds_from_table('../tests/test-mk.ms')[0]
+    ds = xds_from_table('../simms_tests/test-mk.ms')[0]
     uvw = ds.UVW.values
     bl = np.sqrt(uvw[:,0] ** 2 + uvw[:,1] ** 2)
     max_bl = bl.max()
@@ -123,8 +123,8 @@ def check_circle_or_ellipse(u, v):
     }
 
 def check_stupid_things():
-    ds = xds_from_table('../tests/test-mk.ms')[0]    
-    ds_spw = xds_from_table('../tests/test-mk.ms::SPECTRAL_WINDOW')[0]
+    ds = xds_from_table('../simms_tests/test-mk.ms')[0]    
+    ds_spw = xds_from_table('../simms_tests/test-mk.ms::SPECTRAL_WINDOW')[0]
     num_chan = ds_spw.NUM_CHAN.values
     assert np.isclose(num_chan, 2)  
     
@@ -143,19 +143,18 @@ def check_stupid_things():
     nbl = ds.DATA.shape[0] / time[0]
     assert np.isclose(nbl, 2016)
 
-    ds_point = xds_from_table('../tests/test-mk.ms::POINTING')[0]
+    ds_point = xds_from_table('../simms_tests/test-mk.ms::POINTING')[0]
     direction = ds_point.TARGET.values[0][0]
-    print(direction)
 
     assert np.isclose(direction[0], 0)
     assert np.isclose(direction[1], 0)
     
-    ds_pol = xds_from_table('../tests/test-mk.ms::POLARIZATION')[0]
+    ds_pol = xds_from_table('../simms_tests/test-mk.ms::POLARIZATION')[0]
     corr = ds_pol.CORR_TYPE.values[0]
     assert np.isclose(corr[0], 9)
     assert np.isclose(corr[1], 12)
     
-    ds_ant = xds_from_table('../tests/test-mk.ms::ANTENNA')[0]
+    ds_ant = xds_from_table('../simms_tests/test-mk.ms::ANTENNA')[0]
     mount = ds_ant.MOUNT.values[0]
     size = ds_ant.DISH_DIAMETER.values[0]
     assert mount == "ALT-AZ"

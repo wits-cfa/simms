@@ -25,7 +25,7 @@ def check_noise_image():
     #           start_time='2025-03-06T12:25:00',
     #           )
     
-    mspath = '../tests/test-mk.ms'
+    mspath = '../simms_tests/test-mk.ms'
     nchan = 2
     df = 1e6
     dt =1
