@@ -24,6 +24,73 @@ def gauss_1d(xaxis:np.ndarray, peak:float, width:float, x0:float):
     sigma = width / FWHM_scale_fact
     return peak*np.exp(-(xaxis-x0)**2/(2*sigma**2))
 
+def exoplanet_transient_logistic(
+    start_time:int, end_time:int, ntimes:int,
+    transient_start:int,
+    transient_absorb:float,
+    transient_ingress:int,
+    transient_period:int):
+    """
+    Function for a transient profile
+
+    Args:
+        start_time (float): 
+            Start time of the observation (in seconds).
+        end_time (float): 
+            End time of the observation (in seconds).
+        ntimes (int): 
+            Total number of integrations between start and end.
+        transient_start (float): 
+            Time at which the transit begins (seconds).
+        transient_absorb (float): 
+            Maximum fractional flux decrease during the transit (e.g. 0.01 = 1% dip).
+        transient_ingress (float): 
+            Duration of ingress (time it takes for the full dip to occur).
+        transient_period (float): 
+            Total duration of the transit event, including ingress and egress.
+    
+    Returns:
+        
+    """
+
+    times = np.linspace(start_time, end_time, ntimes)
+    baseline = 1.0
+    def logistic_step(z, L=10.0):
+        "Logistic function mapped to [0, 1] using internal steepness scaling L."
+        z = np.clip(z, 0, 1)
+        k = L  # steepness across [0, 1]
+        raw = 1 / (1 + np.exp(-k * (z - 0.5)))
+        f0 = 1 / (1 + np.exp(k / 2))
+        f1 = 1 / (1 + np.exp(-k / 2))
+        normalized = (raw - f0) / (f1 - f0)
+        return normalized
+
+    intensity = np.full_like(times, baseline, dtype=np.float64)
+
+    ingress_start = transient_start
+    ingress_end = ingress_start + transient_ingress
+
+    egress_end = transient_start + transient_period
+    egress_start = egress_end - transient_ingress
+
+    plateau_start = ingress_end
+    plateau_end = egress_start
+
+    # Ingress
+    mask_ingress = (times >= ingress_start) & (times < ingress_end)
+    z_ingress = (times[mask_ingress] - ingress_start) / transient_ingress
+    intensity[mask_ingress] = baseline - transient_absorb * logistic_step(z_ingress, L=10)
+
+    # Flat bottom
+    mask_plateau = (times >= plateau_start) & (times < plateau_end)
+    intensity[mask_plateau] = baseline - transient_absorb
+
+    # Egress
+    mask_egress = (times >= egress_start) & (times < egress_end)
+    z_egress = (times[mask_egress] - egress_start) / transient_ingress
+    intensity[mask_egress] = baseline - transient_absorb * (1 - logistic_step(z_egress, L=10))
+    
+    return intensity
 
 class StokesData:
     def __init__(self, data:List, linear_basis=True):
@@ -49,6 +116,11 @@ class StokesData:
         
         self.data = spectrum
 
+    def set_lightcurve(self, lightcurve_func, **kwargs):
+        light_curve = lightcurve_func(**kwargs)
+        ndim = self.data.ndim
+        slc = tuple([slice(None)] + [np.newaxis]*ndim)
+        return self.data * light_curve[slc]
         
     def __stokes_x__(self, x:str):
         """ Get intensity data for stokes parameter x = I|Q|U|V
@@ -170,6 +242,12 @@ class CatSource:
         self.cont_reffreq = convert2Hz(cont_reffreq, None)
         self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
         self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
+
+    def add_lightcurve(self, transient_start, transient_absorb, transient_period, transient_ingress):
+        self.transient_start = convert2float(transient_start)
+        self.transient_absorb = convert2float(transient_absorb)
+        self.transient_period = convert2float(transient_period)
+        self.transient_ingress = convert2float(transient_ingress)
 
     @property
     def is_point(self):

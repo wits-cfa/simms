@@ -15,6 +15,7 @@ from simms.skymodel.source_factory import (
         StokesDataFits,
         gauss_1d,
         contspec,
+        exoplanet_transient_logistic,
 )
 from simms.skymodel.converters import radec2lm
 from astropy import units
@@ -60,9 +61,7 @@ def compute_lm_coords(phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_co
 
 
 def skymodel_from_catalogue(catfile:File, map_path, delimiter, 
-                chan_freqs: np.ndarray, full_stokes:bool=True,
-                ):
-    
+                chan_freqs: np.ndarray, unique_times, full_stokes:bool=True):
     sources = load_sources(catfile, map_path, delimiter)
     mod_sources = []
     for src in sources:
@@ -80,6 +79,22 @@ def skymodel_from_catalogue(catfile:File, map_path, delimiter,
                 "nu_ref": src.cont_reffreq,
             }
         stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
+
+        if src.transient_start:
+            lightcurve_func = exoplanet_transient_logistic
+            t0 = unique_times.min()
+            unique_times_rel = unique_times - t0
+            kwargs = {
+                "start_time": unique_times_rel.min(),
+                "end_time": unique_times_rel.max(),
+                "ntimes": unique_times_rel.shape[0],
+                "transient_start": src.transient_start,  
+                "transient_period": src.transient_period,
+                "transient_ingress": src.transient_ingress,
+                "transient_absorb": src.transient_absorb
+            }
+        stokes.set_lightcurve(lightcurve_func, **kwargs)
+        
         setattr(src, "stokes", stokes)
         mod_sources.append(src)
     

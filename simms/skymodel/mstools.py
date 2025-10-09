@@ -117,7 +117,8 @@ def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pix
 
 def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
                 ncorr: int, polarisation: bool, pol_basis: str, ra0:float, dec0:float,
-                noise_vis: Optional[float] = None):
+                noise_vis: Optional[float] = None, times: Optional[np.ndarray] = None, 
+                transient_profile: Optional[np.ndarray] = None):
     """
     Computes visibilities
 

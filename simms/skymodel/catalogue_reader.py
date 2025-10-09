@@ -110,6 +110,21 @@ def dict2sources(data):
                 data["cont_coeff_2"][1][i] if i < len(data["cont_coeff_2"][1]) else None
             ),
         )
+
+        source.add_lightcurve(
+            transient_start=(
+                data["transient_start"][1][i] if i < len(data["transient_start"][1]) else None
+            ),  
+            transient_absorb=(
+                data["transient_absorb"][1][i] if i < len(data["transient_absorb"][1]) else None
+            ),
+            transient_ingress=(
+                data["transient_ingress"][1][i] if i < len(data["transient_ingress"][1]) else None
+            ),
+            transient_period=(
+                data["transient_period"][1][i] if i < len(data["transient_period"][1]) else None
+            ),
+        )
         sources.append(source)
 
     return sources
