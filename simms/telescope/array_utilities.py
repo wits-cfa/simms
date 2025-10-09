@@ -4,10 +4,10 @@ from typing import Union
 import astropy.units as u
 from astropy.constants import k_B
 import numpy as np
-import os
 from astropy.time import Time
 from casacore.measures import measures
 from casacore.tables import table
+import yaml
 from omegaconf import OmegaConf
 from scabha.basetypes import File, List
 
@@ -47,6 +47,10 @@ class Array:
             fname = File(layout)
             if fname.EXISTS:
                 self.layout = OmegaConf.load(fname)
+                if 'centre' not in self.layout:
+                    centre = calculate_array_centre(self.layout.antlocations)
+                    write_centre_to_array_config(fname, centre)
+                    self.layout.centre = centre
             else:
                 raise FileNotFoundError(f"Layout file {fname} not found.")
         else:
@@ -70,8 +74,8 @@ class Array:
         self.__set_arrayinfo()
         if self.layout.coord_sys == "geodetic":
             self.set_itrf()
-
-
+    
+    
     def __set_arrayinfo(self):
         """
         - Extract the array information from the schema
@@ -480,3 +484,45 @@ def ms_addrow(ms, subtable:str, nrows:int):
     finally:
         subtab.unlock()
         subtab.close()
+
+
+def calculate_array_centre(ant_locations: List[List[float]]) -> List[float]:
+    """
+    Calculate the geometric centre of an array given the antenna locations.
+    
+    Parameters
+    ----------
+    ant_locations : List[List[float]]
+        A list of antenna locations, where each location is a list of [X, Y, Z] coordinates.
+        
+    Returns
+    -------
+    List[float]
+        The [X, Y, Z] coordinates of the geometric centre of the array.
+    """
+    # convert to NumPy array and compute mean along axis 0 (across antennas)
+    ant_array = np.array(ant_locations)
+    centre = np.mean(ant_array, axis=0)
+    
+    return centre.tolist()
+
+
+def write_centre_to_array_config(array_config_path: File, centre: List[float]) -> None:
+    """
+    Write the calculated centre to the array configuration YAML file.
+    
+    Parameters
+    ----------
+    array_config_path : File
+        Path to the array configuration YAML file.
+    centre : List[float]
+        The [X, Y, Z] coordinates of the geometric centre to write.
+    """
+    with open(array_config_path, 'r') as f:
+        array_info = yaml.safe_load(f)
+    
+    array_info['centre'] = centre
+    
+    with open(array_config_path, 'w') as f:
+        yaml.dump(array_info, f)
+        
