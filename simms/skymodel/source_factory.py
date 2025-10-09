@@ -100,7 +100,7 @@ class StokesData:
             self.param_string = "IQUV"
         else:
             self.param_string = "IVQU"
-            
+        
     def set_spectrum(self, freqs, specfunc,
                 full_pol=True, **kwargs):
         
@@ -118,9 +118,13 @@ class StokesData:
 
     def set_lightcurve(self, lightcurve_func, **kwargs):
         light_curve = lightcurve_func(**kwargs)
-        ndim = self.data.ndim
-        slc = tuple([slice(None)] + [np.newaxis]*ndim)
-        return self.data * light_curve[slc]
+        ndim = self.data.ndim + 1
+        slc = [np.newaxis]*ndim
+        slc[1] = slice(None)
+        dslice = [slice(None)]*ndim
+        dslice[1] = np.newaxis
+        
+        self.data = self.data[tuple(dslice)] * light_curve[tuple(slc)]
         
     def __stokes_x__(self, x:str):
         """ Get intensity data for stokes parameter x = I|Q|U|V
@@ -251,7 +255,11 @@ class CatSource:
 
     @property
     def is_point(self):
-        return self.emaj in  ('null',None) and self.emin in (None, 'null') 
+        return self.emaj in  ('null',None) and self.emin in (None, 'null')
+    
+    @property
+    def is_transient(self):
+        return self.transient_start not in [None, "null"]
 
 class Source(CatSource):
     

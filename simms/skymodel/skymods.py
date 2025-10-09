@@ -16,6 +16,7 @@ from simms.skymodel.source_factory import (
         gauss_1d,
         contspec,
         exoplanet_transient_logistic,
+        CatSource,
 )
 from simms.skymodel.converters import radec2lm
 from astropy import units
@@ -60,9 +61,9 @@ def compute_lm_coords(phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_co
     return lm
 
 
-def skymodel_from_catalogue(catfile:File, map_path, delimiter, 
-                chan_freqs: np.ndarray, unique_times, full_stokes:bool=True):
-    sources = load_sources(catfile, map_path, delimiter)
+def skymodel_from_sources(sources:List[CatSource], chan_freqs:np.ndarray,
+                        unique_times:np.ndarray=None,
+                        full_stokes:bool=True):
     mod_sources = []
     for src in sources:
         stokes = StokesData([src.stokes_i, src.stokes_q, src.stokes_u, src.stokes_v])
@@ -78,6 +79,7 @@ def skymodel_from_catalogue(catfile:File, map_path, delimiter,
                 "coeff": src.cont_coeff_1,
                 "nu_ref": src.cont_reffreq,
             }
+            
         stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
 
         if src.transient_start:
@@ -93,13 +95,32 @@ def skymodel_from_catalogue(catfile:File, map_path, delimiter,
                 "transient_ingress": src.transient_ingress,
                 "transient_absorb": src.transient_absorb
             }
-        stokes.set_lightcurve(lightcurve_func, **kwargs)
+            stokes.set_lightcurve(lightcurve_func, **kwargs)
         
         setattr(src, "stokes", stokes)
         mod_sources.append(src)
     
     return mod_sources
-    
+ 
+def skymodel_from_catalogue(catfile:File, map_path, delimiter, 
+                chan_freqs: np.ndarray, unique_times, full_stokes:bool=True):
+    """AI is creating summary for skymodel_from_catalogue
+
+    Args:
+        catfile (File): [description]
+        map_path ([type]): [description]
+        delimiter ([type]): [description]
+        chan_freqs (np.ndarray): [description]
+        unique_times ([type]): [description]
+        full_stokes (bool, optional): [description]. Defaults to True.
+
+    Returns:
+        [type]: [description]
+    """
+    sources = load_sources(catfile, map_path, delimiter)
+    return skymodel_from_sources(sources, chan_freqs=chan_freqs,
+                            unique_times=unique_times, full_stokes=full_stokes)
+   
 
 def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
                         ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, full_stokes:bool=True,

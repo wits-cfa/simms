@@ -11,9 +11,10 @@ from simms import BIN, get_logger
 import glob
 from simms.utilities import ParameterError
 from simms.skymodel.skymods import (
-    skymodel_from_catalogue,
+    skymodel_from_sources,
     skymodel_from_fits,
 )
+from simms.skymodel.catalogue_reader import load_sources
 
 from simms.skymodel.mstools import (
     compute_vis,
@@ -65,7 +66,6 @@ def skysim_runit(**kwargs):
     freqs = spw_ds.CHAN_FREQ.data[opts.spw_id].compute()
     dfreq = spw_ds.CHAN_WIDTH.data[opts.spw_id][0].compute()
     ncorr = msds.DATA.data.shape[-1]
-    unique_times = np.unique(msds.TIME.values)
     
     if cat:
         map_path = opts.mapping
@@ -80,14 +80,27 @@ def skysim_runit(**kwargs):
             map_path = f"{thisdir}/library/catalogue_template.yaml"
             log.warning(f"No mapping file specified nor built-in map selected. Assuming default column names (see {map_path})")
 
-        sources = skymodel_from_catalogue(cat, map_path=map_path, delimiter=opts.cat_delim,
-                                    chan_freqs=freqs, full_stokes=opts.polarisation, unique_times=unique_times)
+
+        sources = load_sources(cat, map_path=map_path, delimiter=opts.cat_delim) 
+
+        if any([src.is_transient for src in sources]):
+            unique_times = np.unique(msds.TIME.values)
+            skymodel = skymodel_from_sources(sources, chan_freqs=freqs,
+                                        full_stokes=opts.polarisation,
+                                        unique_times=unique_times)
+            ntimes = unique_times.size
+        else:
+            skymodel = skymodel_from_sources(sources, chan_freqs=freqs,
+                                        full_stokes=opts.polarisation)
+            ntimes = None
+            
         
         simvis = da.blockwise(
             compute_vis, ("row", "chan", "corr"),
-            sources, ("source",),
+            skymodel, ("source",),
             msds.UVW.data, ("row", "uvw"),
             freqs, ("chan",),
+            ntimes=ntimes,
             ncorr=ncorr,
             polarisation=opts.polarisation,
             pol_basis=opts.pol_basis,
