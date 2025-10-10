@@ -2,8 +2,6 @@ import logging
 import os
 from importlib import metadata
 
-from omegaconf import OmegaConf
-
 __version__ = metadata.version(__package__)
 
 PCKGDIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,7 +25,10 @@ def get_logger(name, level="WARNING"):
 
 LOG = get_logger("simms")
 
-BIN = OmegaConf.create({"simms": "simms",
-                        "skysim": "skysim",
-                        "telsim": "telsim",
-                        })
+class BinClass():
+    def __init__(self):
+        self.skysim = "skysim"
+        self.telsim = "telsim"    
+        
+BIN = BinClass()
+

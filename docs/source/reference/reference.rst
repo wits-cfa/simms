@@ -3,12 +3,9 @@
 Reference
 ###########
 
-Array Telescope Simulation (``telsim``)
-========================================
+.. toctree::
+    :maxdepth: 2
+    :caption: Contents:
 
-
-
-Sky Simulations (``skysim``)
-=============================
-
-
+    telsim_reference
+    skysim_reference

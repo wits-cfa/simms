@@ -72,14 +72,14 @@ class StokesData:
         return xdata
     
     def get_brightness_matrix(self, ncorr:int, linear_pol_basis=True) -> np.ndarray:
-        """AI is creating summary for get_brightness_matrix
+        """ Returns the brightness matrix of this source instance
 
         Args:
-            ncorr (int): [description]
-            linear_pol_basis (bool): [description]
+            ncorr (int): Number of correlations for target MS
+            linear_pol_basis (bool): Is the polarisation basis linear? 
 
         Returns:
-            np.ndarray: [description]
+            np.ndarray: The brightness matrix
         """
         
         dshape = list(self.data.shape)

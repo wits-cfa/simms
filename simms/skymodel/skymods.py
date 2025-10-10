@@ -100,8 +100,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         ncorr (int): number of correlations
         basis (str): polarisation basis ("linear" or "circular")
         tol (float): tolerance for pixel brightness
-        stokes (Union[int,str]): Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). 
-                            If 'all', all Stokes parameters are used.
+        stokes (Union[int,str]): Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). If 'all', all Stokes parameters are used.
         stack_axis (str|Dict): Stack FITS images along this axis if multiple input images given. If Dict, then these should be options to 'fitstoolz.reader.FitsData.add_axis()'
     Returns:
         predict_image (np.ndarray): pixel-by-pixel brightness matrix for each channel and correlation
