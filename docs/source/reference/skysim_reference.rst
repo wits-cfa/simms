@@ -1,6 +1,6 @@
 .. _skysim_reference:
 
-Sky Simulation (``skysim``)
+Sky Simulations (``skysim``)
 ========================================
 
 .. contents::
