@@ -1,15 +1,9 @@
 import numpy as np
 from simms.constants import FWHM_scale_fact
 import xarray as xr
-from scabha.basetypes import List
-from simms.skymodel.converters import (
-    convert2float,
-    convert2Hz,
-    convert2Jy,
-    convert2rad,
-    convertdec2rad,
-    convertra2rad,
-)
+from typing import List, Any
+from dataclasses import dataclass
+from simms.skymodel.converters import convert
 
 def gauss_1d(xaxis:np.ndarray, peak:float, width:float, x0:float):
     """
@@ -110,9 +104,9 @@ class StokesData:
             spectrum = np.zeros([4,nchan], dtype=freqs.dtype)
             for idx, stokes_param in enumerate(self.param_string):
                 flux = getattr(self, stokes_param)
-                spectrum[idx,...] = specfunc(freqs=freqs, flux=flux, **kwargs)
+                spectrum[idx,...] = specfunc(freqs, flux, **kwargs)
         else:
-            spectrum = specfunc(freqs=freqs, flux=self.I, **kwargs)[np.newaxis,:]
+            spectrum = specfunc(freqs, self.I, **kwargs)[np.newaxis,:]
         
         self.data = spectrum
 
@@ -208,50 +202,71 @@ class StokesData:
     @property
     def is_polarised(self):
         return any([self.Q, self.U, self.V])
-    
+
+@dataclass    
 class CatSource: 
-    def __init__(self, name:str, ra:float, dec:float,
-            emaj:float, emin:float, pa:float):
-        """AI is creating summary for __init__
+    """AI is creating summary for __init__
 
-        Args:
-            name (str): [description]
-            ra (float): [description]
-            dec (float): [description]
-            emaj (float): [description]
-            emin (float): [description]
-            pa (float): [description]
-        """
-        self.name = name
-        self.ra = convertra2rad(ra)
-        self.dec = convertdec2rad(dec)
-        self.shape = None
-        self.emaj = convert2rad(emaj,0)
-        self.emin = convert2rad(emin,0)
-        self.pa = convert2rad(pa,0)
+    Args:
+        name (str): [description]
+        ra (float): [description]
+        dec (float): [description]
+        emaj (float): [description]
+        emin (float): [description]
+        pa (float): [description]
+    """
+    
+    name: str
+    ra: float|str
+    dec: float|str
+    stokes_i: float|str
+    emaj: float|str = 0
+    emin: float|str = 0
+    pa: float|str = 0
+    stokes_q: float|str = 0
+    stokes_u: float|str = 0
+    stokes_v: float|str = 0
+    line_peak: float|str = None
+    line_width: float|str = None
+    line_restfreq: float|str = None
+    cont_coeff_1: float|str = 0
+    cont_coeff_2: float|str = None
+    cont_reffreq: float|str = None
+    transient_start: float|str = None
+    transient_absorb: float|str = None
+    transient_ingress: float|str = None
+    transient_period: float|str = None
 
-    def add_stokes(self, stokes_i:int, stokes_q:int, stokes_u:int, stokes_v:int): 
-        # Intensity
-        self.stokes_i = convert2Jy(stokes_i,0),
-        self.stokes_q = convert2Jy(stokes_q,0),
-        self.stokes_u = convert2Jy(stokes_u,0),
-        self.stokes_v = convert2Jy(stokes_v,0),
+
+    def __post_init__(self):
         
-    def add_spectral(self, line_peak, line_width, line_restfreq,
-                cont_reffreq, cont_coeff_1, cont_coeff_2):
-    # Frequency info
-        self.line_peak = convert2Hz(line_peak,False)
-        self.line_width = convert2Hz(line_width,0)
-        self.line_restfreq = convert2Hz(line_restfreq, None)
-        self.cont_reffreq = convert2Hz(cont_reffreq, None)
-        self.cont_coeff_1 = convert2float(cont_coeff_1, null_value=0)
-        self.cont_coeff_2 = convert2float(cont_coeff_2, null_value=0)
-
-    def add_lightcurve(self, transient_start, transient_absorb, transient_period, transient_ingress):
-        self.transient_start = convert2float(transient_start)
-        self.transient_absorb = convert2float(transient_absorb)
-        self.transient_period = convert2float(transient_period)
-        self.transient_ingress = convert2float(transient_ingress)
+        self.__update_attr__("ra", "angle_ra")
+        self.__update_attr__("dec", "angle_dec")
+        self.__update_attr__("emaj", "angle")
+        self.__update_attr__("emin", "angle")
+        self.__update_attr__("pa", "angle")
+        #stokes info
+        self.__update_attr__("stokes_i", "flux")
+        self.__update_attr__("stokes_q", "flux")
+        self.__update_attr__("stokes_u", "flux")
+        self.__update_attr__("stokes_v", "flux")
+        #frequency info
+        self.__update_attr__("line_peak", "frequency")
+        self.__update_attr__("line_width", "frequency")
+        self.__update_attr__("line_restfreq", "frequency")
+        self.__update_attr__("line_reffreq", "frequency")
+        self.__update_attr__("cont_coeff_1", "frequency")
+        self.__update_attr__("cont_coeff_2", "frequency")
+        #transient info
+        self.__update_attr__("transient_start", None)
+        self.__update_attr__("transient_absorb", None) 
+        self.__update_attr__("transient_period", None)
+        self.__update_attr__("transient_ingress", None)
+    
+    def __update_attr__(self, attr:str, qtype:str):
+        if hasattr(self, attr):
+            value = getattr(self, attr)
+            setattr(self, attr, convert(value, qtype))
 
     @property
     def is_point(self):

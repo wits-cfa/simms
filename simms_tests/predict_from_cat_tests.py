@@ -5,6 +5,7 @@ from simms.skymodel.source_factory import (
     StokesData,
     contspec,
 )
+from simms.skymodel.skymods import skymodel_from_sources
 from simms.telescope.array_utilities import Array
 import numpy as np
 
@@ -36,25 +37,23 @@ class TestComputeVis(unittest.TestCase):
             emaj = None,
             emin = None,
             pa = None,
-        )
-        
-        self.source.add_stokes(
             stokes_i = "1",
             stokes_q = "0.00",
             stokes_u = "0.00",
             stokes_v = "0",
-        )
-        
-        self.source.add_spectral(
             line_peak = "1.4e9",
             line_width = "26kHz",
             line_restfreq = "1.4GHz",
             cont_coeff_1 = None,
             cont_coeff_2 = None,
             cont_reffreq = None,
+            transient_start = None,
+            transient_absorb = None,
+            transient_period = None,
+            transient_ingress = None,
         )
     
-    
+
     def test_compute_vis_stokes_I_only(self):
         """
         Test that it stills works when only Stokes I is provided.
@@ -65,7 +64,7 @@ class TestComputeVis(unittest.TestCase):
         - YX = 0 (if ncorr == 4)
         - YY = I
         """
-
+        
         I = 1.0
     
         stokes = StokesData([I,0,0,0])
@@ -96,42 +95,30 @@ class TestComputeVis(unittest.TestCase):
         np.testing.assert_allclose(vis[:, :, 3], 1.0, atol=1e-6) # check that YY = I = 1
         
     
-#TODO(Mika, Senkhosi) Adapt rest of the tests to the new API
-#   def test_compute_vis_I_and_Q_2_corrs(self):
-#       """
-#       Test compute_vis with ncorr == 2 and only Stokes I and Q provided.
-#       Validates:
-#       - Output shape of visibilities
-#       - XX = I + Q
-#       - YY = I - Q
-#       """
-#       ncorr = 2
-#       I = 1.0
-#       Q = 1.0
-#       spectrum = Spectrum(
-#           stokes_i = str(I),
-#           stokes_q = str(Q),
-#           stokes_u = None,
-#           stokes_v = None,
-#           cont_reffreq = None,
-#           line_peak = None,
-#           line_width = None,
-#           line_restfreq = None,
-#           cont_coeff_1 = None,
-#           cont_coeff_2 = None
-#       )
-#       
-#       self.source.spectrum = spectrum.make_spectrum(self.freqs)
-#       sources = [self.source]
-#       
-#       vis = compute_vis(sources, self.uvw, self.freqs, ncorr, True, 'linear', None, None)
-#       
-#       nrow = self.uvw.shape[0]
-#       nchan = self.freqs.size
-#       
-#       self.assertEqual(vis.shape, (nrow, nchan, ncorr))
-#       np.testing.assert_allclose(vis[:, :, 0], 2.0, atol=1e-6) # check that XX = I + Q = 2
-#       np.testing.assert_allclose(vis[:, :, 1], 0.0, atol=1e-6) # check that YY = I - Q = 0
+#TODO(Mika, Senkhosi, Zaryn) Adapt rest of the tests to the new API
+    def test_compute_vis_I_and_Q_2_corrs(self):
+        """
+        Test compute_vis with ncorr == 2 and only Stokes I and Q provided.
+        Validates:
+        - Output shape of visibilities
+        - XX = I + Q
+        - YY = I - Q
+        """
+        ncorr = 2
+        
+        Q = 1.0
+        self.source.stokes_q = Q
+        sources = [self.source]
+        skymodel = skymodel_from_sources(sources, self.freqs)
+        
+        vis = compute_vis(skymodel, self.uvw, self.freqs, ncorr, True, 'linear', self.ra0, self.dec0)
+        
+        nrow = self.uvw.shape[0]
+        nchan = self.freqs.size
+        
+        self.assertEqual(vis.shape, (nrow, nchan, ncorr))
+        np.testing.assert_allclose(vis[:, :, 0], 2.0, atol=1e-6) # check that XX = I + Q = 2
+        np.testing.assert_allclose(vis[:, :, 1], 0.0, atol=1e-6) # check that YY = I - Q = 0
 
 #   
 #   def test_compute_vis_I_and_Q_4_corrs(self):

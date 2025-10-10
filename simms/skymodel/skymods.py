@@ -82,7 +82,7 @@ def skymodel_from_sources(sources:List[CatSource], chan_freqs:np.ndarray,
             
         stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
 
-        if src.transient_start:
+        if src.is_transient:
             lightcurve_func = exoplanet_transient_logistic
             t0 = unique_times.min()
             unique_times_rel = unique_times - t0
@@ -96,7 +96,7 @@ def skymodel_from_sources(sources:List[CatSource], chan_freqs:np.ndarray,
                 "transient_absorb": src.transient_absorb
             }
             stokes.set_lightcurve(lightcurve_func, **kwargs)
-        
+        print("running fine")
         setattr(src, "stokes", stokes)
         mod_sources.append(src)
     

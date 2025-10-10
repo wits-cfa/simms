@@ -90,6 +90,7 @@ def skysim_runit(**kwargs):
                                         unique_times=unique_times)
             ntimes = unique_times.size
         else:
+            print("hello world")
             skymodel = skymodel_from_sources(sources, chan_freqs=freqs,
                                         full_stokes=opts.polarisation)
             ntimes = None

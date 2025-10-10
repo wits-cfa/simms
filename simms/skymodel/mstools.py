@@ -150,7 +150,7 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
         n_term = np.sqrt(1 - el*el - em*em) - 1
         arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
         
-        if src.emaj and src.emin:
+        if not src.emaj and not src.emin:
             # point source
             return np.exp(2 * np.pi * 1j * arg)
         else:
@@ -173,7 +173,7 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
     for source in sources:
         phase = calculate_phase_factor(source)
         bmatrix = source.stokes.get_brightness_matrix(ncorr, pol_basis=="linear")
-        if source.transient_start:
+        if source.is_transient:
             nbl = int(phase.shape[0] / ntimes)
             time_index_mapper = np.repeat(np.arange(ntimes), nbl)
             bmatrix = bmatrix[:,time_index_mapper,...]
