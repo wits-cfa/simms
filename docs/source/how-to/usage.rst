@@ -89,7 +89,7 @@ For polarized sources, you can provide separate FITS files for each Stokes param
    simms skysim --ms smallvis.ms --fits-sky stokes_i.fits stokes_q.fits stokes_u.fits stokes_v.fits --column SIMULATED_DATA --pol-basis linear
 
 
-3. Chunking for Large MS Data
+2. Chunking for Large MS Data
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ::
@@ -98,14 +98,14 @@ For polarized sources, you can provide separate FITS files for each Stokes param
 
 Where ``--rcs`` is the row chunk size. Default is 1000.
 
-4. Adding Noise
+3. Adding Noise
 ~~~~~~~~~~~~~~~
 
 ::
 
    simms skysim --ms largevis.ms --catalogue skymodel.txt --column SIMULATED_DATA --sefd 421
 
-5. FITS-Specific Cases
+4. FITS-Specific Cases
 ~~~~~~~~~~~~~~~~~~~~~~
 
 ::
