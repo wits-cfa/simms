@@ -3,12 +3,12 @@
 Array Telescope Simulation (``telsim``)
 ========================================
 
-.. automodule:: simms.skymodel.skymods
+.. automodule:: simms.telescope.generate_ms
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: simms.skymodel.source_factory
+.. automodule:: simms.telescope.array_utilities
    :members:
    :undoc-members:
    :show-inheritance:
