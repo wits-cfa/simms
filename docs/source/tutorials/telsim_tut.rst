@@ -11,7 +11,7 @@ Array Telescope Simulations (``telsim``)
 Inputs Required
 ---------------
 
-- **ms**: The name of the Measurement Set to create.
+- **ms**: The name of the MS to create.
 - **telescope**: The telescope configuration.
 - **direction**: The pointing direction.
 - **starttime**: The start time of the observation.
