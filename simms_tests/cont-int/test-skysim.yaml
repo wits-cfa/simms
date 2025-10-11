@@ -21,13 +21,13 @@ recipe:
       cab: skysim
       params:
         ms: =recipe.ms
-        catalogue: =recipe.skymodel
+        ascii-sky: =recipe.skymodel
         column: DATA
     withnoise:
       cab: skysim
       params:
         ms: =recipe.ms
-        catalogue: =recipe.skymodel
+        ascii-sky: =recipe.skymodel
         column: NOISY_DATA
         sefd: 512
     # subtract:
