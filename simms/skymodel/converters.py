@@ -87,6 +87,6 @@ def radec2lm(ra0: float, dec0: float, ra: Union[float, np.ndarray], dec: Union[f
     """
     dra = ra - ra0
     l = np.cos(dec) * np.sin(dra) 
-    m = np.sin(dec) * np.cos(dec0) - np.cos(dec) * np.sin(dec0) * np.cos(dra)
+    m = -(np.sin(dec) * np.cos(dec0) - np.cos(dec) * np.sin(dec0) * np.cos(dra))
 
     return l, m

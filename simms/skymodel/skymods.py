@@ -55,7 +55,6 @@ def compute_lm_coords(phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_co
         reshaped_lm = lm.reshape(n_ra * n_dec, 2)
         non_zero_lm = reshaped_lm[tol_mask]
         return non_zero_lm
-    
     return lm
 
 
@@ -186,6 +185,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     dec_grid = np.squeeze(dec_coords.data.compute() * getattr(units, dec_coords.units).to("rad"))
     ra_pixel_size = ra_coords.pixel_size * getattr(units, ra_coords.units).to("rad")
     dec_pixel_size = dec_coords.pixel_size * getattr(units, dec_coords.units).to("rad")
+
     pixel_area = abs(ra_pixel_size * dec_pixel_size)
     
     if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
@@ -282,11 +282,12 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
                 "is_polarised": skymodel.is_polarised,
                 "expand_freq_dim": expand_freq_dim,
                 "use_dft": use_dft,
+                "ra_pixel_size": ra_pixel_size,        # ← ADD THIS
+                "dec_pixel_size": dec_pixel_size,      # ← ADD THIS
             })
         else:
             log.info(f"More than 20% of pixels have intensity > {(tol*1e6):.2f} μJy. FFT will be used for visibility prediction.")
-            use_dft = False
-            
+            use_dft = False         
             return ObjDict({
                 "image": reshaped_predict_image,
                 "is_polarised": skymodel.is_polarised,

@@ -132,14 +132,25 @@ def skysim_runit(**kwargs):
         )
         
         epsilon = 1e-7 if opts.fft_precision == "double" else 1e-5
-        
-        simvis = da.blockwise(
+
+        # Build blockwise arguments conditionally
+        blockwise_args = [
             augmented_im_to_vis, ("row", "chan", "corr"),
             predict.image, ("npix", "chan", "corr") if predict.use_dft else ("l", "m", "chan", "corr"),
             msds.UVW.data, ("row", "uvw"),
-            predict.lm, ("npix", "lm") if predict.use_dft else None,
-            freqs, ("chan",),
-            polarisation = predict.is_polarisation,
+        ]
+
+        # Only add lm for DFT mode
+        if predict.use_dft:
+            blockwise_args.extend([predict.lm, ("npix", "lm")])
+        else:
+            blockwise_args.extend([None, None])
+
+        blockwise_args.extend([freqs, ("chan",)])
+
+        simvis = da.blockwise(
+            *blockwise_args,
+            polarisation = predict.is_polarised,
             expand_freq_dim = predict.expand_freq_dim,
             use_dft = predict.use_dft,
             ncorr = ncorr,
