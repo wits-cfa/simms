@@ -257,6 +257,7 @@ class CatSource:
         self.__update_attr__("line_reffreq", "frequency")
         self.__update_attr__("cont_coeff_1", "frequency")
         self.__update_attr__("cont_coeff_2", "frequency")
+        self.__update_attr__("cont_reffreq", "frequency")
         #transient info
         self.__update_attr__("transient_start", None)
         self.__update_attr__("transient_absorb", None) 
