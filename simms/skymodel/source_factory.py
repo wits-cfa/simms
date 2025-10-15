@@ -334,8 +334,9 @@ class StokesDataFits(StokesData):
 def poly(x, coeffs):
     return np.polyval(coeffs, x)
 
-def contspec(freqs,flux, coeff,nu_ref):
-    if coeff == 0 or nu_ref == 0:
-        return flux * np.ones_like(freqs)
+def contspec(freqs, flux, coeff, nu_ref):
+    if nu_ref and coeff:
+        return flux * (freqs/nu_ref)**(coeff)
     else:
-        return flux*(freqs/nu_ref)**(coeff)
+        return flux * np.ones_like(freqs)
+    

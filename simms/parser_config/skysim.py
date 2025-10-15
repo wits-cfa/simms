@@ -25,6 +25,7 @@ from simms.skymodel.mstools import (
 from tqdm.dask import TqdmCallback
 import dask.array as da
 from daskms import xds_to_table, xds_from_ms, xds_from_table
+import dask
 
 log = get_logger(BIN.skysim, level="ERROR")
 
@@ -44,7 +45,7 @@ def skysim_runit(**kwargs):
     ms = opts.ms
     cat = opts.catalogue
     fs = opts.fits_sky
-    
+
     if cat and fs:
         raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
     
@@ -79,8 +80,8 @@ def skysim_runit(**kwargs):
         else:
             map_path = f"{thisdir}/library/catalogue_template.yaml"
             log.warning(f"No mapping file specified nor built-in map selected. Assuming default column names (see {map_path})")
-
-
+        
+        dask.config.set(scheduler='threads', num_workers = opts.nworkers)
         sources = load_sources(cat, map_path=map_path, delimiter=opts.cat_delim) 
 
         if any([src.is_transient for src in sources]):
@@ -88,20 +89,12 @@ def skysim_runit(**kwargs):
             skymodel = skymodel_from_sources(sources, chan_freqs=freqs,
                                         full_stokes=opts.polarisation,
                                         unique_times=unique_times)
-            ntimes = unique_times.size
-        else:
-            print("hello world")
-            skymodel = skymodel_from_sources(sources, chan_freqs=freqs,
-                                        full_stokes=opts.polarisation)
-            ntimes = None
-            
-        
-        simvis = da.blockwise(
+            simvis = da.blockwise(
             compute_vis, ("row", "chan", "corr"),
             skymodel, ("source",),
             msds.UVW.data, ("row", "uvw"),
             freqs, ("chan",),
-            ntimes=ntimes,
+            msds.TIME.data, ("row",),
             ncorr=ncorr,
             polarisation=opts.polarisation,
             pol_basis=opts.pol_basis,
@@ -112,6 +105,26 @@ def skysim_runit(**kwargs):
             dtype=msds.DATA.data.dtype,
             concatenate=True,
         )
+        else:
+            skymodel = skymodel_from_sources(sources, chan_freqs=freqs,
+                                        full_stokes=opts.polarisation)
+            
+        
+            simvis = da.blockwise(
+                compute_vis, ("row", "chan", "corr"),
+                skymodel, ("source",),
+                msds.UVW.data, ("row", "uvw"),
+                freqs, ("chan",),
+                ncorr=ncorr,
+                polarisation=opts.polarisation,
+                pol_basis=opts.pol_basis,
+                noise_vis=vis_noise,
+                ra0=ra0,
+                dec0=dec0,
+                new_axes={"corr": ncorr},
+                dtype=msds.DATA.data.dtype,
+                concatenate=True,
+            )
     # TODO(Sphe,Senkhosi) This is too taylored to a specific use case and input file schema.
     # We need more generic API for handling multiple FITS images as input.
     # Something like we do in skymods.skymodel_from_fits(stack_axis)

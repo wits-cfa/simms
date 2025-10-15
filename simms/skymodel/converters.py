@@ -45,7 +45,7 @@ def convertdec2rad(string, null_value=None):
     return null_value
 
 
-def convert2Jy(string, null_value=None):
+def convert2Jy(string, null_value=0):
     if string not in [None, "null"]:
         try:
             float(string)

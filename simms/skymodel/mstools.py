@@ -115,9 +115,9 @@ def fft_im_to_vis(uvw: np.ndarray, chan_freq: np.ndarray, image: np.ndarray, pix
     return np.conj(np.squeeze(result))
 
 
-def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
-                ncorr: int, polarisation: bool, pol_basis: str, ra0:float,
-                dec0:float, ntimes:int = None,
+def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray, 
+                times:np.ndarray=None, ncorr: int=2, polarisation: bool=False, 
+                pol_basis: str="linear" , ra0:float=None, dec0:float=None,
                 noise_vis: Optional[float] = None,
                 ):
 
@@ -131,7 +131,7 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
         ncorr (int):                Number of correlations
         polarisation (bool):        True if polarisation information is present, False otherwise
         pol_basis (str):            Polarisation basis ("linear" or "circular")
-        ntimes:                     Number of unique times
+        times:                     Number of unique times
         mod_data (numpy.ndarray):   Array of shape (nrows, nchan, ncorr) containing the model data 
             to/from which computed visibilities should be added/subtracted
         noise (float):              RMS noise
@@ -174,8 +174,9 @@ def compute_vis(sources: List[Source], uvw: np.ndarray, freqs: np.ndarray,
         phase = calculate_phase_factor(source)
         bmatrix = source.stokes.get_brightness_matrix(ncorr, pol_basis=="linear")
         if source.is_transient:
-            nbl = int(phase.shape[0] / ntimes)
-            time_index_mapper = np.repeat(np.arange(ntimes), nbl)
+            if isinstance(times, type(None)):
+                raise ValueError("Times must be provided for transient sources")
+            _, time_index_mapper = np.unique(times, return_inverse=True)
             bmatrix = bmatrix[:,time_index_mapper,...]
         vis_xx += bmatrix[0,...]*phase
         if ncorr == 2:

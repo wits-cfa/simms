@@ -60,7 +60,6 @@ def compute_lm_coords(phase_centre: np.ndarray, n_ra: float, n_dec: float, ra_co
     
     return lm
 
-
 def skymodel_from_sources(sources:List[CatSource], chan_freqs:np.ndarray,
                         unique_times:np.ndarray=None,
                         full_stokes:bool=True):
@@ -81,7 +80,6 @@ def skymodel_from_sources(sources:List[CatSource], chan_freqs:np.ndarray,
             }
             
         stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
-
         if src.is_transient:
             lightcurve_func = exoplanet_transient_logistic
             t0 = unique_times.min()
@@ -96,7 +94,6 @@ def skymodel_from_sources(sources:List[CatSource], chan_freqs:np.ndarray,
                 "transient_absorb": src.transient_absorb
             }
             stokes.set_lightcurve(lightcurve_func, **kwargs)
-        print("running fine")
         setattr(src, "stokes", stokes)
         mod_sources.append(src)
     
