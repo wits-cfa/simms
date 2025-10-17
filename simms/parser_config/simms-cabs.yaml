@@ -11,11 +11,11 @@ cabs:
         must_exist: yes
         policies:
           positional: true
-      catalogue: 
-        info: Catalogue file containing sources. A full description of accepted units can be found in the documentation.
+      ascii-sky: 
+        info: Catalogue of sources. A full description of accepted units can be found in the documentation.
         dtype: File
         required: no
-        abbreviation: cat
+        abbreviation: as
       fits-sky:
         info: FITS file(s) containing the sky model
         dtype: Union[File, List[File]]
@@ -47,7 +47,7 @@ cabs:
         dtype: bool
         default: true
       cat-delim: 
-        info: Delimeter that is used in the catalogue
+        info: Delimeter that is used in the ascii-sky 
         dtype: str
         abbreviation: cd
       column:

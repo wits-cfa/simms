@@ -6,19 +6,21 @@
 Simms 3.0
 ===========
 
-Applications for:
+Introduction
+------------
 
-1. Creating simulated Radio Interferometry Array data (visibilities) into `MS files <https://casa.nrao.edu/Memos/229.html>`_
-2. Simulating sky models into MS files
+**simms** is a simulation framework built around two key tools: ``telsim`` and ``skysim``:
 
+- ``telsim``: Creates simulated Radio Interferometry Array data (visibilities) into `MS files <https://casa.nrao.edu/Memos/229.html>`_
+- ``skysim``: Populates this MS by simulating visibilities, given a sky model. ``skysim`` also has an additional feature that lets you add or subtract from an existing data column.
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
    how-to/installation
-   how-to/usage
    tutorials/tutorials
+   how-to/usage
    reference/reference
 
 .. Indices and tables

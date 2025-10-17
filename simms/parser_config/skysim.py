@@ -40,7 +40,7 @@ config = paramfile_loader(parserfile, sources)[command]
 def skysim_runit(**kwargs):
     opts = OmegaConf.create(kwargs)
     ms = opts.ms
-    cat = opts.catalogue
+    cat = opts.ascii_sky
     fs = opts.fits_sky
     
     if cat and fs:
