@@ -44,3 +44,15 @@ line_width:     # line width; default units [Hz]
 line_restfreq:  # line rest frequency; default units [Hz]
   name: null
   units: null
+transient_start:  #beginning of transient event relative to observation start; default units [s]
+  name: null
+  units: null  
+transient_period:  #total time of transient event, including ingress and egress; default units [s]
+  name: null
+  units: null
+transient_ingress:  #duration of ingress; default units [s]
+  name: null
+  units: null
+transient_absorb:  #maximum fractional flux decrease during the transit
+  name: null
+  units: null

@@ -55,6 +55,10 @@ cabs:
         dtype: str
         default: DATA
         abbreviation: col
+      nworkers:
+        info: Number of workers (one per CPU)
+        dtype: int
+        default: 4
       row-chunks:
         info: Chunking strategy for the simulation
         dtype: int
@@ -177,6 +181,10 @@ cabs:
         dtype: str
         default: XX,YY
         abbreviation: corr
+      nworkers:
+        info: Number of workers (one per CPU)
+        dtype: int
+        default: 4
       rowchunks:
         info: Number of chunks to divide the data into, larger number of chunks improves the computation speed
         dtype: int
