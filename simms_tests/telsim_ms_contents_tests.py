@@ -144,7 +144,7 @@ def check_stupid_things():
     assert np.isclose(nbl, 2016)
 
     ds_point = xds_from_table('../simms_tests/test-mk.ms::POINTING')[0]
-    direction = ds_point.TARGET.values[0][0]
+    direction = ds_point.DIRECTION.values[0][0]
 
     assert np.isclose(direction[0], 0)
     assert np.isclose(direction[1], 0)

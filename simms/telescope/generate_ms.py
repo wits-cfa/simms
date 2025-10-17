@@ -402,11 +402,11 @@ def create_ms(
     phase_arr = da.from_array(np.full((num_rows, 1, 2), phase_dir))
 
     pntng_ds = {
-        "TARGET": (("row", "point-poly", "radec"), phase_arr),
+        # "TARGET": (("row", "point-poly", "radec"), phase_arr),
         "TIME": (("row"), da.from_array(uvcoverage_data.times)),
         "INTERVAL": (("row"), da.from_array(np.full(num_rows, dtime))),
         "TRACKING": (("row"), da.from_array(np.full(num_rows, True))),
-        # "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
+        "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
     }
 
     pntng_table = daskms.Dataset(pntng_ds)
