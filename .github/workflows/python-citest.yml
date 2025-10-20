@@ -30,6 +30,6 @@ jobs:
         pip install --group tests
     - name: Unit tests
       run: |
-        pytest simms_tests/_tests.py
+        pytest simms_tests/*_tests.py
 
 
