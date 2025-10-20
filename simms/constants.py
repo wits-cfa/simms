@@ -5,7 +5,7 @@ import numpy as np
 PI = np.pi
 C = 2.99792458e8
 # fwhm scale factor
-FWHM_scale_fact = 2*np.sqrt(2 * np.log(2))
+FWHM_scale_fact = 2 * np.sqrt(2 * np.log(2))
 # Gaussian scale factor (converting to Fourier space)
 gauss_scale_fact = 1 / FWHM_scale_fact * np.sqrt(2) * PI / C
 # Earth's semi major axis.

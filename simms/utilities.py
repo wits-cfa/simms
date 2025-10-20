@@ -1,6 +1,8 @@
-import numpy as np
 from itertools import combinations
-from typing import Union, List
+from typing import List, Union
+
+import numpy as np
+
 
 class ValidationError(Exception):
     pass
@@ -24,16 +26,17 @@ def isnummber(string):
         return True
     except ValueError:
         return False
-    
+
+
 # nicked from https://www.hackertouch.com/how-to-get-a-list-of-class-attributes-in-python.html
 def get_class_attributes(cls):
-    return [item for item in cls.__dict__ if not callable(getattr(cls, item)) and not item.startswith('__')]
+    return [item for item in cls.__dict__ if not callable(getattr(cls, item)) and not item.startswith("__")]
 
 
 class ObjDict(object):
     def __init__(self, items):
         """
-        Converts a dictionary into an object. 
+        Converts a dictionary into an object.
 
         """
         # First give this objects all the attributes of the input dicttionary
@@ -42,6 +45,7 @@ class ObjDict(object):
                 setattr(self, item, getattr(items, item, None))
         # Now set the dictionary values as attributes
         self.__dict__.update(items)
+
 
 def get_noise(sefds: Union[List, float], dtime: int, dfreq: float):
     """
