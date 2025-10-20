@@ -2,12 +2,12 @@ from datetime import datetime
 from typing import Union
 
 import astropy.units as u
-from astropy.constants import k_B
 import numpy as np
+import yaml
+from astropy.constants import k_B
 from astropy.time import Time
 from casacore.measures import measures
 from casacore.tables import table
-import yaml
 from omegaconf import OmegaConf
 from scabha.basetypes import File, List
 
@@ -17,18 +17,23 @@ from simms.utilities import ObjDict
 
 log = get_logger(name="telsim")
 
+
 class Array:
     """
     The Array class has functions for converting from one coordinate system to another.
     """
 
-    def __init__(self, layout: Union[str, File], degrees: bool = True,
-                sefd: Union[int, float, List[Union[int, float]]]=None,
-                tsys_over_eta: Union[int, float, List[Union[int, float]]]=None,
-                sensitivity_file: File = None,
-                subarray_list: List[str] = None,
-                subarray_range: List[int] = None,
-                subarray_file: File = None):
+    def __init__(
+        self,
+        layout: Union[str, File],
+        degrees: bool = True,
+        sefd: Union[int, float, List[Union[int, float]]] = None,
+        tsys_over_eta: Union[int, float, List[Union[int, float]]] = None,
+        sensitivity_file: File = None,
+        subarray_list: List[str] = None,
+        subarray_range: List[int] = None,
+        subarray_file: File = None,
+    ):
         """
         layout: str|File
                     : specify an observatory as a str or a file.
@@ -42,12 +47,12 @@ class Array:
         if layout.lower() == "vla":
             log.warning("VLA configuration not specified. Will default to the C configuration (vla-c).")
             layout = "vla-c"
-            
+
         if layout not in SIMMS_TELESCOPES:
             fname = File(layout)
             if fname.EXISTS:
                 self.layout = OmegaConf.load(fname)
-                if 'centre' not in self.layout:
+                if "centre" not in self.layout:
                     centre = calculate_array_centre(self.layout.antlocations)
                     write_centre_to_array_config(fname, centre)
                     self.layout.centre = centre
@@ -55,17 +60,14 @@ class Array:
                 raise FileNotFoundError(f"Layout file {fname} not found.")
         else:
             self.layout = SIMMS_TELESCOPES[layout]
-            
+
         if subarray_list:
-            self.layout = custom_telescopes(layout=layout,
-                                            subarray_list=subarray_list)
+            self.layout = custom_telescopes(layout=layout, subarray_list=subarray_list)
         elif subarray_range:
-            self.layout = custom_telescopes(layout=layout,
-                                            subarray_range=subarray_range)
+            self.layout = custom_telescopes(layout=layout, subarray_range=subarray_range)
         elif subarray_file:
-            self.layout = custom_telescopes(layout=layout,
-                                            subarray_file=subarray_file)
-            
+            self.layout = custom_telescopes(layout=layout, subarray_file=subarray_file)
+
         self.sefd = sefd
         self.tsys_over_eta = tsys_over_eta
         self.sensitivity_file = sensitivity_file
@@ -74,8 +76,7 @@ class Array:
         self.__set_arrayinfo()
         if self.layout.coord_sys == "geodetic":
             self.set_itrf()
-    
-    
+
     def __set_arrayinfo(self):
         """
         - Extract the array information from the schema
@@ -86,24 +87,24 @@ class Array:
         xyz = np.array(self.layout.antlocations)
         nant, ndim = xyz.shape
         self.nant = nant
-            
+
         self.alt0 = 0 if len(centre) == 2 else centre[2]
-        
+
         if self.layout.coord_sys == "geodetic":
             if ndim == 2:
                 xyz = np.hstack(xyz, np.zeros(nant))
             if self.degrees:
-                xyz[:,0] = np.deg2rad(xyz[:,0])
-                xyz[:,1] = np.deg2rad(xyz[:,1])
-                
+                xyz[:, 0] = np.deg2rad(xyz[:, 0])
+                xyz[:, 1] = np.deg2rad(xyz[:, 1])
+
                 self.lon0 = np.deg2rad(centre[0])
                 self.lat0 = np.deg2rad(centre[1])
             else:
                 self.lon0 = centre[0]
                 self.lat0 = centre[1]
-                
+
             self.geodtic_antennas = xyz
-            
+
         elif self.layout.coord_sys == "itrf":
             if ndim == 2:
                 raise RuntimeError("Input antenna ITRF coordinates have 2 coordinates. Three (X,Y,Z) are required.")
@@ -111,40 +112,38 @@ class Array:
             self.x0, self.y0, self.z0 = centre
             self.antlocations = xyz
         else:
-            raise ValueError("Unknown coordinate system. Please use Geodetic (WGS84) or ITRF (XYZ)")     
-            
+            raise ValueError("Unknown coordinate system. Please use Geodetic (WGS84) or ITRF (XYZ)")
+
         self.mount = self.layout["mount"]
         self.names = self.layout["antnames"]
         self.coordsys = self.layout["coord_sys"]
         self.size = self.layout["size"]
-        
+
         if self.sefd is None:
             sefd = self.layout.get("sefd", None)
             self.sefd = sefd
-            if self.sensitivity_file: 
+            if self.sensitivity_file:
                 sensitivity_data = OmegaConf.load(self.sensitivity_file)
-                if 'sefd' in sensitivity_data:
-                    self.sefd = sensitivity_data['sefd']
-                
-                if 'freq' in sensitivity_data:
-                    self.noise_freqs = sensitivity_data['freq']
-            
-    
-            
+                if "sefd" in sensitivity_data:
+                    self.sefd = sensitivity_data["sefd"]
+
+                if "freq" in sensitivity_data:
+                    self.noise_freqs = sensitivity_data["freq"]
+
             if isinstance(sefd, (float, int)):
                 self.sefd = [sefd]
             elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
                 self.sefd = sefd
 
         if self.tsys_over_eta and self.sefd is None:
-            self.sefd = (2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
+            self.sefd = 2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4)
 
         elif self.tsys_over_eta is None and self.sefd is None:
             tsys_over_eta = self.layout.get("tsys_over_eta", None)
-            self.tsys_over_eta = tsys_over_eta 
-            if self.sensitivity_file: 
-                if 'tsys_over_eta' in sensitivity_data and 'sefd' not in sensitivity_data:
-                    self.tsys_over_eta = sensitivity_data['tsys_over_eta']
+            self.tsys_over_eta = tsys_over_eta
+            if self.sensitivity_file:
+                if "tsys_over_eta" in sensitivity_data and "sefd" not in sensitivity_data:
+                    self.tsys_over_eta = sensitivity_data["tsys_over_eta"]
                     self.sefd = list(2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
 
             if isinstance(sefd, (float, int)):
@@ -152,14 +151,11 @@ class Array:
             elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
                 self.sefd = sefd
 
-            
-            
     def set_itrf(self):
         if not hasattr(self, "antlocations"):
             self.antlocations, xyz0 = self.geodetic2global()
             self.x0, self.y0, self.z0 = xyz0
-            
-            
+
     def geodetic2global(self):
         """
         Convert the antenna positions from the geodetic (WGS84) frame to the global (ITRF/ECEF) frame
@@ -169,15 +165,15 @@ class Array:
         An array of the antennas XYZ positions and an array of the array center in XYZ
         """
 
-        longitude = self.geodtic_antennas[:,0]
-        latitude = self.geodtic_antennas[:,1]
-        altitude = self.geodtic_antennas[:,2]
+        longitude = self.geodtic_antennas[:, 0]
+        latitude = self.geodtic_antennas[:, 1]
+        altitude = self.geodtic_antennas[:, 2]
 
         ref_longitude = self.lon0
         ref_latitude = self.lat0
         ref_altitude = self.alt0
 
-        nnp = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(latitude)**2)
+        nnp = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(latitude) ** 2)
         nn0 = constants.earth_emaj / np.sqrt(1 - constants.esq * np.sin(ref_latitude**2))
 
         # calculating the global coordinates of the antennas.
@@ -191,32 +187,30 @@ class Array:
         z0 = ((1 - constants.esq) * nn0 + ref_altitude) * np.sin(ref_latitude)
 
         xyz = np.column_stack((x, y, z))
-        xyz0 = np.array([x0,y0,z0])
+        xyz0 = np.array([x0, y0, z0])
 
         return xyz, xyz0
-    
-    
-    def global2geodetic(self,X,Y,Z):
+
+    def global2geodetic(self, X, Y, Z):
         """
         Convert the antenna positions from the global (ITRF/ECEF) frame to the geodetic (WGS84) frame.
-        
+
         Parameters
         ----
         (X,Y,Z): float
                 : global coordinates of the antennas.
-        
+
         Returns
         ----
         (phi,lam,h): float
                 : geodetic coordinates of the antennas.
         """
-        
-        
-        f = 1/298.257223563
+
+        f = 1 / 298.257223563
         b = constants.earth_emaj * (1 - f)
         ep2 = (constants.earth_emaj**2 - b**2) / b**2
 
-        p = (X**2 + Y**2)**0.5
+        p = (X**2 + Y**2) ** 0.5
         theta = np.arctan2(Z * constants.earth_emaj, p * b)
 
         sin_theta = np.sin(theta)
@@ -224,13 +218,12 @@ class Array:
 
         phi = np.arctan2(Z + ep2 * b * sin_theta**3, p - constants.esq * constants.earth_emaj * cos_theta**3)
         lam = np.arctan2(Y, X)
-        v = constants.earth_emaj / (1 - constants.esq * np.sin(phi)**2)**0.5
+        v = constants.earth_emaj / (1 - constants.esq * np.sin(phi) ** 2) ** 0.5
         h = p / np.cos(phi) - v
-        
+
         geodetic = np.array((lam, phi, h))
 
         return geodetic
-        
 
     def geodetic2local(self):
         """
@@ -268,9 +261,9 @@ class Array:
 
         return enu
 
-    def uvgen(self, pointing_direction, dtime, ntimes, 
-              start_freq, dfreq, nchan,
-              start_time=None, start_ha=None) -> ObjDict:
+    def uvgen(
+        self, pointing_direction, dtime, ntimes, start_freq, dfreq, nchan, start_time=None, start_ha=None
+    ) -> ObjDict:
         """
         Generate uvw coordimates
 
@@ -289,7 +282,7 @@ class Array:
                     : frequency interval.
         nchan: int
                     : number of channels.
-                    
+
         start_time: Union[str, List[str]]
                     : start time of the observation date and time ("YYYY/MM/DD 12:00:00", ["EPOCH", "YYYY/MM/DD 12:00:00"])
                         default is the current machine time.
@@ -301,24 +294,22 @@ class Array:
         An array of the uvw time dependent positions, the time array and the frequency array
         """
         dm = measures()
-        
+
         latitude = self.lat0
 
         if len(pointing_direction) == 3:
-            ra_dec = dm.direction(rf=pointing_direction[0], v0 = pointing_direction[1], v1=pointing_direction[2])
+            ra_dec = dm.direction(rf=pointing_direction[0], v0=pointing_direction[1], v1=pointing_direction[2])
         else:
-            ra_dec = dm.direction(rf='J2000', v0 = pointing_direction[1], v1=pointing_direction[2])
+            ra_dec = dm.direction(rf="J2000", v0=pointing_direction[1], v1=pointing_direction[2])
         ra0 = ra_dec["m0"]["value"]
         dec0 = ra_dec["m1"]["value"]
-        
-        
+
         if not start_time:
             date = datetime.now()
             start_time = date.strftime("%Y-%m-%dT%H:%M:%S")
             start_day = Time(start_time, format="isot", scale="utc")
         else:
             if isinstance(start_time, str):
-
                 start_day = Time(start_time, format="isot", scale="utc")
 
         start_time_sec = start_day.to_value("mjd") * 24 * 3600
@@ -329,22 +320,19 @@ class Array:
             ih0 = start_ha * constants.PI
         else:
             # obs_location = EarthLocation(lon=longitude * u.rad, lat=latitude * u.rad)
-            gmst = start_day.sidereal_time(kind="mean", longitude=0*u.deg)
+            gmst = start_day.sidereal_time(kind="mean", longitude=0 * u.deg)
             gmst_rad = gmst.to_value("rad")
             gha = gmst_rad - ra0
             gha = gha % (2 * constants.PI)
 
-            start_day_rads = start_day.to_value("mjd")%1 
-            start_day_rads *= 24 * 15 * constants.PI/180
+            start_day_rads = start_day.to_value("mjd") % 1
+            start_day_rads *= 24 * 15 * constants.PI / 180
             ih0 = gha
 
-        total_time_rad = np.deg2rad(total_time/3600*15) 
-        h0 = ih0 + np.linspace(-total_time_rad/2, total_time_rad/2, ntimes)
-        
-        source_elevations = self.get_source_elevation(
-            latitude, dec0, h0)
-    
+        total_time_rad = np.deg2rad(total_time / 3600 * 15)
+        h0 = ih0 + np.linspace(-total_time_rad / 2, total_time_rad / 2, ntimes)
 
+        source_elevations = self.get_source_elevation(latitude, dec0, h0)
 
         # Transformation matrix
         dec = np.ones(ntimes) * dec0
@@ -352,7 +340,7 @@ class Array:
             [
                 [np.sin(h0), np.cos(h0), np.zeros(ntimes)],
                 [-np.sin(dec) * np.cos(h0), np.sin(dec) * np.sin(h0), np.cos(dec)],
-                [-np.cos(dec) * np.cos(h0), np.cos(dec) * np.sin(h0), np.sin(dec)]
+                [-np.cos(dec) * np.cos(h0), np.cos(dec) * np.sin(h0), np.sin(dec)],
             ]
         )
 
@@ -360,21 +348,30 @@ class Array:
         antenna2_list = []
         baseline_list = []
 
-        # Compute baselines and track antenna coordinates 
+        # Compute baselines and track antenna coordinates
         for i in range(self.nant):
             for j in range(i + 1, self.nant):
                 baseline_list.append(self.antlocations[j] - self.antlocations[i])
                 antenna1_list.append(i)
                 antenna2_list.append(j)
-        
+
         bl_array = np.vstack(baseline_list)
 
-        u_coord = (np.outer(transform_matrix[0, 0], bl_array[:, 0]) + np.outer(
-            transform_matrix[0, 1], bl_array[:, 1]) + np.outer(transform_matrix[0, 2], bl_array[:, 2]))
-        v_coord = (np.outer(transform_matrix[1, 0], bl_array[:, 0]) + np.outer(
-            transform_matrix[1, 1], bl_array[:, 1]) + np.outer(transform_matrix[1, 2], bl_array[:, 2]))
-        w_coord = (np.outer(transform_matrix[2, 0], bl_array[:, 0]) + np.outer(
-            transform_matrix[2, 1], bl_array[:, 1]) + np.outer(transform_matrix[2, 2], bl_array[:, 2]))
+        u_coord = (
+            np.outer(transform_matrix[0, 0], bl_array[:, 0])
+            + np.outer(transform_matrix[0, 1], bl_array[:, 1])
+            + np.outer(transform_matrix[0, 2], bl_array[:, 2])
+        )
+        v_coord = (
+            np.outer(transform_matrix[1, 0], bl_array[:, 0])
+            + np.outer(transform_matrix[1, 1], bl_array[:, 1])
+            + np.outer(transform_matrix[1, 2], bl_array[:, 2])
+        )
+        w_coord = (
+            np.outer(transform_matrix[2, 0], bl_array[:, 0])
+            + np.outer(transform_matrix[2, 1], bl_array[:, 1])
+            + np.outer(transform_matrix[2, 2], bl_array[:, 2])
+        )
 
         u_coord, v_coord, w_coord = [x.flatten() for x in (u_coord, v_coord, w_coord)]
         uvw = np.column_stack((u_coord, v_coord, w_coord))
@@ -385,14 +382,13 @@ class Array:
             time_table.append(baseline_time)
 
         time_table = np.array(time_table).flatten()
-        
-         
+
         start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
         dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
-        end_freq = start_freq + dfreq * (nchan -1)
-            
+        end_freq = start_freq + dfreq * (nchan - 1)
+
         freqs = np.linspace(start_freq, end_freq, nchan)
-            
+
         uvcoverage = ObjDict(
             {
                 "antenna1": antenna1_list,
@@ -405,16 +401,13 @@ class Array:
                 "dec0": dec0,
             }
         )
-        
+
         return uvcoverage
-    
-    
-    def get_source_elevation(self, latitude: float,
-                            declination:float , 
-                            hour_angles: List[float]) -> List[float]:
+
+    def get_source_elevation(self, latitude: float, declination: float, hour_angles: List[float]) -> List[float]:
         """
         Track the source during the observation and get its elevation.
-        
+
         Parameters
         ----
         latitude: float
@@ -423,30 +416,28 @@ class Array:
                 : declination of the source in radians.
         hour_angles: array[float]
                 : hour angles of the source in radians.
-                
+
         Returns
         ----
         source_elevations: array[float]
                 : the elevations of the source in degrees.
         """
-        
-        sin_elevation = np.sin(declination) * np.sin(latitude) + \
-            np.cos(declination) * np.cos(latitude) * np.cos(hour_angles)
-    
+
+        sin_elevation = np.sin(declination) * np.sin(latitude) + np.cos(declination) * np.cos(latitude) * np.cos(
+            hour_angles
+        )
+
         elevation = np.degrees(np.arcsin(sin_elevation))
-        
+
         return elevation
 
-
-    def get_antenna_elevation(self, ant_latitudes: List[float],
-                            dec: float, h0:float,
-                            ntimes: int) -> List[float]:
+    def get_antenna_elevation(self, ant_latitudes: List[float], dec: float, h0: float, ntimes: int) -> List[float]:
         """
         Get the elevations of the antennas at the observing times.
-            
+
         Parameters
         ---
-        
+
         ant_latitudes: Array[float]
                 : latitudes of all the antennas in radians.
         declination: float
@@ -456,31 +447,30 @@ class Array:
 
         Returns
         ---
-        
+
         antenna_elevations: Array[float]
                 : the elevations of the antennas in degrees.
         """
-        
+
         nants = self.nant
-        antenna_elevations = np.zeros((nants,ntimes))
+        antenna_elevations = np.zeros((nants, ntimes))
 
         for i in range(nants):
-            antenna_elevations[i] = np.sin(dec) * np.sin(ant_latitudes[i]) + \
-            np.cos(dec)* np.cos(ant_latitudes[i]) * np.cos(h0)
-        
-        altitude = np.degrees(np.arcsin(antenna_elevations))
-        
-        return altitude
-        
+            antenna_elevations[i] = np.sin(dec) * np.sin(ant_latitudes[i]) + np.cos(dec) * np.cos(
+                ant_latitudes[i]
+            ) * np.cos(h0)
 
-def ms_addrow(ms, subtable:str, nrows:int):
-    
-    subtab = table(f"{ms}::{subtable}",
-                    readonly=False, lockoptions='user', ack=False)
+        altitude = np.degrees(np.arcsin(antenna_elevations))
+
+        return altitude
+
+
+def ms_addrow(ms, subtable: str, nrows: int):
+    subtab = table(f"{ms}::{subtable}", readonly=False, lockoptions="user", ack=False)
     try:
         subtab.lock(write=True)
         subtab.addrows(nrows)
-        
+
     finally:
         subtab.unlock()
         subtab.close()
@@ -489,12 +479,12 @@ def ms_addrow(ms, subtable:str, nrows:int):
 def calculate_array_centre(ant_locations: List[List[float]]) -> List[float]:
     """
     Calculate the geometric centre of an array given the antenna locations.
-    
+
     Parameters
     ----------
     ant_locations : List[List[float]]
         A list of antenna locations, where each location is a list of [X, Y, Z] coordinates.
-        
+
     Returns
     -------
     List[float]
@@ -503,14 +493,14 @@ def calculate_array_centre(ant_locations: List[List[float]]) -> List[float]:
     # convert to NumPy array and compute mean along axis 0 (across antennas)
     ant_array = np.array(ant_locations)
     centre = np.mean(ant_array, axis=0)
-    
+
     return centre.tolist()
 
 
 def write_centre_to_array_config(array_config_path: File, centre: List[float]) -> None:
     """
     Write the calculated centre to the array configuration YAML file.
-    
+
     Parameters
     ----------
     array_config_path : File
@@ -518,11 +508,10 @@ def write_centre_to_array_config(array_config_path: File, centre: List[float]) -
     centre : List[float]
         The [X, Y, Z] coordinates of the geometric centre to write.
     """
-    with open(array_config_path, 'r') as f:
+    with open(array_config_path, "r") as f:
         array_info = yaml.safe_load(f)
-    
-    array_info['centre'] = centre
-    
-    with open(array_config_path, 'w') as f:
+
+    array_info["centre"] = centre
+
+    with open(array_config_path, "w") as f:
         yaml.dump(array_info, f)
-        

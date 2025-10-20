@@ -1,0 +1,9 @@
+line-length = 120
+
+target-version = "py312"
+
+[lint]
+extend-select = [
+    "E501",  # Line length
+    "I"      # isort - sort imports
+]

@@ -1,60 +1,77 @@
-[tool.poetry]
+[project]
 name = "simms"
 version = "3.0beta3"
 description = "Simms 3.0. Tool for end-to-end simulations of radio inteferometer observations"
 authors = [
-    "Sphesihle Makhathini <sphemakh@gmail.com>",
-    "Mika Naidoo <mika.naidoo25@gmail.com>",
-    "Mukundi Ramanyimi <ramayimimukundi6@gmail.com>",
-    "Shibre Semane <sshibre0@gmail.com>",
-    "Galefang Mapunda <allymap@gmail.com>",
-    "Senkhosi Simelane <senkhxsi@gmail.com>",
-    
+    {name="Sphesihle Makhathini", email="sphemakh@gmail.com"},
+    {name="Mika Naidoo", email="mika.naidoo25@gmail.com"},
+    {name="Mukundi Ramanyimi", email="ramayimimukundi6@gmail.com"},
+    {name="Shibre Semane", email= "sshibre0@gmail.com"},
+    {name="Galefang Mapunda", email="allymap@gmail.com"},
+    {name="Senkhosi Simelane", email="senkhxsi@gmail.com"},
     ]
 
 readme = "README.rst"
-license = "GNU GPL v2"
-include = [{ path = "tests" }]
-packages = [{ include = "simms" }]
-
-[tool.poetry.dependencies]
-python = ">=3.11,<3.13"
-numpy = "*"
-tdqm = "*"
-click = "^8.1.3"
-dask-ms = { version="^0.2.18", extras=["xarray"] }
-ephem = "^4.1"
-stimela = ">=2.0"
-codex-africanus = { version="^0.3.7", extras=["complete"] }
-fitstoolz = {git="https://github.com/caracal-pipeline/fitstoolz"}
-
-[tool.poetry.scripts]
-simms = "simms.parser_config:cli"
+license = "GPL-3.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "numpy",
+    "tdqm",
+    "click>=8.1.3,<9.0",
+    "dask-ms[xarray]>=0.2.18,<1.0",
+    "ephem>=4.1,<5.0",
+    "scabha @ git+https://github.com/caracal-pipeline/scabha ; python_version >= '3.11'",
+    "codex-africanus[complete]>=0.3.7,<1.0",
+    "fitstoolz @ git+https://github.com/caracal-pipeline/fitstoolz"
+]
 
 [build-system]
-requires = ["setuptools", "poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.sdist]
+include = ["simms"]
+
+[tool.hatch.build.targets.wheel]
+include = ["simms"]
+
+[project.scripts]
+simms = "simms.parser_config:cli"
 
 
-[tool.poetry.group.tests]
-optional = true
-[tool.poetry.group.tests.dependencies]
-pytest = "^7.1.3"
-flake8 = "*"
-matplotlib = "*"
+[project.urls]
+Documentation = "https://simms.readthedocs.org"
+Repository = "https://github.com/wits-cfa/simms.git"
+"Issue Tracker" = "https://github.com/wits-cfa/simms/issues"
+Changelog = "https://github.com/wits-cfa/simms/blob/master/CHANGES.md"
 
+[dependency-groups]
 
-[tool.poetry.group.docs]
-optional = true
-[tool.poetry.group.docs.dependencies]
-Sphinx = "^8.1"
-sphinx-copybutton = "*"
-sphinx-rtd-theme = "*"
-sphinx_click = "*"
-sphinx-autodoc-typehints = "*"
-docutils = "*"
+ruff = [
+    "pre-commit>=4.3.0",
+    "ruff>=0.12.9",
+]
 
-[tool.poetry.group.dev.dependencies]
-jupyter = "*"
-matplotlib = "*"
+tests = [
+    "pytest>=7.1.3,<8.0",
+    {include-group = "ruff"},
+]
 
+docs = [
+    "Sphinx>=7.0,<9.0",
+    "sphinx-copybutton",
+    "sphinx-rtd-theme",
+    "sphinx_click",
+    "sphinx-autodoc-typehints",
+    "docutils",
+]
+
+dev = [
+    "jupyter",
+    "matplotlib",
+    {include-group = "ruff"},
+]

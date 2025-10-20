@@ -1,4 +1,4 @@
-.. _skysim_reference:
+.. _skysim_tutorial:
 
 Sky Simulations (``skysim``)
 ========================================
@@ -8,7 +8,7 @@ Sky Simulations (``skysim``)
    :depth: 2
 
 Steps to Use ``skysim``:
------------------------
+--------------------------
 
 1. Provide an MS 
    - [either existing or created with ``telsim``]
@@ -23,7 +23,7 @@ Steps to Use ``skysim``:
 
 
 Best Practices
---------------
+-----------------
 
 - Provide separate fits files for each Stokes when simulating polarized sources
 - Use custom mapping files for non-standard catalogue formats
