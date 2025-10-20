@@ -10,7 +10,7 @@ build:
   tools: {python: "3.12"}
   jobs:
     post_install:
-      - pip instal --upgrade pip  
+      - pip install --upgrade pip  
       - pip install . 
       - pip install --with docs
 
