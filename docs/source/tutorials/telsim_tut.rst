@@ -1,4 +1,4 @@
-.. _telsim_reference:
+.. _telsim_tutorial:
 
 Array Telescope Simulations (``telsim``)
 ========================================

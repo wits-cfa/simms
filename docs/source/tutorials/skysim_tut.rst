@@ -1,4 +1,4 @@
-.. _skysim_reference:
+.. _skysim_tutorial:
 
 Sky Simulations (``skysim``)
 ========================================
