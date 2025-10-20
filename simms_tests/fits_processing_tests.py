@@ -385,46 +385,7 @@ def test_full_stokes_fits_list_processing(params):
     #     # process the FITS file
     #     with params.assertRaises(SkymodelError):
     #         skymodel_from_fits(test_filename, 0.0, np.deg2rad(-30.0), params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
-    
         
-    # def test_stokes_I_processing_with_heinous_axis_ordering(self):
-    #     """
-    #     Tests if Stokes I FITS file with spectral axis pocessing.
-    #     """
-    #     # create a FITS file with Stokes I only
-    #     wcs = WCS(naxis=4)
-    #     wcs.wcs.ctype = ['RA---SIN', 'FREQ' , 'DEC--SIN', 'STOKES']
-    #     wcs.wcs.cdelt = np.array([-params.cell_size/3600, params.chan_freqs[1]-params.chan_freqs[0], params.cell_size/3600, 1.0]) # pixel scale in deg
-    #     wcs.wcs.crpix = [params.img_size/2, 1, params.img_size/2, 1] # reference pixel
-    #     wcs.wcs.crval = [0, params.chan_freqs[0], 0, 1] # reference pixel RA and Dec in deg
-    
-    #     # make header
-    #     header = wcs.to_header()
-    #     header['BUNIT'] = 'Jy'
-    
-    #     # make image
-    #     image = np.zeros((1, params.img_size, params.nchan, params.img_size))
-    #     image[:, params.img_size//2, :, params.img_size//2] = 1.0 # put a point source at the center
-        
-    #     # write to FITS file
-    #     hdu = fits.PrimaryHDU(image, header=header)
-    #     test_filename = f'test_{uuid.uuid4()}.fits'
-    #     params.test_files.append(test_filename)
-    #     hdu.writeto(test_filename, overwrite=True)
-        
-    #     # process the FITS file
-    #     intensities, _, _, _, _, _, _ = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
-        
-    #     # create expected intensities
-    #     expected_intensities = np.zeros((params.img_size, params.img_size, params.chan_freqs.size, params.ncorr))
-    #     expected_intensities[params.img_size//2, params.img_size//2, :, :] = 1.0
-    #     expected_intensities = expected_intensities.reshape(params.img_size * params.img_size, params.chan_freqs.size, params.ncorr)
-    #     non_zero_mask = np.any(expected_intensities > params.tol, axis=(1, 2))
-    #     expected_intensities = expected_intensities[non_zero_mask]
-        
-    #     # compare the intensities with the original image
-    #     assert intensities.shape == expected_intensities.shape
-    #     assert np.allclose(intensities, expected_intensities)
         
     # FIXME: Incorporate the two tests below into the ones above as lm-grid is no longer created
     # when FFT is used for visibility prediction.
@@ -519,157 +480,156 @@ def test_full_stokes_fits_list_processing(params):
     #     # clean up
     #     os.remove(test_filename)
 
-#TODO(Sphe) this got through to main somehow. Needs fixing ASAP    
-#    def test_bmaj_bmin_header_scaling(self):
-#        """
-#        Tests flux scaling for FITS with BMAJ/BMIN in header (single beam for all channels).
-#        """      
-#        wcs = WCS(naxis=4)
-#        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
-#        wcs.wcs.cdelt = np.array([-params.cell_size/3600, params.cell_size/3600, params.chan_freqs[1]-params.chan_freqs[0], 1.0])
-#        wcs.wcs.crpix = [params.img_size/2, params.img_size/2, 1, 1.0]
-#        wcs.wcs.crval = [0, 0, params.chan_freqs[0], 1.0]
-#        
-#        header = wcs.to_header()
-#        header['BUNIT'] = 'Jy/beam'
-#        header['BMAJ'] = params.cell_size * 7 /3600 # degrees
-#        header['BMIN'] = params.cell_size* 5 / 3600 # degrees
-#        header['BPA'] = 0.0
-#        header['CUNIT1'] = 'deg'
-#        header['CUNIT2'] = 'deg'
-#        header['CUNIT3'] = 'Hz'
-#        header['CUNIT4'] = ''
-#        
-#        image = np.zeros((1, params.nchan, params.img_size, params.img_size))
-#        image[:, :, params.img_size//2, params.img_size//2] = 1.0
-#        hdu = fits.PrimaryHDU(image, header=header)
-#        
-#        test_filename = f'test_{uuid.uuid4()}_bmajmin.fits'
-#        params.test_files.append(test_filename)
-#        hdu.writeto(test_filename, overwrite=True)
-#        
-#        predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
-#        intensities = predict.image
-#        
-#        # Calculate expected scaling
-#        freq_scale = params.chan_freqs[0]/params.chan_freqs
-#        bmaj = header['BMAJ'] * freq_scale
-#        bmin = header['BMIN'] * freq_scale
-#        # if image has multiple frequencies, then beam params need to scale with frequency
-#        pixel_area = (params.cell_size/3600)**2
-#        beam_area = (np.pi * bmaj* bmin) / (4 * np.log(2))
-#        pixels_per_beam = beam_area / pixel_area
-#        
-#        expected_intensities = np.ones((1, params.chan_freqs.size, params.ncorr))
-#        expected_intensities /= pixels_per_beam[np.newaxis, :, np.newaxis]
-#        assert intensities.shape == expected_intensities.shape
-#        assert np.allclose(intensities, expected_intensities, atol=1e-6)
-#        
-#    def test_bmaj1_bmin1_cube_scaling(self):
-#        """
-#        Tests flux scaling for FITS cube with BMAJ1/BMIN1 in header (per-channel beam).
-#        """
-#        wcs = WCS(naxis=4)
-#        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
-#        wcs.wcs.cdelt = np.array([-params.cell_size/3600, params.cell_size/3600, params.chan_freqs[1]-params.chan_freqs[0], 1.0])
-#        wcs.wcs.crpix = [ params.img_size/2, params.img_size/2, 1, 1.0]
-#        wcs.wcs.crval = [0, 0, params.chan_freqs[0], 1.0]
-#
-#        header = wcs.to_header()
-#        header['BUNIT'] = 'Jy/beam'
-#        header['CUNIT1'] = 'deg'
-#        header['CUNIT2'] = 'deg'
-#        header['CUNIT3'] = 'Hz'
-#        header['CUNIT4'] = ''
-#
-#        for i in range(params.nchan):
-#            header[f'BMAJ{i+1}'] = 0.01 + 0.001*i
-#            header[f'BMIN{i+1}'] = 0.005 + 0.001*i
-#            header[f'BPA{i+1}'] = 0.0  # Position angle, not used in scaling
-#        
-#        image = np.zeros((1, params.nchan, params.img_size, params.img_size))
-#        image[:, :, params.img_size//2, params.img_size//2] = 1.0
-#        hdu = fits.PrimaryHDU(image, header=header)
-#        
-#        test_filename = f'test_{uuid.uuid4()}_bmaj1min1.fits'
-#        params.test_files.append(test_filename)
-#        hdu.writeto(test_filename, overwrite=True)
-#        
-#        predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
-#        intensities = predict.image.real
-#        pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
-#        
-#        expected_intensities = np.zeros((params.img_size, params.img_size, params.chan_freqs.size, params.ncorr))
-#        for i in range(params.nchan):
-#            bmaj_rad = np.deg2rad(header[f'BMAJ{i+1}'])
-#            bmin_rad = np.deg2rad(header[f'BMIN{i+1}'])
-#            beam_area = (np.pi * bmaj_rad * bmin_rad) / (4 * np.log(2))
-#            scale = 1.0 / (beam_area / pixel_area)
-#            expected_intensities[params.img_size//2, params.img_size//2, i, :] = scale
-#        
-#        expected_intensities = expected_intensities.reshape(params.img_size * params.img_size, params.chan_freqs.size, params.ncorr)
-#        non_zero_mask = np.any(expected_intensities > params.tol, axis=(1, 2))
-#        expected_intensities = expected_intensities[non_zero_mask]
-#        
-#        assert intensities.shape == expected_intensities.shape
-#        assert np.allclose(intensities, expected_intensities, atol=1e-6)
+def test_bmaj_bmin_header_scaling(params):
+    """
+    Tests flux scaling for FITS with BMAJ/BMIN in header (single beam for all channels).
+    """      
+    wcs = WCS(naxis=4)
+    wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
+    wcs.wcs.cdelt = np.array([-params.cell_size/3600, params.cell_size/3600, params.chan_freqs[1]-params.chan_freqs[0], 1.0])
+    wcs.wcs.crpix = [params.img_size/2, params.img_size/2, 1, 1.0]
+    wcs.wcs.crval = [0, 0, params.chan_freqs[0], 1.0]
+    
+    header = wcs.to_header()
+    header['BUNIT'] = 'Jy/beam'
+    header['BMAJ'] = params.cell_size * 7 /3600 # degrees
+    header['BMIN'] = params.cell_size* 5 / 3600 # degrees
+    header['BPA'] = 0.0
+    header['CUNIT1'] = 'deg'
+    header['CUNIT2'] = 'deg'
+    header['CUNIT3'] = 'Hz'
+    header['CUNIT4'] = ''
+    
+    image = np.zeros((1, params.nchan, params.img_size, params.img_size))
+    image[:, :, params.img_size//2, params.img_size//2] = 1.0
+    hdu = fits.PrimaryHDU(image, header=header)
+    
+    test_filename = os.path.join(TESTDIR, f'test_{uuid.uuid4()}_bmajmin.fits')
+    params.test_files.append(test_filename)
+    hdu.writeto(test_filename, overwrite=True)
+    
+    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    intensities = predict.image
+    
+    # Calculate expected scaling
+    freq_scale = params.chan_freqs[0]/params.chan_freqs
+    bmaj = header['BMAJ'] * freq_scale
+    bmin = header['BMIN'] * freq_scale
+    # if image has multiple frequencies, then beam params need to scale with frequency
+    pixel_area = (params.cell_size/3600)**2
+    beam_area = (np.pi * bmaj* bmin) / (4 * np.log(2))
+    pixels_per_beam = beam_area / pixel_area
+    
+    expected_intensities = np.ones((1, params.chan_freqs.size, params.ncorr))
+    expected_intensities /= pixels_per_beam[np.newaxis, :, np.newaxis]
+    assert intensities.shape == expected_intensities.shape
+    assert np.allclose(intensities, expected_intensities, atol=1e-6)
         
-#    def test_beam_table_scaling(self):
-#        """
-#        Tests flux scaling for FITS with beam table (per-channel beam from table).
-#        """
-#        wcs = WCS(naxis=4)
-#        wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
-#        wcs.wcs.cdelt = np.array([-params.cell_size/3600, params.cell_size/3600, params.chan_freqs[1]-params.chan_freqs[0], 1.0])
-#        wcs.wcs.crpix = [params.img_size/2, params.img_size/2, 1, 1.0]
-#        wcs.wcs.crval = [0, 0, params.chan_freqs[0], 1.0]
-#        
-#        header = wcs.to_header()
-#        header['BUNIT'] = 'Jy/beam'
-#        header['CUNIT1'] = 'deg'
-#        header['CUNIT2'] = 'deg'
-#        header['CUNIT3'] = 'Hz'
-#        header['CUNIT4'] = ''
-#
-#        image = np.zeros((1, params.nchan, params.img_size, params.img_size))
-#        image[:, :, params.img_size//2, params.img_size//2] = 1.0
-#        
-#        # Create beam table
-#        beam_table = Table()
-#        beam_table['BMAJ'] = [15 + 0.1*i for i in range(params.nchan)]
-#        beam_table['BMIN'] = [16 + 0.1*i for i in range(params.nchan)]
-#        beam_table['BPA'] = [0.0]*params.nchan
-#        beam_table['BMAJ'].unit = 'arcsec'
-#        beam_table['BMIN'].unit = 'arcsec'
-#        beam_table['BPA'].unit = 'deg'
-#        beam_table.write('beam_table.fits', overwrite=True)
-#        params.test_files.append('beam_table.fits')
-#        
-#        # Write image and beam table to same FITS file (multi-extension)
-#        hdu = fits.PrimaryHDU(image, header=header)
-#        hdul = fits.HDUList([hdu, fits.BinTableHDU(beam_table)])
-#        
-#        test_filename = f'test_{uuid.uuid4()}_beamtable.fits'
-#        params.test_files.append(test_filename)
-#        hdul.writeto(test_filename, overwrite=True)
-#        
-#        predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
-#        intensities = predict.image
-#        
-#        pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
-#        
-#        expected_intensities = np.zeros((params.img_size, params.img_size, params.chan_freqs.size, params.ncorr))
-#        for i in range(params.nchan):
-#            bmaj_rad = beam_table['BMAJ'][i]*np.pi/(180*3600)
-#            bmin_rad = beam_table['BMIN'][i]*np.pi/(180*3600)
-#            beam_area = (np.pi * bmaj_rad * bmin_rad) / (4 * np.log(2))
-#            scale = pixel_area / beam_area
-#            expected_intensities[params.img_size//2, params.img_size//2, i, :] = scale
-#        
-#        expected_intensities = expected_intensities.reshape(params.img_size * params.img_size, params.chan_freqs.size, params.ncorr)
-#        
-#        non_zero_mask = np.any(expected_intensities > params.tol, axis=(1, 2))
-#        expected_intensities = expected_intensities[non_zero_mask]
-#
-#        assert intensities.shape == expected_intensities.shape
-#        assert np.allclose(intensities, expected_intensities)
+def test_bmaj1_bmin1_cube_scaling(params):
+    """
+    Tests flux scaling for FITS cube with BMAJ1/BMIN1 in header (per-channel beam).
+    """
+    wcs = WCS(naxis=4)
+    wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
+    wcs.wcs.cdelt = np.array([-params.cell_size/3600, params.cell_size/3600, params.chan_freqs[1]-params.chan_freqs[0], 1.0])
+    wcs.wcs.crpix = [ params.img_size/2, params.img_size/2, 1, 1.0]
+    wcs.wcs.crval = [0, 0, params.chan_freqs[0], 1.0]
+
+    header = wcs.to_header()
+    header['BUNIT'] = 'Jy/beam'
+    header['CUNIT1'] = 'deg'
+    header['CUNIT2'] = 'deg'
+    header['CUNIT3'] = 'Hz'
+    header['CUNIT4'] = ''
+
+    for i in range(params.nchan):
+        header[f'BMAJ{i+1}'] = 0.01 + 0.001*i
+        header[f'BMIN{i+1}'] = 0.005 + 0.001*i
+        header[f'BPA{i+1}'] = 0.0  # Position angle, not used in scaling
+    
+    image = np.zeros((1, params.nchan, params.img_size, params.img_size))
+    image[:, :, params.img_size//2, params.img_size//2] = 1.0
+    hdu = fits.PrimaryHDU(image, header=header)
+    
+    test_filename = os.path.join(TESTDIR, f'test_{uuid.uuid4()}_bmaj1min1.fits')
+    params.test_files.append(test_filename)
+    hdu.writeto(test_filename, overwrite=True)
+    
+    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    intensities = predict.image.real
+    pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
+    
+    expected_intensities = np.zeros((params.img_size, params.img_size, params.chan_freqs.size, params.ncorr))
+    for i in range(params.nchan):
+        bmaj_rad = np.deg2rad(header[f'BMAJ{i+1}'])
+        bmin_rad = np.deg2rad(header[f'BMIN{i+1}'])
+        beam_area = (np.pi * bmaj_rad * bmin_rad) / (4 * np.log(2))
+        scale = 1.0 / (beam_area / pixel_area)
+        expected_intensities[params.img_size//2, params.img_size//2, i, :] = scale
+    
+    expected_intensities = expected_intensities.reshape(params.img_size * params.img_size, params.chan_freqs.size, params.ncorr)
+    non_zero_mask = np.any(expected_intensities > params.tol, axis=(1, 2))
+    expected_intensities = expected_intensities[non_zero_mask]
+    
+    assert intensities.shape == expected_intensities.shape
+    assert np.allclose(intensities, expected_intensities, atol=1e-6)
+        
+def test_beam_table_scaling(params):
+    """
+    Tests flux scaling for FITS with beam table (per-channel beam from table).
+    """
+    wcs = WCS(naxis=4)
+    wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
+    wcs.wcs.cdelt = np.array([-params.cell_size/3600, params.cell_size/3600, params.chan_freqs[1]-params.chan_freqs[0], 1.0])
+    wcs.wcs.crpix = [params.img_size/2, params.img_size/2, 1, 1.0]
+    wcs.wcs.crval = [0, 0, params.chan_freqs[0], 1.0]
+    
+    header = wcs.to_header()
+    header['BUNIT'] = 'Jy/beam'
+    header['CUNIT1'] = 'deg'
+    header['CUNIT2'] = 'deg'
+    header['CUNIT3'] = 'Hz'
+    header['CUNIT4'] = ''
+
+    image = np.zeros((1, params.nchan, params.img_size, params.img_size))
+    image[:, :, params.img_size//2, params.img_size//2] = 1.0
+    
+    # Create beam table
+    beam_table = Table()
+    beam_table['BMAJ'] = [15 + 0.1*i for i in range(params.nchan)]
+    beam_table['BMIN'] = [16 + 0.1*i for i in range(params.nchan)]
+    beam_table['BPA'] = [0.0]*params.nchan
+    beam_table['BMAJ'].unit = 'arcsec'
+    beam_table['BMIN'].unit = 'arcsec'
+    beam_table['BPA'].unit = 'deg'
+    beam_table.write('beam_table.fits', overwrite=True)
+    params.test_files.append('beam_table.fits')
+    
+    # Write image and beam table to same FITS file (multi-extension)
+    hdu = fits.PrimaryHDU(image, header=header)
+    hdul = fits.HDUList([hdu, fits.BinTableHDU(beam_table)])
+    
+    test_filename = f'test_{uuid.uuid4()}_beamtable.fits'
+    params.test_files.append(test_filename)
+    hdul.writeto(test_filename, overwrite=True)
+    
+    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    intensities = predict.image
+    
+    pixel_area = np.abs(np.deg2rad(header['CDELT1'])) * np.abs(np.deg2rad(header['CDELT2']))
+    
+    expected_intensities = np.zeros((params.img_size, params.img_size, params.chan_freqs.size, params.ncorr))
+    for i in range(params.nchan):
+        bmaj_rad = beam_table['BMAJ'][i]*np.pi/(180*3600)
+        bmin_rad = beam_table['BMIN'][i]*np.pi/(180*3600)
+        beam_area = (np.pi * bmaj_rad * bmin_rad) / (4 * np.log(2))
+        scale = pixel_area / beam_area
+        expected_intensities[params.img_size//2, params.img_size//2, i, :] = scale
+    
+    expected_intensities = expected_intensities.reshape(params.img_size * params.img_size, params.chan_freqs.size, params.ncorr)
+    
+    non_zero_mask = np.any(expected_intensities > params.tol, axis=(1, 2))
+    expected_intensities = expected_intensities[non_zero_mask]
+
+    assert intensities.shape == expected_intensities.shape
+    assert np.allclose(intensities, expected_intensities)
