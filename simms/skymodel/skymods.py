@@ -236,7 +236,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     n_pix_m = dec_coords.size
 
     # convert from intensity to Jy
-    if fds.data_units == 'jy/beam':
+    if fds.data_units == 'Jy/beam':
         if fds.beam_table:
             bmaj = fds.beam_table["BMAJ"].to("rad").value
             bmin = fds.beam_table["BMIN"].to("rad").value
@@ -246,7 +246,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
             
             #check only the the value of the 
         else:
-            log.warning(f"FITS sky model units (BUNIT) are '{fds.data_units}', but no beam information found. Assuming data are in Jy")
+            log.warning(f"FITS sky model units (BUNIT) are '{fds.data_units}', but no beam information found."
+                        "Assuming data are in Jy")
         
     elif fds.data_units == '':
         log.warning(f"FITS sky model has no BUNIT specified. Assuming data are in Jy")
