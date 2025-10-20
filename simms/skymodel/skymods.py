@@ -215,8 +215,8 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     ra_coords = fds.coords["RA"]
     dec_coords = fds.coords["DEC"]
 
-    ra_grid = np.squeeze(ra_coords.data.compute() * getattr(units, ra_coords.units).to("rad"))
-    dec_grid = np.squeeze(dec_coords.data.compute() * getattr(units, dec_coords.units).to("rad"))
+    ra_grid = np.squeeze(ra_coords.data * getattr(units, ra_coords.units).to("rad"))
+    dec_grid = np.squeeze(dec_coords.data * getattr(units, dec_coords.units).to("rad"))
     ra_pixel_size = ra_coords.pixel_size * getattr(units, ra_coords.units).to("rad")
     dec_pixel_size = dec_coords.pixel_size * getattr(units, dec_coords.units).to("rad")
     pixel_area = abs(ra_pixel_size * dec_pixel_size)
