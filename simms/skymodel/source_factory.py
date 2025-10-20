@@ -230,7 +230,7 @@ class CatSource:
     line_width: float|str = None
     line_restfreq: float|str = None
     cont_coeff_1: float|str = 0
-    cont_coeff_2: float|str = None
+    cont_coeff_2: float|str = 0
     cont_reffreq: float|str = None
     transient_start: float|str = None
     transient_absorb: float|str = None
@@ -255,8 +255,8 @@ class CatSource:
         self.__update_attr__("line_width", "frequency")
         self.__update_attr__("line_restfreq", "frequency")
         self.__update_attr__("line_reffreq", "frequency")
-        self.__update_attr__("cont_coeff_1", "frequency")
-        self.__update_attr__("cont_coeff_2", "frequency")
+        self.__update_attr__("cont_coeff_1", "float")
+        self.__update_attr__("cont_coeff_2", "float")
         self.__update_attr__("cont_reffreq", "frequency")
         #transient info
         self.__update_attr__("transient_start", None)

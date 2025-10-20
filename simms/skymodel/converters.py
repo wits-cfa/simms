@@ -5,7 +5,9 @@ import numpy as np
 from typing import Union, Any
 
 def convert2rad(string, null_value=None):
-    if string is not None and string != 'null':
+    if isinstance(string, (int, float)):
+        return string
+    elif string is not None and string != 'null':
         try:
             float(string)
             string += 'deg'
@@ -60,7 +62,7 @@ def convert2Jy(string, null_value=0):
         return null_value
 
 def convert2Hz(string, null_value=None):
-    if string is not None and string != 'null':
+    if string not in [None, "null"]:
         freq = qa(string)
         freq_hz = freq.canonical().get_value()
         return freq_hz
@@ -76,7 +78,7 @@ def convert2float(string, null_value=None):
     return numfloat
 
 def convert(value:Any, qtype:str=None):
-    if isinstance(value,float): 
+    if isinstance(value,(int,float)): 
         if qtype != "flux":
             return value
         else:
