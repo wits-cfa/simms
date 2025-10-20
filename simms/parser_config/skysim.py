@@ -1,6 +1,5 @@
 import glob
 import os
-from glob import glob
 
 import click
 import dask
