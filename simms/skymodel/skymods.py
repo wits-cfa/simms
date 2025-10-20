@@ -98,7 +98,7 @@ def skymodel_from_sources(sources:List[CatSource], chan_freqs:np.ndarray,
         mod_sources.append(src)
     
     return mod_sources
- 
+
 def skymodel_from_catalogue(catfile:File, map_path, delimiter, 
                 chan_freqs: np.ndarray, unique_times, full_stokes:bool=True):
     """AI is creating summary for skymodel_from_catalogue
@@ -117,7 +117,7 @@ def skymodel_from_catalogue(catfile:File, map_path, delimiter,
     sources = load_sources(catfile, map_path, delimiter)
     return skymodel_from_sources(sources, chan_freqs=chan_freqs,
                             unique_times=unique_times, full_stokes=full_stokes)
-   
+
 
 def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, dec0: float, chan_freqs: np.ndarray,
                         ms_delta_nu: float, ncorr: int, basis: str, tol: float=1e-7, full_stokes:bool=True,
@@ -147,7 +147,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
         "idx": 0,
         "axis_grid": da.asarray([0]),
         "coord_type": "stokes",
-        "attrs": dict(ref_pixel=0, units="jy", size=1, dim="stokes", pixel_size=1),
+        "attrs": dict(ref_pixel=0, units="Jy", size=1, dim="stokes", pixel_size=1),
     }
 
     if isinstance(input_fitsimages, List):
@@ -251,7 +251,7 @@ def skymodel_from_fits(input_fitsimages: Union[File, List[File]], ra0: float, de
     elif fds.data_units == '':
         log.warning(f"FITS sky model has no BUNIT specified. Assuming data are in Jy")
 
-    elif fds.data_units != 'jy':
+    elif fds.data_units != 'Jy':
         log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data are in Jy")
     
     if nchan_fits > 1:
