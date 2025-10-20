@@ -6,7 +6,6 @@ from simms.utilities import (
     )
 from simms.skymodel.source_factory import CatSource
 
-
 def catalogue2dict(catfile, map_path, delimiter):
     
     mapdata = OmegaConf.load(map_path)
@@ -72,21 +71,19 @@ def dict2sources(data):
     for i in range(num_sources):
         source = CatSource(
             name=data["name"][1][i],
+            
             ra=data["ra"][1][i],
             dec=data["dec"][1][i],
+
             emaj=data["emaj"][1][i] if i < len(data["emaj"][1]) else None,
             emin=data["emin"][1][i] if i < len(data["emin"][1]) else None,
             pa=data["pa"][1][i] if i < len(data["pa"][1]) else "0deg",
-        )
 
-        source.add_stokes(
             stokes_i=data["stokes_i"][1][i],
             stokes_q=data["stokes_q"][1][i] if i < len(data["stokes_q"][1]) else None,
             stokes_u=data["stokes_u"][1][i] if i < len(data["stokes_u"][1]) else None,
             stokes_v=data["stokes_v"][1][i] if i < len(data["stokes_v"][1]) else None,
-        )
-        
-        source.add_spectral(
+
             cont_reffreq=(
                 data["cont_reffreq"][1][i] if i < len(data["cont_reffreq"][1]) else None
             ),
@@ -109,7 +106,21 @@ def dict2sources(data):
             cont_coeff_2=(
                 data["cont_coeff_2"][1][i] if i < len(data["cont_coeff_2"][1]) else None
             ),
+
+            transient_start=(
+                data["transient_start"][1][i] if i < len(data["transient_start"][1]) else None
+            ),  
+            transient_absorb=(
+                data["transient_absorb"][1][i] if i < len(data["transient_absorb"][1]) else None
+            ),
+            transient_ingress=(
+                data["transient_ingress"][1][i] if i < len(data["transient_ingress"][1]) else None
+            ),
+            transient_period=(
+                data["transient_period"][1][i] if i < len(data["transient_period"][1]) else None
+            ),
         )
+
         sources.append(source)
 
     return sources
