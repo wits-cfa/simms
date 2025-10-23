@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Union
+import logging
 
 import dask.array as da
 import numpy as np
@@ -8,7 +9,7 @@ from fitstoolz.reader import FitsData
 from numba import njit, prange
 from scabha.basetypes import File
 
-from simms import BIN, get_logger
+from simms import BIN
 from simms.skymodel.catalogue_reader import load_sources
 from simms.skymodel.converters import radec2lm
 from simms.skymodel.source_factory import (
@@ -23,8 +24,6 @@ from simms.utilities import (
     FITSSkymodelError as SkymodelError,
 )
 from simms.utilities import ObjDict
-
-log = get_logger(BIN.skysim)
 
 
 @njit(parallel=True)
@@ -84,7 +83,7 @@ def skymodel_from_sources(
         else:
             specfunc = contspec
             kwargs = {
-                "coeff": src.cont_coeff_1,
+                "coeff": [src.cont_coeff_1, src.cont_coeff_2],
                 "nu_ref": src.cont_reffreq,
             }
 
@@ -159,8 +158,13 @@ def skymodel_from_fits(
         predict_image (np.ndarray): pixel-by-pixel brightness matrix for each channel and correlation
         lm (np.ndarray): (l, m) coordinate grid for DFT
     """
+    
+    log = logging.getLogger(BIN.skysim)
+    
     phase_centre = np.array([ra0, dec0])
     nchan = chan_freqs.size
+    
+    
 
     dummy_stokes = {
         "name": "STOKES",
@@ -241,10 +245,10 @@ def skymodel_from_fits(
     dec_pixel_size = dec_coords.pixel_size * getattr(units, dec_coords.units).to("rad")
     pixel_area = abs(ra_pixel_size * dec_pixel_size)
 
-    if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
+    if ms_start_freq > fits_start_freq or ms_end_freq < fits_end_freq:
         raise SkymodelError(
-            f"Some MS frequencies [{ms_start_freq / 1e9:.6f} GHz, {ms_end_freq / 1e9:.6f} GHz] "
-            f"are out of bounds of FITS image frequencies[{fits_start_freq / 1e9:.6f} GHz, {fits_end_freq / 1e9:.6f} GHz]. "
+            f"FITS image frequencies [{fits_start_freq / 1e9:.6f} GHz, {fits_end_freq / 1e9:.6f} GHz] "
+            f"are outside the MS frequencies[{ms_start_freq / 1e9:.6f} GHz, {ms_end_freq / 1e9:.6f} GHz]. "
             "Cannot interpolate FITS image onto MS frequency grid."
         )
 
@@ -276,7 +280,7 @@ def skymodel_from_fits(
     elif fds.data_units == "":
         log.warning("FITS sky model has no BUNIT specified. Assuming data are in Jy")
 
-    elif fds.data_units != "Jy":
+    elif fds.data_units not in  ["Jy", "Jy/pixel"] :
         log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data are in Jy")
 
     if nchan_fits > 1:
@@ -337,6 +341,8 @@ def skymodel_from_fits(
                     "is_polarised": skymodel.is_polarised,
                     "expand_freq_dim": expand_freq_dim,
                     "use_dft": use_dft,
+                    "ra_pixel_size": None,
+                    "dec_pixel_size": None,
                 }
             )
         else:
@@ -347,7 +353,8 @@ def skymodel_from_fits(
 
             return ObjDict(
                 {
-                    "image": reshaped_predict_image,
+                    "image": predict_image,
+                    "lm" : None,
                     "is_polarised": skymodel.is_polarised,
                     "expand_freq_dim": expand_freq_dim,
                     "use_dft": use_dft,
@@ -366,5 +373,7 @@ def skymodel_from_fits(
                 "is_polarised": skymodel.is_polarised,
                 "expand_freq_dim": expand_freq_dim,
                 "use_dft": use_dft,
+                "ra_pixel_size": None,
+                "dec_pixel_size": None,
             }
         )

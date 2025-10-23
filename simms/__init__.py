@@ -9,18 +9,29 @@ PCKGDIR = os.path.dirname(os.path.abspath(__file__))
 SCHEMADIR = os.path.join(__path__[0], "schemas")
 
 
-def get_logger(name, level="WARNING"):
+def set_logger(name, level="WARNING"):
     if isinstance(level, str):
         level = getattr(logging, level, 10)
+        
+        # create logger
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
 
-    format_string = "%(asctime)s-%(name)s-%(levelname)-8s| %(message)s"
-    # set up logging to file - see previous section for more details
-    logging.basicConfig(level=level, format=format_string, datefmt="%m:%d %H:%M:%S")
+    # create console handler and set level to debug
+    ch = logging.StreamHandler()
+    ch.setLevel(level)
 
-    return logging.getLogger(name)
+    # create formatter
+    formatter = logging.Formatter("%(asctime)s-%(name)s-%(levelname)-8s| %(message)s")
 
+    # add formatter to ch
+    ch.setFormatter(formatter)
 
-LOG = get_logger("simms")
+    # add ch to logger
+    logger.addHandler(ch)
+    
+    return logger
+
 
 
 class BinClass:

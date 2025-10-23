@@ -6,13 +6,8 @@ from omegaconf import OmegaConf
 from scabha.basetypes import File
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 
-import simms
-from simms import BIN, get_logger
+from simms import BIN, __version__, set_logger
 from simms.telescope import generate_ms, layouts
-
-from . import cli
-
-log = get_logger(BIN.telsim)
 
 command = BIN.telsim
 
@@ -41,8 +36,7 @@ def print_data_database(ctx, param, value):
     raise SystemExit()
 
 
-@cli.command(command)
-@click.version_option(str(simms.__version__))
+@click.command(command)
 @click.option(
     "--list",
     "-ls",
@@ -52,8 +46,11 @@ def print_data_database(ctx, param, value):
     help="Displays a message and then exits the program.",
 )
 @clickify_parameters(config)
-def telsim_runit(**kwargs):
+@click.pass_context
+def runit(ctx, **kwargs):
     opts = OmegaConf.create(kwargs)
+    
+    log = set_logger(BIB.telsim, ctx.obj["log_level"])
 
     msname = opts.ms
     telescope = opts.telescope

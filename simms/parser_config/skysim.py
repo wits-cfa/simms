@@ -1,18 +1,18 @@
 import glob
 import os
+import logging
 
 import click
-import dask
 import dask.array as da
-import numpy as np
+from dask import config as dask_config
 from daskms import xds_from_ms, xds_from_table, xds_to_table
+import numpy as np
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 from tqdm.dask import TqdmCallback
 
-import simms
-from simms import BIN, get_logger
+from simms import BIN, set_logger
 from simms.skymodel.catalogue_reader import load_sources
 from simms.skymodel.mstools import (
     augmented_im_to_vis,
@@ -26,28 +26,28 @@ from simms.skymodel.skymods import (
 )
 from simms.utilities import ParameterError
 
-from . import cli
 
-log = get_logger(BIN.skysim, level="ERROR")
 
 command = BIN.skysim
-
 thisdir = os.path.dirname(__file__)
 source_files = glob.glob(f"{thisdir}/library/*.yaml")
 sources = [File(item) for item in source_files]
 parserfile = File(f"{thisdir}/{command}.yaml")
 config = paramfile_loader(parserfile, sources)[command]
 
-
-@cli.command(command)
-@click.version_option(str(simms.__version__))
+@click.command(command)
 @clickify_parameters(config)
-def skysim_runit(**kwargs):
+@click.pass_context
+def runit(ctx, **kwargs):
     opts = OmegaConf.create(kwargs)
+
+    log = set_logger(BIN.skysim, ctx.obj["log_level"])
     ms = opts.ms
     cat = opts.ascii_sky
     fs = opts.fits_sky
 
+    dask_config.set(scheduler="threads", num_workers=opts.nworkers)
+    
     if cat and fs:
         raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
 
@@ -87,7 +87,6 @@ def skysim_runit(**kwargs):
                 f"No mapping file specified nor built-in map selected. Assuming default column names (see {map_path})"
             )
 
-        dask.config.set(scheduler="threads", num_workers=opts.nworkers)
         sources = load_sources(cat, map_path=map_path, delimiter=opts.cat_delim)
 
         if any([src.is_transient for src in sources]):
@@ -162,10 +161,9 @@ def skysim_runit(**kwargs):
             raise ParameterError("FITS file/directory does not exist")
 
         # process FITS sky model
-        predict = skymodel_from_fits(fs, ra0, dec0, freqs, dfreq, ncorr, opts.pol_basis, tol=float(opts.pixel_tol))
+        predict = skymodel_from_fits(fs, ra0, dec0, freqs, dfreq, ncorr, opts.pol_basis, tol=opts.pixel_tol)
 
         epsilon = 1e-7 if opts.fft_precision == "double" else 1e-5
-
         simvis = da.blockwise(
             augmented_im_to_vis,
             ("row", "chan", "corr"),
@@ -173,11 +171,10 @@ def skysim_runit(**kwargs):
             ("npix", "chan", "corr") if predict.use_dft else ("l", "m", "chan", "corr"),
             msds.UVW.data,
             ("row", "uvw"),
-            predict.lm,
-            ("npix", "lm") if predict.use_dft else None,
+            predict.lm, ("npix", "lm") if predict.lm else None,
             freqs,
             ("chan",),
-            polarisation=predict.is_polarisation,
+            polarisation=predict.is_polarised,
             expand_freq_dim=predict.expand_freq_dim,
             use_dft=predict.use_dft,
             ncorr=ncorr,

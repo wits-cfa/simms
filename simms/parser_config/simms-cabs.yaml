@@ -91,11 +91,11 @@ cabs:
         default: sim
         choices: ['sim', 'add', 'subtract']
       die:
-        info: Direction independent effects
+        info: "#### NOT IMPLEMENTED #### Direction independent effects"
         dtype: File
         required: no
       dde:
-        info: Direction dependent effects
+        info: "#### NOT IMPLEMENTED ### Direction dependent effects"
         dtype: File
         required: no
       mapping:
