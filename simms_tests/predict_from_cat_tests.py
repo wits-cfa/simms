@@ -165,19 +165,19 @@ def test_compute_vis_all_stokes_linear_basis(params):
     - YY = I - Q
     """
     # the numbers below are unphysical—they are just for testing the computation
-    I = 1.0
-    Q = 2.0
-    U = 3.0
-    V = 4.0
+    stokes_I = 1.0
+    stokes_Q = 2.0
+    stokes_U = 3.0
+    stokes_V = 4.0
     sources = [
         CatSource(
             name="test_source",
             ra=f"{params.ra0}rad",
             dec=f"{params.dec0}rad",
-            stokes_i=str(I),
-            stokes_q=str(Q),
-            stokes_u=str(U),
-            stokes_v=str(V),
+            stokes_i=str(stokes_I),
+            stokes_q=str(stokes_Q),
+            stokes_u=str(stokes_U),
+            stokes_v=str(stokes_V),
         )
     ]
 
@@ -199,10 +199,10 @@ def test_compute_vis_all_stokes_linear_basis(params):
     nchan = params.freqs.size
 
     assert vis.shape == (nrow, nchan, ncorr)
-    np.testing.assert_allclose(vis[:, :, 0], I + Q, atol=1e-6)  # check that XX = I + Q
-    np.testing.assert_allclose(vis[:, :, 1], U + 1j * V, atol=1e-6)  # check that XY = U + iV
-    np.testing.assert_allclose(vis[:, :, 2], U - 1j * V, atol=1e-6)  # check that YX = U - iV
-    np.testing.assert_allclose(vis[:, :, 3], I - Q, atol=1e-6)  # check that YY = I - Q
+    np.testing.assert_allclose(vis[:, :, 0], stokes_I + stokes_Q, atol=1e-6)  # check that XX = I + Q
+    np.testing.assert_allclose(vis[:, :, 1], stokes_U + 1j * stokes_V, atol=1e-6)  # check that XY = U + iV
+    np.testing.assert_allclose(vis[:, :, 2], stokes_U - 1j * stokes_V, atol=1e-6)  # check that YX = U - iV
+    np.testing.assert_allclose(vis[:, :, 3], stokes_I - stokes_Q, atol=1e-6)  # check that YY = I - Q
 
 
 def test_compute_vis_all_stokes_circular_basis(params):
@@ -217,19 +217,19 @@ def test_compute_vis_all_stokes_circular_basis(params):
     """
     ncorr = 4
     # the numbers below are unphysical—they are just for testing the computation
-    I = 1.0
-    Q = 2.0
-    U = 3.0
-    V = 4.0
+    stokes_I = 1.0
+    stokes_Q = 2.0
+    stokes_U = 3.0
+    stokes_V = 4.0
     sources = [
         CatSource(
             name="test_source",
             ra=f"{params.ra0}rad",
             dec=f"{params.dec0}rad",
-            stokes_i=str(I),
-            stokes_q=str(Q),
-            stokes_u=str(U),
-            stokes_v=str(V),
+            stokes_i=str(stokes_I),
+            stokes_q=str(stokes_Q),
+            stokes_u=str(stokes_U),
+            stokes_v=str(stokes_V),
         )
     ]
 
@@ -251,7 +251,7 @@ def test_compute_vis_all_stokes_circular_basis(params):
     nchan = params.freqs.size
 
     assert vis.shape == (nrow, nchan, ncorr)
-    np.testing.assert_allclose(vis[:, :, 0], I + V, atol=1e-6)  # check that RR = I + V
-    np.testing.assert_allclose(vis[:, :, 1], Q + 1j * U, atol=1e-6)  # check that RL = Q + iU
-    np.testing.assert_allclose(vis[:, :, 2], Q - 1j * U, atol=1e-6)  # check that LR = Q - iU
-    np.testing.assert_allclose(vis[:, :, 3], I - V, atol=1e-6)  # check that LL = I - V
+    np.testing.assert_allclose(vis[:, :, 0], stokes_I + stokes_V, atol=1e-6)  # check that RR = I + V
+    np.testing.assert_allclose(vis[:, :, 1], stokes_Q + 1j * stokes_U, atol=1e-6)  # check that RL = Q + iU
+    np.testing.assert_allclose(vis[:, :, 2], stokes_Q - 1j * stokes_U, atol=1e-6)  # check that LR = Q - iU
+    np.testing.assert_allclose(vis[:, :, 3], stokes_I - stokes_V, atol=1e-6)  # check that LL = I - V

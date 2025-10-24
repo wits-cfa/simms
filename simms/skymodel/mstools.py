@@ -104,8 +104,7 @@ def fft_im_to_vis(
     pixsize_x: float,
     pixsize_y: float,
     epsilon: Optional[float] = 1e-7,
-    nthreads: Optional[int] = 8,
-    do_wstacking: Optional[bool] = True,
+    nthreads: Optional[int] = 8
 ) -> np.ndarray:
     """
     ducc0.wgridder.dirty2ms wrapper to add squeezing and conjugation.
