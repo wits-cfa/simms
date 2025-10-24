@@ -6,8 +6,8 @@ import xarray as xr
 
 from simms.constants import FWHM_scale_fact
 from simms.skymodel.converters import convert
-
 from simms.utilities import ParameterError as SkymodelError
+
 
 def gauss_1d(xaxis: np.ndarray, peak: float, width: float, x0: float):
     """
@@ -21,17 +21,6 @@ def gauss_1d(xaxis: np.ndarray, peak: float, width: float, x0: float):
     """
     sigma = width / FWHM_scale_fact
     return peak * np.exp(-((xaxis - x0) ** 2) / (2 * sigma**2))
-
-def logistic_step(z, L=10.0):
-        "Logistic function mapped to [0, 1] using internal steepness scaling L."
-        z = np.clip(z, 0, 1)
-        k = L  # steepness across [0, 1]
-        raw = 1 / (1 + np.exp(-k * (z - 0.5)))
-        f0 = 1 / (1 + np.exp(k / 2))
-        f1 = 1 / (1 + np.exp(-k / 2))
-        normalized = (raw - f0) / (f1 - f0)
-        return normalized
-
 
 def exoplanet_transient_logistic(
     start_time: int,
@@ -74,6 +63,17 @@ def exoplanet_transient_logistic(
             f"Transient source specification is missing required parameter(s): {', '.join(missing)}"
         )
 
+    # helper function to calculate ingress/egress using logistic function
+    def logistic_step(z, L=10.0):
+        "Logistic function mapped to [0, 1] using internal steepness scaling L."
+        z = np.clip(z, 0, 1)
+        k = L  # steepness across [0, 1]
+        raw = 1 / (1 + np.exp(-k * (z - 0.5)))
+        f0 = 1 / (1 + np.exp(k / 2))
+        f1 = 1 / (1 + np.exp(-k / 2))
+        normalized = (raw - f0) / (f1 - f0)
+        return normalized
+    
     times = np.linspace(start_time, end_time, ntimes)
     baseline = 1.0
 
@@ -337,7 +337,15 @@ class CatSource:
 
     @property
     def is_transient(self):
-        return self.transient_start not in [None, "null"]
+        if any(
+            [
+                self.transient_start not in [None, "null"],
+                self.transient_absorb not in [None, "null"],
+                self.transient_ingress not in [None, "null"],
+                self.transient_period not in [None, "null"],
+            ]
+        ):
+            return True
 
 
 class Source(CatSource):
