@@ -127,13 +127,13 @@ def test_transient_visibility_dip(params):
      post_dip = np.mean(flux_time[times_rel > transient_start + 80])
      assert abs(pre_dip - post_dip) < 0.1, "Flux should recover after transient."
     
-def test_transient_missing_params():
+def test_transient_missing_params(params):
     """
     Test that missing required transient parameters raise an error.
     Validates:
     - SkymodelError is raised for missing parameters
     """
-
+    
     with pytest.raises(SkymodelError) as exception:
         source = CatSource(
             name="test_source",
@@ -145,5 +145,7 @@ def test_transient_missing_params():
             transient_period="100",
             transient_ingress="20",
         )
+        skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, unique_times=np.unique(params.times), full_stokes=True)
+
     assert exception.type is SkymodelError
     assert "missing required parameter(s)" in str(exception.value)

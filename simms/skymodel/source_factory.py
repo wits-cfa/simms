@@ -69,7 +69,6 @@ def exoplanet_transient_logistic(
     for option in ["transient_start", "transient_period", "transient_ingress", "transient_absorb"]:
         if locals()[option] in [None, "null"]:
             missing.append(option)
-
     if missing:
         raise SkymodelError(
             f"Transient source specification is missing required parameter(s): {', '.join(missing)}"
