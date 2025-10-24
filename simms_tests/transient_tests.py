@@ -9,6 +9,7 @@ from simms.skymodel.source_factory import (
 from simms.telescope.array_utilities import Array
 from simms.utilities import ParameterError as SkymodelError
 
+
 class InitTests:
     def __init__(self):
         # set up test inputs
@@ -52,12 +53,13 @@ def test_transient_visibility_shape(params):
         transient_ingress="20",
     )
 
-    skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, unique_times=np.unique(params.times), full_stokes=True)
+    skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, 
+                                     unique_times=np.unique(params.times), full_stokes=True)
 
     ncorr = 4
 
     vis = compute_vis(
-        sources=[source],
+        sources=skymodel,
         uvw=params.uvw,
         freqs=params.freqs,
         times=params.times,
@@ -92,12 +94,13 @@ def test_transient_visibility_dip(params):
         transient_ingress="20",
     )
 
-     skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, unique_times=np.unique(params.times), full_stokes=True)
+     skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, 
+                                      unique_times=np.unique(params.times), full_stokes=True)
 
      ncorr = 4
 
      vis = compute_vis(
-        sources=[source],
+        sources=skymodel,
         uvw=params.uvw,
         freqs=params.freqs,
         times=params.times,
@@ -140,12 +143,14 @@ def test_transient_missing_params(params):
             ra="0rad",
             dec="0rad",
             stokes_i="1",
-            transient_start="100",  
-            transient_absorb=None,   # Missing parameter
+            transient_start=None,    # Missing parameter
+            transient_absorb="0.5",   
             transient_period="100",
-            transient_ingress="20",
+            transient_ingress=None,  # Missing parameter
         )
-        skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, unique_times=np.unique(params.times), full_stokes=True)
+
+        skymodel_from_sources(sources=[source], chan_freqs=params.freqs, 
+                              unique_times=np.unique(params.times), full_stokes=True)
 
     assert exception.type is SkymodelError
     assert "missing required parameter(s)" in str(exception.value)
