@@ -65,3 +65,37 @@ def get_noise(sefds: Union[List, float], dtime: int, dfreq: float):
         noises.append(noise)
 
     return noises
+
+def is_range_in_range(inner_range, outer_range):
+    """
+    Checks if a given range (inner_range) is fully contained within 
+    another range (outer_range).
+
+    Assumes ranges are inclusive and represented as (start, end) tuples.
+    
+    Args:
+        inner_range (tuple): A tuple (start, end) representing the inner range.
+        outer_range (tuple): A tuple (start, end) representing the outer range.
+
+    Returns:
+        bool: True if inner_range is fully within outer_range, False otherwise.
+    """
+    
+    # Unpack the tuples
+    inner_start, inner_end = inner_range
+    outer_start, outer_end = outer_range
+    
+    # In case the ranges are given "backwards" (e.g., (10, 5)), 
+    # we normalize them to be (min, max).
+    if inner_start > inner_end:
+        inner_start, inner_end = inner_end, inner_start
+    if outer_start > outer_end:
+        outer_start, outer_end = outer_end, outer_start
+
+    # The check:
+    # 1. The inner range's start must be at or after the outer range's start.
+    # 2. The inner range's end must be at or before the outer range's end.
+    is_start_within = outer_start <= inner_start
+    is_end_within = inner_end <= outer_end
+    
+    return is_start_within and is_end_within
