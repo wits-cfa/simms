@@ -23,7 +23,7 @@ from simms.skymodel.source_factory import (
 from simms.utilities import (
     FITSSkymodelError as SkymodelError,
 )
-from simms.utilities import ObjDict
+from simms.utilities import ObjDict, is_range_in_range
 
 
 @njit(parallel=True)
@@ -246,7 +246,12 @@ def skymodel_from_fits(
     dec_pixel_size = dec_coords.pixel_size * getattr(units, dec_coords.units).to("rad")
     pixel_area = abs(ra_pixel_size * dec_pixel_size)
 
-    if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
+    ms_range = (ms_start_freq, ms_end_freq)
+    fits_range = (fits_start_freq, fits_end_freq)
+    # check if MS freqs are valid
+    if nchan_fits == 1 and is_range_in_range(fits_range, ms_range):
+        pass
+    elif is_range_in_range(ms_range, fits_range):
         raise SkymodelError(
             f"MS frequencies [{ms_start_freq / 1e9:.6f} GHz, {ms_end_freq / 1e9:.6f} GHz] "
             f"are outside the FITS image frequencies[{fits_start_freq / 1e9:.6f} GHz, {fits_end_freq / 1e9:.6f} GHz]. "
@@ -379,3 +384,4 @@ def skymodel_from_fits(
                 "dec_pixel_size": None,
             }
         )
+
