@@ -153,9 +153,9 @@ def skymodel_from_fits(
         basis (str): polarisation basis ("linear" or "circular")
         tol (float): tolerance for pixel brightness
         stokes (Union[int,str]): Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). If 'all',
-        all Stokes parameters are used.
+            all Stokes parameters are used.
         stack_axis (str|Dict): Stack FITS images along this axis if multiple input images given.
-        If Dict, then these should be options to 'fitstoolz.reader.FitsData.add_axis()'
+            If Dict, then these should be options to 'fitstoolz.reader.FitsData.add_axis()'
         interpolation (str): Interpolation along frequency if there's a grid mismatch between the FITS image and MS
     Returns:
         predict_image (np.ndarray): pixel-by-pixel brightness matrix for each channel and correlation
@@ -188,8 +188,8 @@ def skymodel_from_fits(
                 fds.add_axis(**dummy_stokes)
             else:
                 raise RuntimeError(
-                    f"Input skymodel FITS images cannot combined along the given axis '{stack_axis}'"
-                    f"because it doesn't exist in the input images"
+                    f"Input skymodel FITS images cannot be combined along the given axis "
+                    f"'{stack_axis}' because it doesn't exist in the input images."
                 )
 
         fds.expand_along_axis_from_files(stack_axis, input_fitsimages[1:])
@@ -256,8 +256,9 @@ def skymodel_from_fits(
         pass
     elif not is_range_in_range(ms_range, fits_range):
         raise SkymodelError(
-            f"MS frequencies [{ms_start_freq / 1e9:.6f} GHz, {ms_end_freq / 1e9:.6f} GHz] "
-            f"are outside the FITS image frequencies[{fits_start_freq / 1e9:.6f} GHz, {fits_end_freq / 1e9:.6f} GHz]. "
+            f"Some MS frequencies [{ms_start_freq / 1e9:.6f} GHz, {ms_end_freq / 1e9:.6f} GHz] "
+            f"are out of bounds of FITS image frequencies "
+            f"[{fits_start_freq / 1e9:.6f} GHz, {fits_end_freq / 1e9:.6f} GHz]. "
             "Cannot interpolate FITS image onto MS frequency grid."
         )
 
@@ -333,6 +334,8 @@ def skymodel_from_fits(
     if use_dft is None:
         if sparsity >= 0.8:
             log.info(
+                f"More than 80% of pixels have intensity < {(tol * 1e6):.2f} μJy. "
+                "DFT will be used for visibility prediction."
                 f"More than 80% of pixels have intensity < {(tol * 1e6):.2f} μJy. "
                 "DFT will be used for visibility prediction."
             )
