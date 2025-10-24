@@ -36,9 +36,9 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
     lm = np.zeros((n_pix_l, n_pix_m, 2), dtype=np.float64)
     for i in prange(len(ra_coords)):
         for j in range(len(dec_coords)):
-            l, m = radec2lm(ra0, dec0, ra_coords[i], dec_coords[j])
-            lm[i, j, 0] = l
-            lm[i, j, 1] = m
+            l_coords, m_coords = radec2lm(ra0, dec0, ra_coords[i], dec_coords[j])
+            lm[i, j, 0] = l_coords
+            lm[i, j, 1] = m_coords
 
     return lm
 
@@ -137,7 +137,6 @@ def skymodel_from_fits(
     ncorr: int,
     basis: str,
     tol: float = 1e-7,
-    full_stokes: bool = True,
     use_dft: Optional[bool] = None,
     stack_axis="STOKES",
 ) -> tuple:
