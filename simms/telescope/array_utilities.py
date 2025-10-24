@@ -130,6 +130,8 @@ class Array:
 
                 if "freq" in sensitivity_data:
                     self.noise_freqs = sensitivity_data["freq"]
+                if "freqs" in sensitivity_data:
+                    self.noise_freqs = sensitivity_data["freqs"]
 
             if isinstance(sefd, (float, int)):
                 self.sefd = [sefd]
