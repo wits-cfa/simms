@@ -2,7 +2,6 @@ import glob
 import os
 from typing import Dict
 
-import numpy as np
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 
