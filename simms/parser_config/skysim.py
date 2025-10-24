@@ -161,7 +161,13 @@ def runit(ctx, **kwargs):
         # process FITS sky model
         predict = skymodel_from_fits(fs, ra0, dec0, freqs, dfreq, ncorr, opts.pol_basis, tol=opts.pixel_tol)
 
-        epsilon = 1e-7 if opts.fft_precision == "double" else 1e-5
+        dtype = np.finfo(predict.image.dtype).dtype
+        if dtype == np.float32:
+            epsilon = 1e-6
+        else:
+            epsilon = 1e-7 if opts.fft_precision == "double" else 1e-6
+        
+
         simvis = da.blockwise(
             augmented_im_to_vis,
             ("row", "chan", "corr"),
@@ -170,7 +176,7 @@ def runit(ctx, **kwargs):
             msds.UVW.data,
             ("row", "uvw"),
             predict.lm,
-            ("npix", "lm") if predict.lm else None,
+            ("npix", "lm") if predict.use_dft else None,
             freqs,
             ("chan",),
             polarisation=predict.is_polarised,
