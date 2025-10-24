@@ -243,6 +243,8 @@ def skymodel_from_fits(
     dec_grid = np.squeeze(dec_coords.data * getattr(units, dec_coords.units).to("rad"))
     ra_pixel_size = ra_coords.pixel_size * getattr(units, ra_coords.units).to("rad")
     dec_pixel_size = dec_coords.pixel_size * getattr(units, dec_coords.units).to("rad")
+
+    print(f"dec_pix:{np.rad2deg(dec_pixel_size)}, ra_pix:{np.rad2deg(ra_pixel_size)}")
     pixel_area = abs(ra_pixel_size * dec_pixel_size)
 
     ms_range = (ms_start_freq, ms_end_freq)
@@ -324,10 +326,11 @@ def skymodel_from_fits(
     # decide whether image is sparse enough for DFT
     sparsity = 1 - (non_zero_predict_image.size / predict_image.size)
 
+    print(f"ra_grid:{ra_grid}, dec_grid:{dec_grid}")
     if use_dft is None:
         if sparsity >= 0.8:
             log.info(
-                f"More than 80% of pixels have intensity < {(tol * 1e6):.2f} μJy."
+                f"More than 80% of pixels have intensity < {(tol * 1e6):.2f} μJy. "
                 "DFT will be used for visibility prediction."
             )
             use_dft = True
@@ -352,7 +355,7 @@ def skymodel_from_fits(
             )
         else:
             log.info(
-                f"More than 20% of pixels have intensity > {(tol * 1e6):.2f} μJy."
+                f"More than 20% of pixels have intensity > {(tol * 1e6):.2f} μJy. "
                 "FFT will be used for visibility prediction."
             )
             use_dft = False
