@@ -31,10 +31,12 @@ class InitTests:
         self.ra0 = uv_coverage_data.ra0
         self.dec0 = uv_coverage_data.dec0
 
+
 @pytest.fixture
 def params():
     return InitTests()
-   
+
+ 
 def test_transient_visibility_shape(params):
     """
     Test that the visibility matrix follows (nrow, nchan, ncorr).
@@ -53,8 +55,9 @@ def test_transient_visibility_shape(params):
         transient_ingress="20",
     )
 
-    skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, 
-                                     unique_times=np.unique(params.times), full_stokes=True)
+    skymodel = skymodel_from_sources(
+        sources=[source], chan_freqs=params.freqs, unique_times=np.unique(params.times), full_stokes=True
+    )
 
     ncorr = 4
 
@@ -65,14 +68,15 @@ def test_transient_visibility_shape(params):
         times=params.times,
         ncorr=ncorr,
         polarisation=False,
-        pol_basis='linear',
+        pol_basis="linear",
         ra0=params.ra0,
-        dec0=params.dec0
+        dec0=params.dec0,
     )
 
     nrow = params.uvw.shape[0]
     nchan = params.freqs.size
     assert vis.shape == (nrow, nchan, ncorr)
+
 
 def test_transient_visibility_dip(params):
     """
@@ -82,7 +86,7 @@ def test_transient_visibility_dip(params):
     - a dip occurs near the transient start time
     - flux recovers to original value after transient
     """
-       
+
     source = CatSource(
         name="test_source",
         ra=f"{params.ra0}rad",
@@ -94,8 +98,9 @@ def test_transient_visibility_dip(params):
         transient_ingress="20",
     )
 
-    skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, 
-                                      unique_times=np.unique(params.times), full_stokes=True)
+    skymodel = skymodel_from_sources(
+        sources=[source], chan_freqs=params.freqs, unique_times=np.unique(params.times), full_stokes=True
+    )
 
     ncorr = 4
 
@@ -106,12 +111,12 @@ def test_transient_visibility_dip(params):
         times=params.times,
         ncorr=ncorr,
         polarisation=False,
-        pol_basis='linear',
+        pol_basis="linear",
         ra0=params.ra0,
-        dec0=params.dec0
+        dec0=params.dec0,
     )
 
-    flux_time = np.mean(np.abs(vis[:,:,0]), axis=1)
+    flux_time = np.mean(np.abs(vis[:, :,0]), axis=1)
 
     avg_flux = np.mean(flux_time)
     assert avg_flux < 1.0, "Transient should reduce flux below baseline (I=1)."
@@ -129,21 +134,22 @@ def test_transient_visibility_dip(params):
     pre_dip = np.mean(flux_time[times_rel < transient_start - 20])
     post_dip = np.mean(flux_time[times_rel > transient_start + 80])
     assert abs(pre_dip - post_dip) < 0.1, "Flux should recover after transient."
-    
+
+
 def test_transient_missing_params(params):
     """
     Test that missing required transient parameters raise an error.
     Validates:
     - SkymodelError is raised for missing parameters
     """
-    
+
     with pytest.raises(SkymodelError) as exception:
         source = CatSource(
             name="test_source",
             ra="0rad",
             dec="0rad",
             stokes_i="1",
-            transient_start=None,    # Missing parameter
+            transient_start=None,  # Missing parameter
             transient_absorb="0.5",   
             transient_period="100",
             transient_ingress=None,  # Missing parameter
@@ -151,7 +157,7 @@ def test_transient_missing_params(params):
 
         skymodel_from_sources(
             sources=[source], chan_freqs=params.freqs, unique_times=np.unique(params.times), full_stokes=True
-            )
+        )
 
     assert exception.type is SkymodelError
     assert "missing required parameter(s)" in str(exception.value)
