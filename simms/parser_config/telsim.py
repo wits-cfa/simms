@@ -6,7 +6,7 @@ from omegaconf import OmegaConf
 from scabha.basetypes import File
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 
-from simms import BIN, __version__, set_logger
+from simms import BIN, set_logger
 from simms.telescope import generate_ms, layouts
 
 command = BIN.telsim
@@ -49,8 +49,7 @@ def print_data_database(ctx, param, value):
 @click.pass_context
 def runit(ctx, **kwargs):
     opts = OmegaConf.create(kwargs)
-    
-    log = set_logger(BIB.telsim, ctx.obj["log_level"])
+    set_logger(BIN.telsim, ctx.obj["log_level"])
 
     msname = opts.ms
     telescope = opts.telescope

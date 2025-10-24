@@ -1,6 +1,5 @@
-import logging
 from dataclasses import dataclass
-from typing import List, Callable
+from typing import Callable, List
 
 import numpy as np
 import xarray as xr
@@ -102,7 +101,7 @@ class StokesData:
         Object that holds a source/image intensity (stokes data)
 
         Args:
-            data (List): List of stokes parameter data. 
+            data (List): List of stokes parameter data.
             linear_basis (bool, optional): Is the stokes data in a linear basis? Defaults to True.
         """
         self.data = np.array(data)
@@ -112,13 +111,13 @@ class StokesData:
         else:
             self.param_string = "IVQU"
 
-    def set_spectrum(self, freqs:np.ndarray, specfunc:Callable, full_pol:bool=True, **kwargs):
+    def set_spectrum(self, freqs: np.ndarray, specfunc: Callable, full_pol: bool = True, **kwargs):
         """
         Add a spectral axis
 
         Args:
             freqs (np.ndarray): Array of frequencies
-            specfunc (Callable): Function that 
+            specfunc (Callable): Function that
             full_pol (bool, optional): Set all 4 stokes parameters? Defaults to True.
         """
         nchan = freqs.size
@@ -133,7 +132,7 @@ class StokesData:
 
         self.data = spectrum
 
-    def set_lightcurve(self, lightcurve_func:Callable, **kwargs):
+    def set_lightcurve(self, lightcurve_func: Callable, **kwargs):
         """
         Add a time axis
 
@@ -185,14 +184,13 @@ class StokesData:
 
         if ncorr == 2:
             # ensure dtype is a numpy type (doing this to avoid ducc0.wgridder.dirty2ms)
-            # when dtype is '>f8' (from xarray) dirty2ms fails with: 
+            # when dtype is '>f8' (from xarray) dirty2ms fails with:
             # "type matching failed: 'dirty' has neither type 'f4' nor 'f8'"
             # this also means we can't do a FFT predict in full-stokes mode
             dtype = np.finfo(self.data.dtype).dtype
             bmatrix = np.zeros(dshape, dtype=dtype)
         else:
             bmatrix = np.zeros(dshape, dtype=np.complex128)
-            
 
         def tslice(i):
             dslice = [slice(None)] * self.data.ndim
@@ -368,7 +366,7 @@ def poly(x, coeffs):
     return np.polyval(coeffs, x)
 
 
-def contspec(freqs: np.ndarray, flux:float|np.ndarray|List, coeff:float, nu_ref:float):
+def contspec(freqs: np.ndarray, flux: float | np.ndarray | List, coeff: float, nu_ref: float):
     """
     Returns a contiuum (power law) spectral profile
 
@@ -385,7 +383,7 @@ def contspec(freqs: np.ndarray, flux:float|np.ndarray|List, coeff:float, nu_ref:
         if isinstance(coeff, (list, np.ndarray)):
             if len(coeff) == 1:
                 poly_pow = coeff[0]
-            else: 
+            else:
                 poly_pow = np.polynomial.Polynomial(coeff)
         else:
             poly_pow = coeff

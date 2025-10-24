@@ -1,12 +1,11 @@
 import glob
 import os
-import logging
 
 import click
 import dask.array as da
+import numpy as np
 from dask import config as dask_config
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-import numpy as np
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 from scabha.schema_utils import clickify_parameters, paramfile_loader
@@ -26,14 +25,13 @@ from simms.skymodel.skymods import (
 )
 from simms.utilities import ParameterError
 
-
-
 command = BIN.skysim
 thisdir = os.path.dirname(__file__)
 source_files = glob.glob(f"{thisdir}/library/*.yaml")
 sources = [File(item) for item in source_files]
 parserfile = File(f"{thisdir}/{command}.yaml")
 config = paramfile_loader(parserfile, sources)[command]
+
 
 @click.command(command)
 @clickify_parameters(config)
@@ -47,7 +45,7 @@ def runit(ctx, **kwargs):
     fs = opts.fits_sky
 
     dask_config.set(scheduler="threads", num_workers=opts.nworkers)
-    
+
     if cat and fs:
         raise ParameterError("Cannot use both a catalogue and a FITS sky model simultaneously")
 
@@ -171,7 +169,8 @@ def runit(ctx, **kwargs):
             ("npix", "chan", "corr") if predict.use_dft else ("l", "m", "chan", "corr"),
             msds.UVW.data,
             ("row", "uvw"),
-            predict.lm, ("npix", "lm") if predict.lm else None,
+            predict.lm,
+            ("npix", "lm") if predict.lm else None,
             freqs,
             ("chan",),
             polarisation=predict.is_polarised,

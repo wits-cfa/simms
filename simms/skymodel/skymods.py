@@ -1,5 +1,5 @@
-from typing import Dict, List, Optional, Union
 import logging
+from typing import Dict, List, Optional, Union
 
 import dask.array as da
 import numpy as np
@@ -152,19 +152,19 @@ def skymodel_from_fits(
         ncorr (int): number of correlations
         basis (str): polarisation basis ("linear" or "circular")
         tol (float): tolerance for pixel brightness
-        stokes (Union[int,str]): Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). If 'all', all Stokes parameters are used.
-        stack_axis (str|Dict): Stack FITS images along this axis if multiple input images given. If Dict, then these should be options to 'fitstoolz.reader.FitsData.add_axis()'
+        stokes (Union[int,str]): Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). If 'all',
+        all Stokes parameters are used.
+        stack_axis (str|Dict): Stack FITS images along this axis if multiple input images given.
+        If Dict, then these should be options to 'fitstoolz.reader.FitsData.add_axis()'
     Returns:
         predict_image (np.ndarray): pixel-by-pixel brightness matrix for each channel and correlation
         lm (np.ndarray): (l, m) coordinate grid for DFT
     """
-    
+
     log = logging.getLogger(BIN.skysim)
-    
+
     phase_centre = np.array([ra0, dec0])
     nchan = chan_freqs.size
-    
-    
 
     dummy_stokes = {
         "name": "STOKES",
@@ -187,7 +187,8 @@ def skymodel_from_fits(
                 fds.add_axis(**dummy_stokes)
             else:
                 raise RuntimeError(
-                    f"Input skymodel FITS images cannot combined along the given axis '{stack_axis}' because it doesn't exist in the input images"
+                    f"Input skymodel FITS images cannot combined along the given axis '{stack_axis}'"
+                    f"because it doesn't exist in the input images"
                 )
 
         fds.expand_along_axis_from_files(stack_axis, input_fitsimages[1:])
@@ -245,10 +246,10 @@ def skymodel_from_fits(
     dec_pixel_size = dec_coords.pixel_size * getattr(units, dec_coords.units).to("rad")
     pixel_area = abs(ra_pixel_size * dec_pixel_size)
 
-    if ms_start_freq > fits_start_freq or ms_end_freq < fits_end_freq:
+    if ms_start_freq < fits_start_freq or ms_end_freq > fits_end_freq:
         raise SkymodelError(
-            f"FITS image frequencies [{fits_start_freq / 1e9:.6f} GHz, {fits_end_freq / 1e9:.6f} GHz] "
-            f"are outside the MS frequencies[{ms_start_freq / 1e9:.6f} GHz, {ms_end_freq / 1e9:.6f} GHz]. "
+            f"MS frequencies [{ms_start_freq / 1e9:.6f} GHz, {ms_end_freq / 1e9:.6f} GHz] "
+            f"are outside the FITS image frequencies[{fits_start_freq / 1e9:.6f} GHz, {fits_end_freq / 1e9:.6f} GHz]. "
             "Cannot interpolate FITS image onto MS frequency grid."
         )
 
@@ -280,7 +281,7 @@ def skymodel_from_fits(
     elif fds.data_units == "":
         log.warning("FITS sky model has no BUNIT specified. Assuming data are in Jy")
 
-    elif fds.data_units not in  ["Jy", "Jy/pixel"] :
+    elif fds.data_units not in ["Jy", "Jy/pixel"]:
         log.warning(f"FITS image sky model has unknown BUNIT='{fds.data_units}'. Assuming data are in Jy")
 
     if nchan_fits > 1:
@@ -294,9 +295,8 @@ def skymodel_from_fits(
                     coords={"ra": ra_grid, "dec": dec_grid, "freq": fits_freqs},
                     dims=["ra", "dec", "freq"],
                 )
-
                 interp_data = data.interp(ra=ra_grid, dec=dec_grid, freq=chan_freqs)
-                interp_stokes.append(interp_data.data)
+                interp_stokes.append(interp_data)
 
             # combine into new array with shape (n_stokes, n_pix_l, n_pix_m, len(chan_freqs))
             skymodel = da.stack(interp_stokes, axis=0)
@@ -323,7 +323,8 @@ def skymodel_from_fits(
     if use_dft is None:
         if sparsity >= 0.8:
             log.info(
-                f"More than 80% of pixels have intensity < {(tol * 1e6):.2f} μJy. DFT will be used for visibility prediction."
+                f"More than 80% of pixels have intensity < {(tol * 1e6):.2f} μJy."
+                "DFT will be used for visibility prediction."
             )
             use_dft = True
             non_zero_lm = compute_lm_coords(
@@ -347,14 +348,15 @@ def skymodel_from_fits(
             )
         else:
             log.info(
-                f"More than 20% of pixels have intensity > {(tol * 1e6):.2f} μJy. FFT will be used for visibility prediction."
+                f"More than 20% of pixels have intensity > {(tol * 1e6):.2f} μJy."
+                "FFT will be used for visibility prediction."
             )
             use_dft = False
 
             return ObjDict(
                 {
                     "image": predict_image,
-                    "lm" : None,
+                    "lm": None,
                     "is_polarised": skymodel.is_polarised,
                     "expand_freq_dim": expand_freq_dim,
                     "use_dft": use_dft,

@@ -12,7 +12,7 @@ SCHEMADIR = os.path.join(__path__[0], "schemas")
 def set_logger(name, level="WARNING"):
     if isinstance(level, str):
         level = getattr(logging, level, 10)
-        
+
         # create logger
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -29,9 +29,8 @@ def set_logger(name, level="WARNING"):
 
     # add ch to logger
     logger.addHandler(ch)
-    
-    return logger
 
+    return logger
 
 
 class BinClass:

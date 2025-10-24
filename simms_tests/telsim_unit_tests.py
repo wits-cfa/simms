@@ -96,7 +96,7 @@ def test_uv_coverage(params):
     )
 
     line = check_circle_or_ellipse(array_data_line.uvw[::21, 0], array_data_line.uvw[::21, 1])
-    assert line["is_line"] == True
+    assert line["is_line"]
 
     array_data_circle = array.uvgen(
         pointing_direction=["J2000", "0deg", "-90deg"],
@@ -108,7 +108,7 @@ def test_uv_coverage(params):
     )
 
     circle = check_circle_or_ellipse(array_data_circle.uvw[::21, 0], array_data_circle.uvw[::21, 1])
-    assert circle["is_circle"] == True
+    assert circle["is_circle"]
 
     array_data_circle_n = array.uvgen(
         pointing_direction=["J2000", "0deg", "90deg"],
@@ -120,7 +120,7 @@ def test_uv_coverage(params):
     )
 
     circle_n = check_circle_or_ellipse(array_data_circle_n.uvw[::21, 0], array_data_circle_n.uvw[::21, 1])
-    assert circle_n["is_circle"] == True
+    assert circle_n["is_circle"]
 
     array_data_ellipse = array.uvgen(
         pointing_direction=["J2000", "0deg", "-30deg"],
@@ -132,7 +132,7 @@ def test_uv_coverage(params):
     )
 
     ellipse = check_circle_or_ellipse(array_data_ellipse.uvw[::21, 0], array_data_ellipse.uvw[::21, 1])
-    assert ellipse["is_circle"] == False and ellipse["is_ellipse"] == True
+    assert not ellipse["is_circle"] and ellipse["is_ellipse"]
 
 
 def test_visdata_configuration_info(params):
@@ -188,7 +188,6 @@ def check_circle_or_ellipse(u, v):
 
     distances = np.sqrt((u - center_u) ** 2 + (v - center_v) ** 2)
     mean_distance = np.mean(distances)
-    std_distance = np.std(distances)
 
     def conic_equation(params, x, y):
         a, b, c, d, e, f = params

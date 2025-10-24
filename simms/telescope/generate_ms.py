@@ -1,7 +1,7 @@
+import logging
 import os
 import shutil
 from typing import List, Union
-import logging
 
 import dask
 import dask.array as da
@@ -14,7 +14,7 @@ from scabha.basetypes import File
 from scipy import interpolate
 from tqdm.dask import TqdmCallback
 
-from simms import PCKGDIR, BIN
+from simms import BIN, PCKGDIR
 from simms.constants import PI
 from simms.telescope import array_utilities as autils
 from simms.utilities import get_noise
