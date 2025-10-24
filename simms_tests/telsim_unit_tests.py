@@ -188,7 +188,6 @@ def check_circle_or_ellipse(u, v):
 
     distances = np.sqrt((u - center_u) ** 2 + (v - center_v) ** 2)
     mean_distance = np.mean(distances)
-    std_distance = np.std(distances)
 
     def conic_equation(params, x, y):
         a, b, c, d, e, f = params

@@ -284,8 +284,7 @@ class Array:
                     : number of channels.
 
         start_time: Union[str, List[str]]
-                    : start time of the observation date and time ("YYYY/MM/DD 12:00:00", ["EPOCH", "YYYY/MM/DD 12:00:00"])
-                        default is the current machine time.
+                    : start time of the observation in UTC (YYYY-MM-DDTHH:MM:SS). Default is the current machine time.
         start_ha: float
                     : start hour angle in radians
 
@@ -300,7 +299,7 @@ class Array:
         if len(pointing_direction) == 3:
             ra_dec = dm.direction(rf=pointing_direction[0], v0=pointing_direction[1], v1=pointing_direction[2])
         else:
-            ra_dec = dm.direction(rf="J2000", v0=pointing_direction[1], v1=pointing_direction[2])
+            ra_dec = dm.direction(rf="J2000", v0=pointing_direction[0], v1=pointing_direction[1])
         ra0 = ra_dec["m0"]["value"]
         dec0 = ra_dec["m1"]["value"]
 
