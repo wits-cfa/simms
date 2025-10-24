@@ -75,7 +75,7 @@ def test_transient_visibility_shape(params):
     assert vis.shape == (nrow, nchan, ncorr)
 
 def test_transient_visibility_dip(params):
-     """
+    """
     Test that the transient dip is present in visibilities.
     Validates:
     - a dip in flux is present in the time series
@@ -83,7 +83,7 @@ def test_transient_visibility_dip(params):
     - flux recovers to original value after transient
     """
        
-     source = CatSource(
+    source = CatSource(
         name="test_source",
         ra=f"{params.ra0}rad",
         dec=f"{params.dec0}rad",
@@ -94,12 +94,12 @@ def test_transient_visibility_dip(params):
         transient_ingress="20",
     )
 
-     skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, 
+    skymodel = skymodel_from_sources(sources=[source], chan_freqs=params.freqs, 
                                       unique_times=np.unique(params.times), full_stokes=True)
 
-     ncorr = 4
+    ncorr = 4
 
-     vis = compute_vis(
+    vis = compute_vis(
         sources=skymodel,
         uvw=params.uvw,
         freqs=params.freqs,
@@ -111,24 +111,24 @@ def test_transient_visibility_dip(params):
         dec0=params.dec0
     )
 
-     flux_time = np.mean(np.abs(vis[:,:,0]), axis=1)
+    flux_time = np.mean(np.abs(vis[:,:,0]), axis=1)
 
-     avg_flux = np.mean(flux_time)
-     assert avg_flux < 1.0, "Transient should reduce flux below baseline (I=1)."
+    avg_flux = np.mean(flux_time)
+    assert avg_flux < 1.0, "Transient should reduce flux below baseline (I=1)."
 
-     times_rel = params.times - np.min(params.times)
+    times_rel = params.times - np.min(params.times)
 
-     t_min = times_rel[np.argmin(flux_time)]
+    t_min = times_rel[np.argmin(flux_time)]
 
-     transient_start = float(source.transient_start)
-     tolerance = float(source.transient_ingress) * 1.5
-     assert abs(t_min - transient_start) < tolerance, (
+    transient_start = float(source.transient_start)
+    tolerance = float(source.transient_ingress) * 1.5
+    assert abs(t_min - transient_start) < tolerance, (
         f"Minimum flux ({t_min:.2f}) not near transient start ({transient_start})."
     )
 
-     pre_dip = np.mean(flux_time[times_rel < transient_start - 20])
-     post_dip = np.mean(flux_time[times_rel > transient_start + 80])
-     assert abs(pre_dip - post_dip) < 0.1, "Flux should recover after transient."
+    pre_dip = np.mean(flux_time[times_rel < transient_start - 20])
+    post_dip = np.mean(flux_time[times_rel > transient_start + 80])
+    assert abs(pre_dip - post_dip) < 0.1, "Flux should recover after transient."
     
 def test_transient_missing_params(params):
     """
