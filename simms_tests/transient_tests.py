@@ -149,8 +149,9 @@ def test_transient_missing_params(params):
             transient_ingress=None,  # Missing parameter
         )
 
-        skymodel_from_sources(sources=[source], chan_freqs=params.freqs, 
-                              unique_times=np.unique(params.times), full_stokes=True)
+        skymodel_from_sources(
+            sources=[source], chan_freqs=params.freqs, unique_times=np.unique(params.times), full_stokes=True
+            )
 
     assert exception.type is SkymodelError
     assert "missing required parameter(s)" in str(exception.value)
