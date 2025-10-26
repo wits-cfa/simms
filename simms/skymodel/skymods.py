@@ -386,4 +386,3 @@ def skymodel_from_fits(
                 "dec_pixel_size": None,
             }
         )
-

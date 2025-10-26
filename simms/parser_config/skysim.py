@@ -166,7 +166,6 @@ def runit(ctx, **kwargs):
             epsilon = 1e-6
         else:
             epsilon = 1e-7 if opts.fft_precision == "double" else 1e-6
-        
 
         simvis = da.blockwise(
             augmented_im_to_vis,

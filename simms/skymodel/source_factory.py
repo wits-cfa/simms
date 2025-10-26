@@ -219,7 +219,7 @@ class StokesData:
         return bmatrix
 
     @property
-    def I(self):
+    def I(self):  # noqa: E743
         return self.__stokes_x__("I")
 
     @property
