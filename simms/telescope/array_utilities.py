@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Union
 
@@ -11,11 +12,11 @@ from casacore.tables import table
 from omegaconf import OmegaConf
 from scabha.basetypes import File, List
 
-from simms import constants, get_logger
+from simms import BIN, constants
 from simms.telescope.layouts import SIMMS_TELESCOPES, custom_telescopes
 from simms.utilities import ObjDict
 
-log = get_logger(name="telsim")
+log = logging.getLogger(BIN.telsim)
 
 
 class Array:
@@ -284,8 +285,8 @@ class Array:
                     : number of channels.
 
         start_time: Union[str, List[str]]
-                    : start time of the observation date and time ("YYYY/MM/DD 12:00:00",
-                                                                    ["EPOCH", "YYYY/MM/DD 12:00:00"])
+                    : start time of the observation date and time
+                    ("YYYY/MM/DD 12:00:00", ["EPOCH", "YYYY/MM/DD 12:00:00"])
                         default is the current machine time.
         start_ha: float
                     : start hour angle in radians

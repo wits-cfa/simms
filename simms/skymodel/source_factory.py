@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import Callable, List
 
 import numpy as np
 import xarray as xr
@@ -106,6 +106,13 @@ def exoplanet_transient_logistic(
 
 class StokesData:
     def __init__(self, data: List, linear_basis=True):
+        """
+        Object that holds a source/image intensity (stokes data)
+
+        Args:
+            data (List): List of stokes parameter data.
+            linear_basis (bool, optional): Is the stokes data in a linear basis? Defaults to True.
+        """
         self.data = np.array(data)
         self.linear_basis = linear_basis
         if linear_basis:
@@ -113,8 +120,16 @@ class StokesData:
         else:
             self.param_string = "IVQU"
 
-    def set_spectrum(self, freqs, specfunc, full_pol=True, **kwargs):
-        nchan = len(freqs)
+    def set_spectrum(self, freqs: np.ndarray, specfunc: Callable, full_pol: bool = True, **kwargs):
+        """
+        Add a spectral axis
+
+        Args:
+            freqs (np.ndarray): Array of frequencies
+            specfunc (Callable): Function that
+            full_pol (bool, optional): Set all 4 stokes parameters? Defaults to True.
+        """
+        nchan = freqs.size
         self.idx = 0
         if full_pol:
             spectrum = np.zeros([4, nchan], dtype=freqs.dtype)
@@ -126,7 +141,13 @@ class StokesData:
 
         self.data = spectrum
 
-    def set_lightcurve(self, lightcurve_func, **kwargs):
+    def set_lightcurve(self, lightcurve_func: Callable, **kwargs):
+        """
+        Add a time axis
+
+        Args:
+            lightcurve_func (Callable): _description_
+        """
         light_curve = lightcurve_func(**kwargs)
 
         self.idx = 0
@@ -173,7 +194,15 @@ class StokesData:
         dshape = list(self.data.shape)
         dshape[self.idx] = ncorr
 
-        bmatrix = np.zeros(dshape, dtype=np.complex128)
+        if ncorr == 2:
+            # ensure dtype is a numpy type (doing this to avoid ducc0.wgridder.dirty2ms)
+            # when dtype is '>f8' (from xarray) dirty2ms fails with:
+            # "type matching failed: 'dirty' has neither type 'f4' nor 'f8'"
+            # this also means we can't do a FFT predict in full-stokes mode
+            dtype = np.finfo(self.data.dtype).dtype
+            bmatrix = np.zeros(dshape, dtype=dtype)
+        else:
+            bmatrix = np.zeros(dshape, dtype=np.complex128)
 
         def tslice(i):
             dslice = [slice(None)] * self.data.ndim
@@ -202,7 +231,7 @@ class StokesData:
         return bmatrix
 
     @property
-    def I(self):
+    def I(self):  # noqa: E743
         return self.__stokes_x__("I")
 
     @property
@@ -357,8 +386,27 @@ def poly(x, coeffs):
     return np.polyval(coeffs, x)
 
 
-def contspec(freqs, flux, coeff, nu_ref):
+def contspec(freqs: np.ndarray, flux: float | np.ndarray | List, coeff: float, nu_ref: float):
+    """
+    Returns a contiuum (power law) spectral profile
+
+    Args:
+        freqs (float): Frequency array
+        flux (float): Intensity
+        coeff (float|np.ndarray|List): Power law coeficient (spectral index, curvature, ...)
+        nu_ref (float): Reference frequency
+
+    Returns:
+        np.ndarray: Spectral profile
+    """
     if nu_ref and coeff:
-        return flux * (freqs / nu_ref) ** (coeff)
+        if isinstance(coeff, (list, np.ndarray)):
+            if len(coeff) == 1:
+                poly_pow = coeff[0]
+            else:
+                poly_pow = np.polynomial.Polynomial(coeff)
+        else:
+            poly_pow = coeff
+        return flux * (freqs / nu_ref) ** (poly_pow)
     else:
         return flux * np.ones_like(freqs)

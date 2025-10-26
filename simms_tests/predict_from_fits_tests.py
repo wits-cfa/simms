@@ -55,80 +55,154 @@ def params():
     return InitTests()
 
 
-class TestPredictFits:
-    def test_fits_predict_stokes_I(self, params):
-        """
-        Test visibility prediction from only a FITS sky model, ncorr = 2
-        Validates:
-            - Output shape of visibilities
-            - XX = I
-            - YY = I
-        """
-        I = 1.0
+def test_fits_predict_stokes_I(params):
+    """
+    Test visibility prediction from only a FITS sky model, ncorr = 2
+    Validates:
+        - Output shape of visibilities
+        - XX = I
+        - YY = I
+    """
+    stokes_I = 1.0
 
-        # create a FITS sky model
-        wcs = WCS(naxis=2)
-        wcs.wcs.ctype = ["RA---SIN", "DEC--SIN"]
-        wcs.wcs.cdelt = np.array([-params.cell_size / 3600, params.cell_size / 3600])  # pixel scale in deg
-        wcs.wcs.crpix = [params.img_size / 2, params.img_size / 2]  # reference pixel
-        wcs.wcs.crval = [np.rad2deg(params.ra0), np.rad2deg(params.dec0)]  # reference pixel RA and Dec in deg
+    # create a FITS sky model
+    wcs = WCS(naxis=2)
+    wcs.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+    wcs.wcs.cdelt = np.array([-params.cell_size / 3600, params.cell_size / 3600])  # pixel scale in deg
+    wcs.wcs.crpix = [params.img_size / 2, params.img_size / 2]  # reference pixel
+    wcs.wcs.crval = [np.rad2deg(params.ra0), np.rad2deg(params.dec0)]  # reference pixel RA and Dec in deg
 
-        # make header
-        header = wcs.to_header()
-        header["BUNIT"] = "Jy"
+    # make header
+    header = wcs.to_header()
+    header["BUNIT"] = "Jy"
 
-        # make image
-        image = np.zeros((params.img_size, params.img_size))
-        image[params.img_size // 2, params.img_size // 2] = I
+    # make image
+    image = np.zeros((params.img_size, params.img_size))
+    image[params.img_size // 2, params.img_size // 2] = stokes_I
 
-        # write to FITS file
-        hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f"test_{uuid.uuid4()}.fits"
-        params.test_files.append(test_filename)
-        hdu.writeto(test_filename, overwrite=True)
+    # write to FITS file
+    hdu = fits.PrimaryHDU(image, header=header)
+    test_filename = f"test_{uuid.uuid4()}.fits"
+    params.test_files.append(test_filename)
+    hdu.writeto(test_filename, overwrite=True)
 
-        # process the FITS file
-        predict = skymodel_from_fits(
-            test_filename,
-            params.ra0,
-            params.dec0,
-            params.freqs,
-            params.freqs[1] - params.freqs[0],
-            params.ncorr,
-            "linear",
-        )
+    # process the FITS file
+    predict = skymodel_from_fits(
+        test_filename,
+        params.ra0,
+        params.dec0,
+        params.freqs,
+        params.freqs[1] - params.freqs[0],
+        params.ncorr,
+        "linear",
+    )
 
-        # predict visibilities
-        vis = im_to_vis(
-            predict.image,
-            params.uvw,
-            predict.lm,
-            params.freqs,
-            predict.is_polarised,
-            expand_freq_dim=predict.expand_freq_dim,
-            ncorr=params.ncorr,
-            epsilon=1e-7,
-            use_dft=predict.use_dft,
-        )
+    # predict visibilities
+    vis = im_to_vis(
+        predict.image,
+        params.uvw,
+        predict.lm,
+        params.freqs,
+        predict.is_polarised,
+        expand_freq_dim=predict.expand_freq_dim,
+        ncorr=params.ncorr,
+        epsilon=1e-7,
+        use_dft=predict.use_dft,
+    )
 
-        vis = np.absolute(vis)
+    vis = np.absolute(vis)
 
-        # check the output
-        assert vis.shape == (params.n_baselines * params.n_times, params.nchan, params.ncorr)
-        assert np.allclose(vis[:, :, 0], I, atol=1e-6)
-        assert np.allclose(vis[:, :, 1], I, atol=1e-6)
+    # check the output
+    assert vis.shape == (params.n_baselines * params.n_times, params.nchan, params.ncorr)
+    assert np.allclose(vis[:, :, 0], stokes_I, atol=1e-6)
+    assert np.allclose(vis[:, :, 1], stokes_I, atol=1e-6)
 
-    def test_fits_predict_stokes_I_with_spectral_axis(self, params):
-        """
-        Test visibility prediction from only a FITS sky model with a spectral axis, ncorr = 2
-        Validates:
-            - Output shape of visibilities
-            - XX = I
-            - YY = I
-        """
-        I = 1.0
 
-        # create a FITS sky model
+def test_fits_predict_stokes_I_with_spectral_axis(params):
+    """
+    Test visibility prediction from only a FITS sky model with a spectral axis, ncorr = 2
+    Validates:
+        - Output shape of visibilities
+        - XX = I
+        - YY = I
+    """
+    stokes_I = 1.0
+
+    # create a FITS sky model
+    wcs = WCS(naxis=3)
+    wcs.wcs.ctype = ["RA---SIN", "DEC--SIN", "FREQ"]
+    wcs.wcs.cdelt = np.array(
+        [-params.cell_size / 3600, params.cell_size / 3600, params.freqs[1] - params.freqs[0]]
+    )  # pixel scale in deg
+    wcs.wcs.crpix = [params.img_size / 2, params.img_size / 2, 1]  # reference pixel
+    wcs.wcs.crval = [
+        np.rad2deg(params.ra0),
+        np.rad2deg(params.dec0),
+        params.freqs[0],
+    ]  # reference pixel RA and Dec in deg
+
+    # make header
+    header = wcs.to_header()
+    header["BUNIT"] = "Jy"
+
+    # make image
+    image = np.zeros((params.nchan, params.img_size, params.img_size))
+    image[:, params.img_size // 2, params.img_size // 2] = stokes_I
+
+    # write to FITS file
+    hdu = fits.PrimaryHDU(image, header=header)
+    test_filename = f"test_{uuid.uuid4()}.fits"
+    params.test_files.append(test_filename)
+    hdu.writeto(test_filename, overwrite=True)
+
+    # process the FITS file
+    predict = skymodel_from_fits(
+        test_filename,
+        params.ra0,
+        params.dec0,
+        params.freqs,
+        params.freqs[1] - params.freqs[0],
+        params.ncorr,
+        "linear",
+    )
+
+    # predict visibilities
+    vis = im_to_vis(
+        predict.image,
+        params.uvw,
+        predict.lm,
+        params.freqs,
+        predict.is_polarised,
+        expand_freq_dim=predict.expand_freq_dim,
+        use_dft=predict.use_dft,
+        ncorr=params.ncorr,
+        epsilon=1e-7,
+    )
+
+    vis = np.absolute(vis)
+
+    # check the output
+    assert vis.shape == (params.n_baselines * params.n_times, params.nchan, params.ncorr)
+    assert np.allclose(vis[:, :, 0], stokes_I, atol=1e-6)
+    assert np.allclose(vis[:, :, 1], stokes_I, atol=1e-6)
+
+
+def test_fits_predicting_all_stokes_linear_basis(params):
+    """
+    Test visibility prediction from FITS images of all Stokes parameters, ncorr = 4
+    Validates:
+        - Output shape of visibilities
+        - XX = I + Q
+        - XY = U + iV
+        - YX = U - iV
+        - YY = I - Q
+    """
+    params.ncorr = 4
+    # the numbers below are unphysical—they are just for testing the computation
+    stokes_params = [("I", 1.0), ("Q", 2.0), ("U", 3.0), ("V", 4.0)]
+
+    test_skymodels = []
+    for stokes in stokes_params:
         wcs = WCS(naxis=3)
         wcs.wcs.ctype = ["RA---SIN", "DEC--SIN", "FREQ"]
         wcs.wcs.cdelt = np.array(
@@ -147,195 +221,123 @@ class TestPredictFits:
 
         # make image
         image = np.zeros((params.nchan, params.img_size, params.img_size))
-        image[:, params.img_size // 2, params.img_size // 2] = I
+        image[:, params.img_size // 2, params.img_size // 2] = stokes[1]  # put a point source at the center
 
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f"test_{uuid.uuid4()}.fits"
+        test_filename = f"test_{uuid.uuid4()}_{stokes[0]}.fits"
         params.test_files.append(test_filename)
         hdu.writeto(test_filename, overwrite=True)
 
-        # process the FITS file
-        predict = skymodel_from_fits(
-            test_filename,
-            params.ra0,
-            params.dec0,
-            params.freqs,
-            params.freqs[1] - params.freqs[0],
-            params.ncorr,
-            "linear",
-        )
+        test_skymodels.append(test_filename)
 
-        # predict visibilities
-        vis = im_to_vis(
-            predict.image,
-            params.uvw,
-            predict.lm,
-            params.freqs,
-            predict.is_polarised,
-            expand_freq_dim=predict.expand_freq_dim,
-            use_dft=predict.use_dft,
-            ncorr=params.ncorr,
-            epsilon=1e-7,
-        )
+    # process the FITS files
+    predict = skymodel_from_fits(
+        test_skymodels,
+        params.ra0,
+        params.dec0,
+        params.freqs,
+        params.freqs[1] - params.freqs[0],
+        params.ncorr,
+        basis="linear",
+    )
 
-        vis = np.absolute(vis)
+    # predict visibilities
+    vis = im_to_vis(
+        predict.image,
+        params.uvw,
+        predict.lm,
+        params.freqs,
+        predict.is_polarised,
+        expand_freq_dim=predict.expand_freq_dim,
+        use_dft=predict.use_dft,
+        ncorr=params.ncorr,
+        epsilon=1e-7,
+    )
 
-        # check the output
-        assert vis.shape == (params.n_baselines * params.n_times, params.nchan, params.ncorr)
-        assert np.allclose(vis[:, :, 0], I, atol=1e-6)
-        assert np.allclose(vis[:, :, 1], I, atol=1e-6)
+    vis = np.absolute(vis)
 
-    def test_fits_predicting_all_stokes_linear_basis(self, params):
-        """
-        Test visibility prediction from FITS images of all Stokes parameters, ncorr = 4
-        Validates:
-            - Output shape of visibilities
-            - XX = I + Q
-            - XY = U + iV
-            - YX = U - iV
-            - YY = I - Q
-        """
-        params.ncorr = 4
-        # the numbers below are unphysical—they are just for testing the computation
-        stokes_params = [("I", 1.0), ("Q", 2.0), ("U", 3.0), ("V", 4.0)]
+    # check the output
+    assert vis.shape == (params.n_baselines * params.n_times, params.nchan, params.ncorr)
+    assert np.allclose(vis[:, :, 0], np.abs(stokes_params[0][1] + stokes_params[1][1]), atol=1e-6)  # I + Q
+    assert np.allclose(vis[:, :, 1], np.abs(stokes_params[2][1] + 1j * stokes_params[3][1]), atol=1e-6)  # U + iV
+    assert np.allclose(vis[:, :, 2], np.abs(stokes_params[2][1] - 1j * stokes_params[3][1]), atol=1e-6)  # U - iV
+    assert np.allclose(vis[:, :, 3], np.abs(stokes_params[0][1] - stokes_params[1][1]), atol=1e-6)  # I - Q
 
-        test_skymodels = []
-        for stokes in stokes_params:
-            wcs = WCS(naxis=3)
-            wcs.wcs.ctype = ["RA---SIN", "DEC--SIN", "FREQ"]
-            wcs.wcs.cdelt = np.array(
-                [-params.cell_size / 3600, params.cell_size / 3600, params.freqs[1] - params.freqs[0]]
-            )  # pixel scale in deg
-            wcs.wcs.crpix = [params.img_size / 2, params.img_size / 2, 1]  # reference pixel
-            wcs.wcs.crval = [
-                np.rad2deg(params.ra0),
-                np.rad2deg(params.dec0),
-                params.freqs[0],
-            ]  # reference pixel RA and Dec in deg
 
-            # make header
-            header = wcs.to_header()
-            header["BUNIT"] = "Jy"
+def test_fits_predicting_all_stokes_circular_basis(params):
+    """
+    Test visibility prediction from FITS images of all Stokes parameters, ncorr = 4
+    Validates:
+        - Output shape of visibilities
+        - RR = I + V
+        - RL = Q + iU
+        - LR = Q - iU
+        - LL = I - V
+    """
+    params.ncorr = 4
+    # the numbers below are unphysical—they are just for testing the computation
+    stokes_params = [("I", 1.0), ("Q", 2.0), ("U", 3.0), ("V", 4.0)]
 
-            # make image
-            image = np.zeros((params.nchan, params.img_size, params.img_size))
-            image[:, params.img_size // 2, params.img_size // 2] = stokes[1]  # put a point source at the center
+    test_skymodels = []
+    for stokes in stokes_params:
+        wcs = WCS(naxis=3)
+        wcs.wcs.ctype = ["RA---SIN", "DEC--SIN", "FREQ"]
+        wcs.wcs.cdelt = np.array(
+            [-params.cell_size / 3600, params.cell_size / 3600, params.freqs[1] - params.freqs[0]]
+        )  # pixel scale in deg
+        wcs.wcs.crpix = [params.img_size / 2, params.img_size / 2, 1]  # reference pixel
+        wcs.wcs.crval = [
+            np.rad2deg(params.ra0),
+            np.rad2deg(params.dec0),
+            params.freqs[0],
+        ]  # reference pixel RA and Dec in deg
 
-            # write to FITS file
-            hdu = fits.PrimaryHDU(image, header=header)
-            test_filename = f"test_{uuid.uuid4()}_{stokes[0]}.fits"
-            params.test_files.append(test_filename)
-            hdu.writeto(test_filename, overwrite=True)
+        # make header
+        header = wcs.to_header()
+        header["BUNIT"] = "Jy"
 
-            test_skymodels.append(test_filename)
+        # make image
+        image = np.zeros((params.nchan, params.img_size, params.img_size))
+        image[:, params.img_size // 2, params.img_size // 2] = stokes[1]  # put a point source at the center
 
-        # process the FITS files
-        predict = skymodel_from_fits(
-            test_skymodels,
-            params.ra0,
-            params.dec0,
-            params.freqs,
-            params.freqs[1] - params.freqs[0],
-            params.ncorr,
-            basis="linear",
-        )
+        # write to FITS file
+        hdu = fits.PrimaryHDU(image, header=header)
+        test_filename = f"test_{uuid.uuid4()}_{stokes[0]}.fits"
+        params.test_files.append(test_filename)
+        hdu.writeto(test_filename, overwrite=True)
 
-        # predict visibilities
-        vis = im_to_vis(
-            predict.image,
-            params.uvw,
-            predict.lm,
-            params.freqs,
-            predict.is_polarised,
-            expand_freq_dim=predict.expand_freq_dim,
-            use_dft=predict.use_dft,
-            ncorr=params.ncorr,
-            epsilon=1e-7,
-        )
+        test_skymodels.append(test_filename)
 
-        vis = np.absolute(vis)
+    # process the FITS files
+    predict = skymodel_from_fits(
+        test_skymodels,
+        params.ra0,
+        params.dec0,
+        params.freqs,
+        params.freqs[1] - params.freqs[0],
+        params.ncorr,
+        basis="circular",
+    )
 
-        # check the output
-        assert vis.shape == (params.n_baselines * params.n_times, params.nchan, params.ncorr)
-        assert np.allclose(vis[:, :, 0], np.abs(stokes_params[0][1] + stokes_params[1][1]), atol=1e-6)  # I + Q
-        assert np.allclose(vis[:, :, 1], np.abs(stokes_params[2][1] + 1j * stokes_params[3][1]), atol=1e-6)  # U + iV
-        assert np.allclose(vis[:, :, 2], np.abs(stokes_params[2][1] - 1j * stokes_params[3][1]), atol=1e-6)  # U - iV
-        assert np.allclose(vis[:, :, 3], np.abs(stokes_params[0][1] - stokes_params[1][1]), atol=1e-6)  # I - Q
+    # predict visibilities
+    vis = im_to_vis(
+        predict.image,
+        params.uvw,
+        predict.lm,
+        params.freqs,
+        predict.is_polarised,
+        expand_freq_dim=predict.expand_freq_dim,
+        ncorr=params.ncorr,
+        use_dft=predict.use_dft,
+        epsilon=1e-7,
+    )
 
-    def test_fits_predicting_all_stokes_circular_basis(self, params):
-        """
-        Test visibility prediction from FITS images of all Stokes parameters, ncorr = 4
-        Validates:
-            - Output shape of visibilities
-            - RR = I + V
-            - RL = Q + iU
-            - LR = Q - iU
-            - LL = I - V
-        """
-        params.ncorr = 4
-        # the numbers below are unphysical—they are just for testing the computation
-        stokes_params = [("I", 1.0), ("Q", 2.0), ("U", 3.0), ("V", 4.0)]
+    vis = np.absolute(vis)
 
-        test_skymodels = []
-        for stokes in stokes_params:
-            wcs = WCS(naxis=3)
-            wcs.wcs.ctype = ["RA---SIN", "DEC--SIN", "FREQ"]
-            wcs.wcs.cdelt = np.array(
-                [-params.cell_size / 3600, params.cell_size / 3600, params.freqs[1] - params.freqs[0]]
-            )  # pixel scale in deg
-            wcs.wcs.crpix = [params.img_size / 2, params.img_size / 2, 1]  # reference pixel
-            wcs.wcs.crval = [
-                np.rad2deg(params.ra0),
-                np.rad2deg(params.dec0),
-                params.freqs[0],
-            ]  # reference pixel RA and Dec in deg
-
-            # make header
-            header = wcs.to_header()
-            header["BUNIT"] = "Jy"
-
-            # make image
-            image = np.zeros((params.nchan, params.img_size, params.img_size))
-            image[:, params.img_size // 2, params.img_size // 2] = stokes[1]  # put a point source at the center
-
-            # write to FITS file
-            hdu = fits.PrimaryHDU(image, header=header)
-            test_filename = f"test_{uuid.uuid4()}_{stokes[0]}.fits"
-            params.test_files.append(test_filename)
-            hdu.writeto(test_filename, overwrite=True)
-
-            test_skymodels.append(test_filename)
-
-        # process the FITS files
-        predict = skymodel_from_fits(
-            test_skymodels,
-            params.ra0,
-            params.dec0,
-            params.freqs,
-            params.freqs[1] - params.freqs[0],
-            params.ncorr,
-            basis="circular",
-        )
-
-        # predict visibilities
-        vis = im_to_vis(
-            predict.image,
-            params.uvw,
-            predict.lm,
-            params.freqs,
-            predict.is_polarised,
-            expand_freq_dim=predict.expand_freq_dim,
-            ncorr=params.ncorr,
-            use_dft=predict.use_dft,
-            epsilon=1e-7,
-        )
-
-        vis = np.absolute(vis)
-
-        # check the output
-        assert vis.shape == (params.n_baselines * params.n_times, params.nchan, params.ncorr)
-        assert np.allclose(vis[:, :, 0], np.abs(stokes_params[0][1] + stokes_params[3][1]), atol=1e-6)  # I + V
-        assert np.allclose(vis[:, :, 1], np.abs(stokes_params[1][1] + 1j * stokes_params[2][1]), atol=1e-6)  # Q + iU
-        assert np.allclose(vis[:, :, 2], np.abs(stokes_params[1][1] - 1j * stokes_params[2][1]), atol=1e-6)  # Q - iU
-        assert np.allclose(vis[:, :, 3], np.abs(stokes_params[0][1] - stokes_params[3][1]), atol=1e-6)  # I - V
+    # check the output
+    assert vis.shape == (params.n_baselines * params.n_times, params.nchan, params.ncorr)
+    assert np.allclose(vis[:, :, 0], np.abs(stokes_params[0][1] + stokes_params[3][1]), atol=1e-6)  # I + V
+    assert np.allclose(vis[:, :, 1], np.abs(stokes_params[1][1] + 1j * stokes_params[2][1]), atol=1e-6)  # Q + iU
+    assert np.allclose(vis[:, :, 2], np.abs(stokes_params[1][1] - 1j * stokes_params[2][1]), atol=1e-6)  # Q - iU
+    assert np.allclose(vis[:, :, 3], np.abs(stokes_params[0][1] - stokes_params[3][1]), atol=1e-6)  # I - V
