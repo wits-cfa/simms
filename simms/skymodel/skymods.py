@@ -139,6 +139,7 @@ def skymodel_from_fits(
     tol: float = 1e-7,
     use_dft: Optional[bool] = None,
     stack_axis="STOKES",
+    interpolation="nearest",
 ) -> tuple:
     """
     Processes FITS skymodel into DFT input
@@ -155,6 +156,7 @@ def skymodel_from_fits(
         all Stokes parameters are used.
         stack_axis (str|Dict): Stack FITS images along this axis if multiple input images given.
         If Dict, then these should be options to 'fitstoolz.reader.FitsData.add_axis()'
+        interpolation (str): Interpolation along frequency if there's a grid mismatch between the FITS image and MS
     Returns:
         predict_image (np.ndarray): pixel-by-pixel brightness matrix for each channel and correlation
         lm (np.ndarray): (l, m) coordinate grid for DFT
@@ -252,7 +254,7 @@ def skymodel_from_fits(
     # check if MS freqs are valid
     if nchan_fits == 1 and is_range_in_range(fits_range, ms_range):
         pass
-    elif is_range_in_range(ms_range, fits_range):
+    elif not is_range_in_range(ms_range, fits_range):
         raise SkymodelError(
             f"MS frequencies [{ms_start_freq / 1e9:.6f} GHz, {ms_end_freq / 1e9:.6f} GHz] "
             f"are outside the FITS image frequencies[{fits_start_freq / 1e9:.6f} GHz, {fits_end_freq / 1e9:.6f} GHz]. "
@@ -301,7 +303,8 @@ def skymodel_from_fits(
                     coords={"ra": ra_grid, "dec": dec_grid, "freq": fits_freqs},
                     dims=["ra", "dec", "freq"],
                 )
-                interp_data = data.interp(ra=ra_grid, dec=dec_grid, freq=chan_freqs)
+                interp_data = data.interp(freq=chan_freqs, method=interpolation)
+                interp_data = interp_data.interpolate_na(dim="freq", method=interpolation, fill_value="extrapolate")
                 interp_stokes.append(interp_data)
 
             # combine into new array with shape (n_stokes, n_pix_l, n_pix_m, len(chan_freqs))

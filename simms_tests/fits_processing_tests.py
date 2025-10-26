@@ -220,7 +220,9 @@ def test_stokes_I_with_freq_interp_processing(params):
     params.test_files.append(test_filename)
     hdu.writeto(test_filename, overwrite=True)
 
-    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    predict = skymodel_from_fits(
+        test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis, interpolation="linear"
+    )
     intensities = predict.image
 
     # create expected intensities
