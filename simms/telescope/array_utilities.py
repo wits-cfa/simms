@@ -284,7 +284,7 @@ class Array:
                     : number of channels.
 
         start_time: Union[str, List[str]]
-                    : start time of the observation date and time ("YYYY/MM/DD 12:00:00", 
+                    : start time of the observation date and time ("YYYY/MM/DD 12:00:00",
                                                                     ["EPOCH", "YYYY/MM/DD 12:00:00"])
                         default is the current machine time.
         start_ha: float

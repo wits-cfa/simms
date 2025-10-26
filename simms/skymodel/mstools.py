@@ -151,7 +151,7 @@ def compute_vis(
         ra0 (float):                  Phase centre RA in radians
         dec0 (float):                 Phase centre Dec in radians
         noise_vis (float, optional):  RMS noise per visibility. If None, no noise is added. Defaults to None.
-        
+
     Returns:
         vis (numpy.ndarray):        Visibility array of shape (nrows, nchan, ncorr)
     """

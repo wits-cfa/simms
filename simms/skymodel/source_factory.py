@@ -22,6 +22,7 @@ def gauss_1d(xaxis: np.ndarray, peak: float, width: float, x0: float):
     sigma = width / FWHM_scale_fact
     return peak * np.exp(-((xaxis - x0) ** 2) / (2 * sigma**2))
 
+
 def exoplanet_transient_logistic(
     start_time: int,
     end_time: int,
@@ -53,15 +54,13 @@ def exoplanet_transient_logistic(
     Returns:
 
     """
-    #Check required parameters are present
+    # Check required parameters are present
     missing = []
     for option in ["transient_start", "transient_period", "transient_ingress", "transient_absorb"]:
         if locals()[option] in [None, "null"]:
             missing.append(option)
     if missing:
-        raise SkymodelError(
-            f"Transient source specification is missing required parameter(s): {', '.join(missing)}"
-        )
+        raise SkymodelError(f"Transient source specification is missing required parameter(s): {', '.join(missing)}")
 
     # helper function to calculate ingress/egress using logistic function
     def logistic_step(z, L=10.0):
@@ -73,7 +72,7 @@ def exoplanet_transient_logistic(
         f1 = 1 / (1 + np.exp(-k / 2))
         normalized = (raw - f0) / (f1 - f0)
         return normalized
-    
+
     times = np.linspace(start_time, end_time, ntimes)
     baseline = 1.0
 
