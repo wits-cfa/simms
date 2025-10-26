@@ -117,6 +117,7 @@ def test_fits_predict_stokes_I(params):
     assert np.allclose(vis[:, :, 0], stokes_I, atol=1e-6)
     assert np.allclose(vis[:, :, 1], stokes_I, atol=1e-6)
 
+
 def test_fits_predict_stokes_I_with_spectral_axis(params):
     """
     Test visibility prediction from only a FITS sky model with a spectral axis, ncorr = 2
@@ -184,6 +185,7 @@ def test_fits_predict_stokes_I_with_spectral_axis(params):
     assert vis.shape == (params.n_baselines * params.n_times, params.nchan, params.ncorr)
     assert np.allclose(vis[:, :, 0], stokes_I, atol=1e-6)
     assert np.allclose(vis[:, :, 1], stokes_I, atol=1e-6)
+
 
 def test_fits_predicting_all_stokes_linear_basis(params):
     """
@@ -261,6 +263,7 @@ def test_fits_predicting_all_stokes_linear_basis(params):
     assert np.allclose(vis[:, :, 1], np.abs(stokes_params[2][1] + 1j * stokes_params[3][1]), atol=1e-6)  # U + iV
     assert np.allclose(vis[:, :, 2], np.abs(stokes_params[2][1] - 1j * stokes_params[3][1]), atol=1e-6)  # U - iV
     assert np.allclose(vis[:, :, 3], np.abs(stokes_params[0][1] - stokes_params[1][1]), atol=1e-6)  # I - Q
+
 
 def test_fits_predicting_all_stokes_circular_basis(params):
     """
