@@ -346,9 +346,9 @@ def test_full_stokes_fits_list_processing(params):
     #     # create a FITS file with Stokes ndim > 1
     #     wcs = WCS(naxis=4)
     #     wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'STOKES']
-    #     wcs.wcs.cdelt = np.array([-params.cell_size/3600, 
+    #     wcs.wcs.cdelt = np.array([-params.cell_size/3600,
     #                                params.cell_size/3600,
-    #                                params.chan_freqs[1]-params.chan_freqs[0], 
+    #                                params.chan_freqs[1]-params.chan_freqs[0],
     #                                1.0]) # pixel scale in deg
     #     wcs.wcs.crpix = [params.img_size/2, params.img_size/2, 1, 1] # reference pixel
     #     wcs.wcs.crval = [0.0, -30.0, params.chan_freqs[0], 1] # reference pixel RA and Dec in deg
@@ -368,11 +368,11 @@ def test_full_stokes_fits_list_processing(params):
 
     #     # process the FITS file
     #     with params.assertRaises(SkymodelError):
-    #         skymodel_from_fits(test_filename, 0.0, 
-    #                            np.deg2rad(-30.0), 
+    #         skymodel_from_fits(test_filename, 0.0,
+    #                            np.deg2rad(-30.0),
     #                            params.chan_freqs, 
-    #                            params.ms_delta_nu, 
-    #                            params.ncorr, 
+    #                            params.ms_delta_nu,
+    #                            params.ncorr,
     #                            params.basis)
 
     # TODO: Modify test below to check use of only first element of temporal axis
@@ -385,9 +385,9 @@ def test_full_stokes_fits_list_processing(params):
     #     # create a FITS file with time axis
     #     wcs = WCS(naxis=4)
     #     wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ', 'TIME']
-    #     wcs.wcs.cdelt = np.array([-params.cell_size/3600, 
-    #                                params.cell_size/3600, 
-    #                                params.chan_freqs[1]-params.chan_freqs[0], 
+    #     wcs.wcs.cdelt = np.array([-params.cell_size/3600,
+    #                                params.cell_size/3600,
+    #                                params.chan_freqs[1]-params.chan_freqs[0],
     #                                1.0]) # pixel scale in deg
     #     wcs.wcs.crpix = [params.img_size/2, params.img_size/2, 1, 1] # reference pixel
     #     wcs.wcs.crval = [0.0, -30.0, params.chan_freqs[0], 1] # reference pixel RA and Dec in deg
@@ -407,11 +407,11 @@ def test_full_stokes_fits_list_processing(params):
 
     #     # process the FITS file
     #     with params.assertRaises(SkymodelError):
-    #         skymodel_from_fits(test_filename, 0.0, 
-    #                            np.deg2rad(-30.0), 
-    #                            params.chan_freqs, 
-    #                            params.ms_delta_nu, 
-    #                            params.ncorr, 
+    #         skymodel_from_fits(test_filename, 0.0,
+    #                            np.deg2rad(-30.0),
+    #                            params.chan_freqs,
+    #                            params.ms_delta_nu,
+    #                            params.ncorr,
     #                            params.basis)
 
 # FIXME: Incorporate the two tests below into the ones above as lm-grid is no longer created
@@ -445,11 +445,11 @@ def test_full_stokes_fits_list_processing(params):
 #     hdu.writeto(test_filename, overwrite=True)
 
     #     # process the FITS file
-    #     _, lm, _, _, _, _ = skymodel_from_fits(test_filename, 0.0, 
-    #                                            np.deg2rad(-30.0), 
-    #                                            params.chan_freqs, 
-    #                                            params.ms_delta_nu, 
-    #                                            params.ncorr, 
+    #     _, lm, _, _, _, _ = skymodel_from_fits(test_filename, 0.0,
+    #                                            np.deg2rad(-30.0),
+    #                                            params.chan_freqs,
+    #                                            params.ms_delta_nu,
+    #                                            params.ncorr,
     #                                            params.basis)
 
 #     # created expected l-m grid
@@ -477,8 +477,8 @@ def test_full_stokes_fits_list_processing(params):
     #     # create a FITS file with Stokes I only
     #     wcs = WCS(naxis=3)
     #     wcs.wcs.ctype = ['RA---SIN', 'DEC--SIN', 'FREQ']
-    #     wcs.wcs.cdelt = np.array([-params.cell_size/3600, 
-    #                                params.cell_size/3600, p
+    #     wcs.wcs.cdelt = np.array([-params.cell_size/3600,
+    #                                params.cell_size/3600,
     #                                params.chan_freqs[1]-params.chan_freqs[0]]) # pixel scale in deg
     #     wcs.wcs.crpix = [params.img_size/2, params.img_size/2, 1] # reference pixel
     #     wcs.wcs.crval = [0.0, -30.0, params.chan_freqs[0]] # reference pixel RA and Dec in deg
@@ -497,11 +497,11 @@ def test_full_stokes_fits_list_processing(params):
 #     hdu.writeto(test_filename, overwrite=True)
 
     #     # process the FITS file
-    #     _, lm, _, _, _, _ = skymodel_from_fits(test_filename, 0.0, 
-    #                                            np.deg2rad(-30.0), 
-    #                                            params.chan_freqs, 
-    #                                            params.ms_delta_nu, 
-    #                                            params.ncorr, 
+    #     _, lm, _, _, _, _ = skymodel_from_fits(test_filename, 0.0,
+    #                                            np.deg2rad(-30.0),
+    #                                            params.chan_freqs,
+    #                                            params.ms_delta_nu,
+    #                                            params.ncorr,
     #                                            params.basis)
 
 #     # created expected l-m grid
