@@ -230,7 +230,6 @@ def create_ms(
                     return interpolate.splev(freqs, fit_parms, der=0)
 
             sefd_chan = fit_func(ms_freqs)
-            print(sefd_chan)
             noise_chan = sefd_chan / np.sqrt(2 * dfreq * dtime)
             if len(noise_chan.shape) > 1:
                 noise_chan = noise_chan[0]
