@@ -370,7 +370,7 @@ def test_full_stokes_fits_list_processing(params):
     #     with params.assertRaises(SkymodelError):
     #         skymodel_from_fits(test_filename, 0.0,
     #                            np.deg2rad(-30.0),
-    #                            params.chan_freqs, 
+    #                            params.chan_freqs,
     #                            params.ms_delta_nu,
     #                            params.ncorr,
     #                            params.basis)

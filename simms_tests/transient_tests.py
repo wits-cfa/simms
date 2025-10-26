@@ -36,7 +36,7 @@ class InitTests:
 def params():
     return InitTests()
 
- 
+
 def test_transient_visibility_shape(params):
     """
     Test that the visibility matrix follows (nrow, nchan, ncorr).
@@ -116,7 +116,7 @@ def test_transient_visibility_dip(params):
         dec0=params.dec0,
     )
 
-    flux_time = np.mean(np.abs(vis[:, :,0]), axis=1)
+    flux_time = np.mean(np.abs(vis[:, :, 0]), axis=1)
 
     avg_flux = np.mean(flux_time)
     assert avg_flux < 1.0, "Transient should reduce flux below baseline (I=1)."
@@ -150,7 +150,7 @@ def test_transient_missing_params(params):
             dec="0rad",
             stokes_i="1",
             transient_start=None,  # Missing parameter
-            transient_absorb="0.5",   
+            transient_absorb="0.5",
             transient_period="100",
             transient_ingress=None,  # Missing parameter
         )
