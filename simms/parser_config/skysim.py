@@ -159,7 +159,9 @@ def runit(ctx, **kwargs):
             raise ParameterError("FITS file/directory does not exist")
 
         # process FITS sky model
-        predict = skymodel_from_fits(fs, ra0, dec0, freqs, dfreq, ncorr, opts.pol_basis, tol=opts.pixel_tol)
+        predict = skymodel_from_fits(
+            fs, ra0, dec0, freqs, dfreq, ncorr, opts.pol_basis, tol=opts.pixel_tol, interpolation=opts.fits_sky_interp
+        )
 
         dtype = np.finfo(predict.image.dtype).dtype
         if dtype == np.float32:
