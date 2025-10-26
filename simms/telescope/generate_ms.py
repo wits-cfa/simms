@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 from typing import List, Union
@@ -13,18 +14,18 @@ from scabha.basetypes import File
 from scipy import interpolate
 from tqdm.dask import TqdmCallback
 
-import simms
+from simms import BIN, PCKGDIR
 from simms.constants import PI
 from simms.telescope import array_utilities as autils
 from simms.utilities import get_noise
 
-CORR_TYPES = OmegaConf.load(f"{simms.PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
+CORR_TYPES = OmegaConf.load(f"{PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
 dm = measures()
 
 # Numpy does the correct type setting for strings
 nda = lambda items: da.asarray(np.array(items))
 
-log = simms.get_logger(name="telsim")
+log = logging.getLogger(BIN.telsim)
 
 
 def remove_ms(ms: Union[File, str]):
