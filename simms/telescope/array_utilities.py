@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Union
 
@@ -11,11 +12,11 @@ from casacore.tables import table
 from omegaconf import OmegaConf
 from scabha.basetypes import File, List
 
-from simms import constants, get_logger
+from simms import BIN, constants
 from simms.telescope.layouts import SIMMS_TELESCOPES, custom_telescopes
 from simms.utilities import ObjDict
 
-log = get_logger(name="telsim")
+log = logging.getLogger(BIN.telsim)
 
 
 class Array:

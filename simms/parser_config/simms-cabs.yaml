@@ -21,6 +21,15 @@ cabs:
         dtype: Union[File, List[File]]
         required: no
         abbreviation: fs
+      fits-sky-interp:
+        info: Interpolation method when MS and FITS image grids do not match. Interpolation is only done within the overlap region. 
+        dtype: str
+        default: nearest
+        choices:
+        - nearest
+        - linear
+        - cubic
+        abbreviation: fsi
       polarisation:
         info: Simulate all available stokes paraemters (correlations). If false, only consider stokes I
         default: true
@@ -91,11 +100,11 @@ cabs:
         default: sim
         choices: ['sim', 'add', 'subtract']
       die:
-        info: Direction independent effects
+        info: "#### NOT IMPLEMENTED #### Direction independent effects"
         dtype: File
         required: no
       dde:
-        info: Direction dependent effects
+        info: "#### NOT IMPLEMENTED ### Direction dependent effects"
         dtype: File
         required: no
       mapping:

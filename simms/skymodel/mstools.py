@@ -111,6 +111,7 @@ def fft_im_to_vis(
     ducc0.wgridder.dirty2ms wrapper to add squeezing and conjugation.
     NB: Image should be 2D.
     """
+
     result = dirty2ms(
         uvw,
         chan_freq,
@@ -118,7 +119,7 @@ def fft_im_to_vis(
         pixsize_x=pixsize_x,
         pixsize_y=pixsize_y,
         epsilon=epsilon,
-        do_wstacking=True,
+        do_wstacking=do_wstacking,
         nthreads=nthreads,
     )
 
