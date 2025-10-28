@@ -159,4 +159,3 @@ def test_transient_missing_params(params):
 
     assert exception.type is SkymodelError
     assert "missing required parameter(s)" in str(exception.value)
-
