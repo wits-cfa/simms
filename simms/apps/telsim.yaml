@@ -1,0 +1,7 @@
+libs:
+  _include: (simms.apps)simms-cabs.yaml
+
+inputs:
+  _use: libs.cabs.telsim.inputs
+outputs:
+  {}
