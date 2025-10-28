@@ -146,13 +146,13 @@ cabs:
         required: no
         abbreviation: subfile
       direction:
-        info: Direction of field centre for MS. Example, J2000,0h24m20s,-30d12m33s or J2000,0:24:20,-30:12:33
+        info: Direction of field centre for MS. Example, J2000,0h24m20s,-30d12m33s or J2000,0:24:20,-30:12:33. Default is J2000,1h0m0s,-31d0m0s.
         dtype: str
         metavar: '[EPOCH,]RA,Dec'
         default: 'J2000,1h0m0s,-31d0m0s'
         abbreviation: dir
       starttime: 
-        info: Observation start time in UTC. For example, '2024-03-14T06:15:10' 
+        info: Observation start time in UTC. For example, '2024-03-14T06:15:10'. Default is the current machine time.
         metavar: 'YYYY-MM-DDTHH:MM:SS'
         dtype: str
         abbreviation: st
@@ -161,41 +161,41 @@ cabs:
         dtype: float
         abbreviation: sha
       dtime:
-        info: Integration/exposure time in seconds.
+        info: Integration/exposure time in seconds. Default is 8 seconds.
         dtype: float
         default: 8
         abbreviation: dt
       ntime:
-        info: Number of times slots for MS.
+        info: Number of times slots for MS. Default is 10.
         dtype: int
         default: 10
         abbreviation: nt
       startfreq:
-        info: Centre of first frequency channel/bin, e.g 0.55GHz. If given without units, Hertz are assumed.
+        info: Centre of first frequency channel/bin, e.g 0.55GHz. If given without units, Hertz are assumed. Default is 1420MHz.
         dtype: Union[str, float]
         default: 1420MHz
         abbreviation: sf
       dfreq:
-        info: Channel width and units, e.g 2.4MHz. If given without units, Hertz are assumed.
+        info: Channel width and units, e.g 2.4MHz. If given without units, Hertz are assumed. Default is 1MHz.
         dtype: Union[str, float]
         default: 1MHz
         abbreviation: df
       nchan:
-        info: Number of frequency channels
+        info: Number of frequency channels. Default is 9.
         dtype: int
         default: 9
         abbreviation: nc
       correlations:
-        info: Feed correlations for MS, e.g., 'XX,YY'
+        info: Feed correlations for MS, e.g., 'XX,YY'. Default is 'XX,YY'.
         dtype: str
         default: XX,YY
         abbreviation: corr
       nworkers:
-        info: Number of workers (one per CPU)
+        info: Number of workers (one per CPU). Default is 4.
         dtype: int
         default: 4
       rowchunks:
-        info: Number of chunks to divide the data into, larger number of chunks improves the computation speed
+        info: Number of chunks to divide the data into, larger number of chunks improves the computation speed. Default is 50000.
         dtype: int
         default: 50000
         abbreviation: rc

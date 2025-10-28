@@ -22,8 +22,13 @@ from simms.utilities import get_noise
 CORR_TYPES = OmegaConf.load(f"{PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
 dm = measures()
 
+
 # Numpy does the correct type setting for strings
-nda = lambda items: da.asarray(np.array(items))
+def nda(items):
+    """Convert a list of items to a Dask array with appropriate dtype."""
+    np_array = np.array(items)
+    return da.asarray(np_array)
+
 
 log = logging.getLogger(BIN.telsim)
 
@@ -80,16 +85,14 @@ def create_ms(
     antnames = telescope_array.names
     antlocation = telescope_array.antlocations
 
-    start_freq_unit = start_freq
-    dfreq_unit = dfreq
     if freq_range:
-        start_freq = dm.frequency(v0=freq_range[0])["m0"]["value"]
-        end_freq = dm.frequency(v0=freq_range[1])["m0"]["value"]
+        start_freq = parse_frequency(freq_range[0], "freq-range start-freq")
+        end_freq = parse_frequency(freq_range[1], "freq-range end-freq")
         nchan = int(freq_range[2])
         dfreq = (end_freq - start_freq) / (nchan - 1)
     else:
-        start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
-        dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
+        start_freq = parse_frequency(start_freq, "start-freq")
+        dfreq = parse_frequency(dfreq, "dfreq")
         end_freq = start_freq + dfreq * (nchan - 1)
 
     freqs = np.linspace(start_freq, end_freq, nchan)
@@ -98,8 +101,8 @@ def create_ms(
         pointing_direction,
         dtime,
         ntimes,
-        start_freq_unit,
-        dfreq_unit,
+        "0Hz",
+        "0Hz",
         nchan,
         start_time,
         start_ha,
@@ -124,7 +127,9 @@ def create_ms(
     if len(pointing_direction) == 3:
         ra_dec = dm.direction(rf=pointing_direction[0], v0=pointing_direction[1], v1=pointing_direction[2])
     else:
-        ra_dec = dm.direction(rf="J2000", v0=pointing_direction[1], v1=pointing_direction[2])
+        log.warning("Option --direction  not given reference frame. Assuming J2000.")
+        ra_dec = dm.direction(rf="J2000", v0=pointing_direction[0], v1=pointing_direction[1])
+
     ra = ra_dec["m0"]["value"]
     dec = ra_dec["m1"]["value"]
 
@@ -204,18 +209,29 @@ def create_ms(
 
         # Lifted from https://github.com/SpheMakh/msutils/blob/master/MSUtils/ClassESW.py
         if noise_freqs:
-            x = noise_freqs
+
+            def freqs_hz(freqs):
+                freqs_hz = []
+                for i in np.array(freqs).flatten():
+                    freqs_hz.append(parse_frequency(i, "frequencies for SEFD"))
+                return freqs_hz
+
+            x = freqs_hz(noise_freqs)
             y = sefd
-            freq_mhz = freqs / 1e6
+
+            ms_freqs = freqs_hz(freqs)
+
             if smooth == "polyn":
                 fit_parms = np.polyfit(x, y, fit_order)
                 fit_func = np.poly1d(fit_parms)
             elif smooth == "spline":
                 sorted_x, sorted_y = zip(*sorted(zip(x, y)))
                 fit_parms = interpolate.splrep(sorted_x, sorted_y, s=fit_order)
-                fit_func = lambda freqs: interpolate.splev(freqs, fit_parms, der=0)
 
-            sefd_chan = fit_func(freq_mhz)
+                def fit_func(freqs):
+                    return interpolate.splev(freqs, fit_parms, der=0)
+
+            sefd_chan = fit_func(ms_freqs)
             noise_chan = sefd_chan / np.sqrt(2 * dfreq * dtime)
             if len(noise_chan.shape) > 1:
                 noise_chan = noise_chan[0]
@@ -392,11 +408,11 @@ def create_ms(
     phase_arr = da.from_array(np.full((num_rows, 1, 2), phase_dir))
 
     pntng_ds = {
-        "TARGET": (("row", "point-poly", "radec"), phase_arr),
+        # "TARGET": (("row", "point-poly", "radec"), phase_arr),
         "TIME": (("row"), da.from_array(uvcoverage_data.times)),
         "INTERVAL": (("row"), da.from_array(np.full(num_rows, dtime))),
         "TRACKING": (("row"), da.from_array(np.full(num_rows, True))),
-        # "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
+        "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
     }
 
     pntng_table = daskms.Dataset(pntng_ds)
@@ -468,3 +484,25 @@ def create_ms(
         )
 
     log.info(f"{ms} successfully generated.")
+
+
+def parse_frequency(value, option: str):
+    """Parses a frequency value which may be a string with units or a float without units.
+
+    Parameters
+    -----------
+    value: Union[str, float, int]
+        The frequency value to parse.
+    """
+    dm = measures()
+
+    if isinstance(value, str):
+        if "Hz" in value:
+            freq = dm.frequency(v0=value)["m0"]["value"]
+        else:
+            log.warning(f"Option --{option} given without units, assuming canonical units 'Hz'.")
+            freq = dm.frequency(v0=f"{value}Hz")["m0"]["value"]
+    else:
+        freq = dm.frequency(v0=f"{value}Hz")["m0"]["value"]
+
+    return freq
