@@ -1,6 +1,3 @@
-import os
-import uuid
-
 import numpy as np
 import pytest
 from astropy.io import fits
@@ -10,10 +7,10 @@ from simms.skymodel.mstools import augmented_im_to_vis as im_to_vis
 from simms.skymodel.skymods import skymodel_from_fits
 from simms.telescope.array_utilities import Array
 
-TESTDIR = os.path.abspath(os.path.dirname(__file__))
+from . import InitTest
 
 
-class InitTests:
+class InitThisTests(InitTest):
     def __init__(self):
         """Set up test inputs."""
         self.nchan = 16
@@ -42,17 +39,10 @@ class InitTests:
         # Store temporary files to be cleaned up
         self.test_files = []
 
-    def __del__(self):
-        """Clean up after each test method runs."""
-        # Remove any temporary files created
-        for file in self.test_files:
-            if os.path.exists(file):
-                os.remove(file)
-
 
 @pytest.fixture
 def params():
-    return InitTests()
+    return InitThisTests()
 
 
 def test_fits_predict_stokes_I(params):
@@ -82,8 +72,7 @@ def test_fits_predict_stokes_I(params):
 
     # write to FITS file
     hdu = fits.PrimaryHDU(image, header=header)
-    test_filename = f"test_{uuid.uuid4()}.fits"
-    params.test_files.append(test_filename)
+    test_filename = params.random_named_file(suffix=".fits")
     hdu.writeto(test_filename, overwrite=True)
 
     # process the FITS file
@@ -151,8 +140,7 @@ def test_fits_predict_stokes_I_with_spectral_axis(params):
 
     # write to FITS file
     hdu = fits.PrimaryHDU(image, header=header)
-    test_filename = f"test_{uuid.uuid4()}.fits"
-    params.test_files.append(test_filename)
+    test_filename = params.random_named_file(suffix=".fits")
     hdu.writeto(test_filename, overwrite=True)
 
     # process the FITS file
@@ -225,8 +213,7 @@ def test_fits_predicting_all_stokes_linear_basis(params):
 
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f"test_{uuid.uuid4()}_{stokes[0]}.fits"
-        params.test_files.append(test_filename)
+        test_filename = params.random_named_file(suffix=".fits")
         hdu.writeto(test_filename, overwrite=True)
 
         test_skymodels.append(test_filename)
@@ -303,8 +290,7 @@ def test_fits_predicting_all_stokes_circular_basis(params):
 
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = f"test_{uuid.uuid4()}_{stokes[0]}.fits"
-        params.test_files.append(test_filename)
+        test_filename = params.random_named_file(suffix=".fits")
         hdu.writeto(test_filename, overwrite=True)
 
         test_skymodels.append(test_filename)
