@@ -6,6 +6,7 @@ import xarray as xr
 
 from simms.constants import FWHM_scale_fact
 from simms.skymodel.converters import convert
+from simms.utilities import ParameterError as SkymodelError
 
 
 def gauss_1d(xaxis: np.ndarray, peak: float, width: float, x0: float):
@@ -54,9 +55,7 @@ def exoplanet_transient_logistic(
 
     """
 
-    times = np.linspace(start_time, end_time, ntimes)
-    baseline = 1.0
-
+    # helper function to calculate ingress/egress using logistic function
     def logistic_step(z, L=10.0):
         "Logistic function mapped to [0, 1] using internal steepness scaling L."
         z = np.clip(z, 0, 1)
@@ -66,6 +65,9 @@ def exoplanet_transient_logistic(
         f1 = 1 / (1 + np.exp(-k / 2))
         normalized = (raw - f0) / (f1 - f0)
         return normalized
+
+    times = np.linspace(start_time, end_time, ntimes)
+    baseline = 1.0
 
     intensity = np.full_like(times, baseline, dtype=np.float64)
 
@@ -140,6 +142,9 @@ class StokesData:
             lightcurve_func (Callable): _description_
         """
         light_curve = lightcurve_func(**kwargs)
+
+        self.idx = 0
+
         ndim = self.data.ndim + 1
         slc = [np.newaxis] * ndim
         slc[1] = slice(None)
@@ -309,7 +314,25 @@ class CatSource:
 
     @property
     def is_transient(self):
-        return self.transient_start not in [None, "null"]
+        if any(
+            [
+                self.transient_start not in [None, "null"],
+                self.transient_period not in [None, "null"],
+                self.transient_ingress not in [None, "null"],
+                self.transient_absorb not in [None, "null"],
+            ]
+        ):
+            missing = []
+            for option in ["transient_start", "transient_period", "transient_ingress", "transient_absorb"]:
+                val = getattr(self, option)
+                if val in [None, "null"]:
+                    missing.append(option)
+            if missing:
+                raise SkymodelError(
+                    f"Transient source specification is missing required parameter(s): {', '.join(missing)}"
+                )
+            return True
+        return False
 
 
 class Source(CatSource):

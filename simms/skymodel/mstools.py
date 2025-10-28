@@ -142,17 +142,16 @@ def compute_vis(
     Computes visibilities
 
     Args:
-        srcs (list):                List of Source objects
-        uvw (numpy.ndarray):        Array of shape (3, nrows) containing the UVW coordinates
-        freqs (numpy.ndarray):      Array of shape (nchan,) containing the frequencies
-        ncorr (int):                Number of correlations
-        polarisation (bool):        True if polarisation information is present, False otherwise
-        pol_basis (str):            Polarisation basis ("linear" or "circular")
-        times:                     Number of unique times
-        mod_data (numpy.ndarray):   Array of shape (nrows, nchan, ncorr) containing the model data
-            to/from which computed visibilities should be added/subtracted
-        noise (float):              RMS noise
-        subtract (bool):            True if visibilities should be subtracted from the model data, False otherwise
+        sources (list):               List of Source objects
+        uvw (numpy.ndarray):          Array of shape (3, nrows) containing the UVW coordinates
+        freqs (numpy.ndarray):        Array of shape (nchan,) containing the frequencies
+        times:                        Number of unique times
+        ncorr (int):                  Number of correlations
+        polarisation (bool):          True if polarisation information is present, False otherwise
+        pol_basis (str):              Polarisation basis ("linear" or "circular")
+        ra0 (float):                  Phase centre RA in radians
+        dec0 (float):                 Phase centre Dec in radians
+        noise_vis (float, optional):  RMS noise per visibility. If None, no noise is added. Defaults to None.
 
     Returns:
         vis (numpy.ndarray):        Visibility array of shape (nrows, nchan, ncorr)
