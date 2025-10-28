@@ -158,7 +158,7 @@ def test_visdata_configuration_info(params):
     assert np.isclose(nbl, tel_nbl)
 
     ds_point = xds_from_table(f"{params.ms}::POINTING")[0]
-    direction = ds_point.TARGET.values[0][0]
+    direction = ds_point.DIRECTION.values[0][0]
 
     orig_direction = SkyCoord(*params.direction[1:])
     ra0 = orig_direction.ra.to("rad").value
