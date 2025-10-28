@@ -1,7 +1,0 @@
-libs:
-  _include: (simms.parser_config)simms-cabs.yaml
-
-inputs:
-  _use: libs.cabs.skysim.inputs
-outputs:
-  {}
