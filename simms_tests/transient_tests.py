@@ -3,9 +3,7 @@ import pytest
 
 from simms.skymodel.mstools import compute_vis
 from simms.skymodel.skymods import skymodel_from_sources
-from simms.skymodel.source_factory import (
-    CatSource,
-)
+from simms.skymodel.source_factory import CatSource
 from simms.telescope.array_utilities import Array
 from simms.utilities import ParameterError as SkymodelError
 
