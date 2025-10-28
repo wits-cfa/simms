@@ -9,7 +9,6 @@ from simms import BIN, __version__
 from simms.apps import skysim, telsim
 
 thisdir = os.path.dirname(__file__)
-
 telsim_parserfile = File(f"{thisdir}/{BIN.telsim}.yaml")
 skysim_parserfile = File(f"{thisdir}/{BIN.skysim}.yaml")
 
@@ -21,17 +20,18 @@ class RemoveMSIfChained(click.Command):
     """
     A custom command class that removes an option based on a parent flag.
     """
+
     def make_parser(self, ctx):
         """
         This method is called before parsing. It checks the parent context
         for a '--chain' flag and removes the 'ms' argument if it's found.
         """
         # Check if the parent context and its params exist
-        if ctx.parent and ctx.parent.params.get('chain', False):
+        if ctx.parent and ctx.parent.params.get("chain", False):
             # The 'params' attribute is a list of all options/arguments.
             # We rebuild the list, excluding the one named 'ms'.
-            self.params = [p for p in self.params if p.name != 'ms']
-        
+            self.params = [p for p in self.params if p.name != "ms"]
+
         # IMPORTANT: Call the superclass method to continue the parsing process
         return super().make_parser(ctx)
 
@@ -42,17 +42,36 @@ class RemoveMSIfChained(click.Command):
 @click.option(
     "--log-level", "-ll", help="Log level", type=click.Choice(["INFO", "WARNING", "CRITICAL", "ERROR"]), default="INFO"
 )
-@click.option("--chain", is_flag=True, help="Chain telsim and skysim for an End-to-End simulation.")
+@click.option(
+    "--chain",
+    is_flag=True,
+    help="Chain telsim and skysim for an End-to-End simulation."
+    " When this option is set, the -ms/--ms has to be given in the "
+    "main command and excluded from both sub-commands",
+)
 @click.pass_context
 def cli(ctx, ms, log_level, chain):
-    
+    """
+    Tools for simulating radio interferometry observations. 'telsim' creates a simulated observation
+    (Measurement Set; MS), and 'skysim' populates an MS with visibilities generated from a given skymodel
+    (FITS or ASCII format). For more info on the tools run:
+
+        simms telsim --help
+
+        simms skysim --help
+
+    """
+
     ctx.ensure_object(dict)
     ctx.obj["log_level"] = log_level
     ctx.obj["chain"] = chain
     if chain:
-        ctx.obj["ms"] = ms
-        del skysim_config.inputs.ms
-        del telsim_config.inputs.ms
+        if ms:
+            ctx.obj["ms"] = ms
+        else:
+            raise click.exceptions.MissingParameter(
+                "The --ms/-ms option is required when --chain is set", param_type="Option", param_hint="--ms"
+            )
 
 
 @cli.command(BIN.telsim, no_args_is_help=True, cls=RemoveMSIfChained)
@@ -62,7 +81,7 @@ def cli(ctx, ms, log_level, chain):
     is_flag=True,
     callback=telsim.print_data_database,
     expose_value=False,
-    help="Displays a message and then exits the program.",
+    help="Dispalys a list of available telescope array layouts",
 )
 @clickify_parameters(telsim_config)
 @click.pass_context
@@ -71,7 +90,7 @@ def run_telsim(ctx, **kwargs):
     opts["log_level"] = ctx.obj["log_level"]
     if ctx.obj["chain"]:
         opts["ms"] = ctx.obj["ms"]
-    
+
     telsim.runit(opts)
 
 
