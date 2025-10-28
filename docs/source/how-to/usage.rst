@@ -85,7 +85,7 @@ For polarized sources, you can provide separate FITS files for each Stokes param
 2. Chunking for Large MS Data
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-::
+.. code-block:: bash
 
    simms skysim --ascii-sky skymodel.txt --column SIMULATED_DATA --rcs 5000 largevis.ms
 
@@ -94,14 +94,14 @@ Where ``--rcs`` is the row chunk size. Default is 1000.
 1. Adding Noise
 ~~~~~~~~~~~~~~~
 
-::
+.. code-bock:: bash
 
    simms skysim --ascii-sky skymodel.txt --column SIMULATED_DATA --sefd 421 largevis.ms
 
 4. FITS-Specific Cases
 ~~~~~~~~~~~~~~~~~~~~~~
 
-::
+.. code-bock:: bash
 
    simms skysim --fits-sky model.fits --column DATA --pixel-tol 1e-6 --fft-precision single --no-do-wstacking largevis.ms
 
@@ -111,35 +111,24 @@ Where:
 - ``--fft-precision``: Precision for FFT calculations (single or double). Default is double
 - ``--no-do-wstacking``: Disables w-stacking for FFT-based simulation. Default is enabled
 
-5. Running using ``stimela``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. 
+   5. End-to-End Simulation
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You can use ``stimela`` to execute both ``telsim`` and ``skysim`` as part of a pipeline. This allows you to create an MS and simulate the sky in a structured workflow.
-
-Define the observation pipeline in a YAML file (e.g., `observe.yaml`) that includes the configuration for both ``telsim`` and ``skysim`` steps. Then, execute the pipeline with:
-
-   stimela run observe.yaml
-
-Refer to the `parser_config/observe.yaml` file for an example and the `Stimela documentation <https://github.com/caracal-pipeline/stimela>`_ for more details on how to define and run a pipeline in ``stimela``.
-
-Catalogue Types and Required Parameters
-----------------------------------------
-
-Supported Source Types
-~~~~~~~~~~~~~~~~~~~~~~~
+ASCII Sky Model Basics
+----------------------------
 
 1. **Point Sources**
 
-   - Requires: RA, DEC, Stokes I
+   - The simplest source that can be simulated is a point source, which only requires the RA, Dec, and intensity (``stokes_i``)
 
 2. **Extended Sources**
 
-   - Requires: RA, DEC, Stokes I, emaj, emin and pa
+   - The only resolved sources supported are 2D Gaussian sources. These sources are parametrised via the FHWM values for the major and minor axes (``emaj`` and ``emin``) and the position angle (``pa``). 
 
 3. **Spectral Line Sources**
-
-   - Requires: ``line_peak`` and ``line_width``
+   - For spectral line sources, the frequency where the line peaks (``line_peak``) needs to be specified along with the width of the line (``line_width``). Double-horn profiles are not supported at this point.
 
 4. **Continuum Sources**
 
-   - Requires: ``cont_reffreq`` and ``cont_coef_1`` (spectral index)
+   - Continuum sources require the reference frequency (``cont_reffreq``) and at least one (of three) power-law coefficient (``cont_coeff_<number>``). Where, ``cont_coeff_1`` is the spectral index, ``cont_coeff_2`` is the spectral curvature, and so on.
