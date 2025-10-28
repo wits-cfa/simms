@@ -8,8 +8,10 @@ from simms.skymodel.source_factory import (
 )
 from simms.telescope.array_utilities import Array
 
+from . import InitTest
 
-class InitTests:
+
+class InitThisTests(InitTest):
     def __init__(self):
         # set up test inputs
         test_array = Array("meerkat")
@@ -32,7 +34,7 @@ class InitTests:
 
 @pytest.fixture
 def params():
-    return InitTests()
+    return InitThisTests()
 
 
 def test_compute_vis_stokes_I(params):
