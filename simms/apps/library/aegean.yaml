@@ -1,0 +1,46 @@
+name: source
+ra:             # right ascension; default units [deg]
+  name: null
+  units: null
+dec:            # declination; default units [deg]
+  name: null
+  units: null
+stokes_i:       # Stokes I; default units [Jy]
+  name: int_flux
+  units: null
+stokes_q:       # Stokes Q; default units [Jy]
+  name: null
+  units: null
+stokes_u:       # Stokes U; default units [Jy]
+  name: null
+  units: null
+stokes_v:       # Stokes V; default units [Jy]
+  name: null
+  units: null
+emaj:           # major axis; default units [deg]
+  name: a
+  units: as
+emin:           # minor axis; default units [deg]
+  name: b
+  units: as
+pa:             # position angle; default units [deg]
+  name: pa
+  units: null
+cont_reffreq:   # continuum reference frequency; default units [Hz]
+  name: null
+  units: null
+cont_coeff_1:   # spectral index
+  name: null
+  units: null
+cont_coeff_2:   # spectral curvature
+  name: null
+  units: null
+line_peak:      # line source peak frequency; default units [Hz]
+  name: null
+  units: null
+line_width:     # line width; default units [Hz]
+  name: null
+  units: null
+line_restfreq:  # line rest frequency; default units [Hz]
+  name: null
+  units: null
