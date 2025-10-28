@@ -331,10 +331,10 @@ class CatSource:
     def is_transient(self):
         if any(
             [
-            self.transient_start not in [None, "null"],
-            self.transient_period not in [None, "null"],
-            self.transient_ingress not in [None, "null"],
-            self.transient_absorb not in [None, "null"],
+                self.transient_start not in [None, "null"],
+                self.transient_period not in [None, "null"],
+                self.transient_ingress not in [None, "null"],
+                self.transient_absorb not in [None, "null"],
             ]
         ):
             missing = []
@@ -345,7 +345,7 @@ class CatSource:
             if missing:
                 raise SkymodelError(
                     f"Transient source specification is missing required parameter(s): {', '.join(missing)}"
-                    )
+                )
             return True
         return False
 
