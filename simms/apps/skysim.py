@@ -25,7 +25,6 @@ thisdir = os.path.abspath(os.path.dirname(__file__))
 
 
 def runit(opts):
-
     log = set_logger(BIN.skysim, opts["log_level"])
     ms = opts.ms
     cat = opts.ascii_sky
