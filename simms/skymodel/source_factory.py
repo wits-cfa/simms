@@ -54,6 +54,7 @@ def exoplanet_transient_logistic(
     Returns:
 
     """
+
     # helper function to calculate ingress/egress using logistic function
     def logistic_step(z, L=10.0):
         "Logistic function mapped to [0, 1] using internal steepness scaling L."
@@ -328,19 +329,23 @@ class CatSource:
 
     @property
     def is_transient(self):
-        if any([
+        if any(
+            [
             self.transient_start not in [None, "null"],
             self.transient_period not in [None, "null"],
             self.transient_ingress not in [None, "null"],
             self.transient_absorb not in [None, "null"],
-        ]):
+            ]
+        ):
             missing = []
             for option in ["transient_start", "transient_period", "transient_ingress", "transient_absorb"]:
                 val = getattr(self, option)
                 if val in [None, "null"]:
                     missing.append(option)
             if missing:
-                raise SkymodelError(f"Transient source specification is missing required parameter(s): {', '.join(missing)}")
+                raise SkymodelError(
+                    f"Transient source specification is missing required parameter(s): {', '.join(missing)}"
+                    )
             return True
         return False
 
