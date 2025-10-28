@@ -7,8 +7,10 @@ from simms.skymodel.source_factory import CatSource
 from simms.telescope.array_utilities import Array
 from simms.utilities import ParameterError as SkymodelError
 
+from . import InitTest
 
-class InitTests:
+
+class InitThisTest(InitTest):
     def __init__(self):
         # set up test inputs
         test_array = Array("meerkat")
@@ -32,7 +34,7 @@ class InitTests:
 
 @pytest.fixture
 def params():
-    return InitTests()
+    return InitThisTest()
 
 
 def test_transient_visibility_shape(params):
