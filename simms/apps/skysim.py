@@ -1,18 +1,13 @@
 import glob
-import os
+import os.path
 
-import click
 import dask.array as da
 import numpy as np
 from dask import config as dask_config
 from daskms import xds_from_ms, xds_from_table, xds_to_table
-from omegaconf import OmegaConf
-from scabha.basetypes import File
-from scabha.schema_utils import clickify_parameters, paramfile_loader
 from tqdm.dask import TqdmCallback
 
 from simms import BIN, set_logger
-from simms.skymodel.catalogue_reader import load_sources
 from simms.skymodel.mstools import (
     augmented_im_to_vis,
     compute_vis,
@@ -20,26 +15,17 @@ from simms.skymodel.mstools import (
     vis_noise_from_sefd_and_ms,
 )
 from simms.skymodel.skymods import (
+    load_sources,
     skymodel_from_fits,
     skymodel_from_sources,
 )
 from simms.utilities import ParameterError
 
-command = BIN.skysim
-thisdir = os.path.dirname(__file__)
-source_files = glob.glob(f"{thisdir}/library/*.yaml")
-sources = [File(item) for item in source_files]
-parserfile = File(f"{thisdir}/{command}.yaml")
-config = paramfile_loader(parserfile, sources)[command]
+thisdir = os.path.abspath(os.path.dirname(__file__))
 
 
-@click.command(command)
-@clickify_parameters(config)
-@click.pass_context
-def runit(ctx, **kwargs):
-    opts = OmegaConf.create(kwargs)
-
-    log = set_logger(BIN.skysim, ctx.obj["log_level"])
+def runit(opts):
+    log = set_logger(BIN.skysim, opts["log_level"])
     ms = opts.ms
     cat = opts.ascii_sky
     fs = opts.fits_sky

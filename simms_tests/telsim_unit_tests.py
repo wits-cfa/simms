@@ -1,6 +1,3 @@
-import os.path
-import shutil
-
 import numpy as np
 import pytest
 from astropy.coordinates import SkyCoord
@@ -9,14 +6,18 @@ from scipy.optimize import least_squares
 
 from simms.telescope import array_utilities
 from simms.telescope.generate_ms import create_ms
-from simms_tests import TESTDIR
+
+from . import InitTest
 
 
-class InitTest:
+class InitThisTest(InitTest):
     def __init__(self):
         """Set up common test parameters before each test method runs."""
-        # Common parameters used across tests
-        self.ms = os.path.join(TESTDIR, "test-mk.ms")
+
+        # important to have this first, else files/dirs created before it will not be tracked
+        self.test_files = []
+
+        self.ms = self.random_named_directory(suffix=".ms")
         self.telescope = "kat-7"
         self.max_bl = 185
         self.min_bl = 26
@@ -32,15 +33,7 @@ class InitTest:
         self.column = "DATA"
 
         # Store temporary files to be cleaned up
-        self.test_files = []
         self.make_ms()
-
-    def __del__(self):
-        """Clean up after all tests in this class."""
-        # Remove any temporary files created
-        for file in self.test_files:
-            if os.path.exists(file):
-                shutil.rmtree(file)
 
     def make_ms(self):
         create_ms(
@@ -66,7 +59,7 @@ class InitTest:
 
 @pytest.fixture
 def params():
-    return InitTest()
+    return InitThisTest()
 
 
 def test_max_bl(params):

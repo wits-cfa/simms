@@ -1,21 +1,5 @@
-import glob
-import os
-
-import click
-from omegaconf import OmegaConf
-from scabha.basetypes import File
-from scabha.schema_utils import clickify_parameters, paramfile_loader
-
 from simms import BIN, set_logger
 from simms.telescope import generate_ms, layouts
-
-command = BIN.telsim
-
-thisdir = os.path.dirname(__file__)
-telescope_params = glob.glob(f"{thisdir}/library/*.yaml")
-telescope_files = [File(item) for item in telescope_params]
-parserfile = File(f"{thisdir}/{command}.yaml")
-config = paramfile_loader(parserfile, telescope_files)[command]
 
 
 def print_data_database(ctx, param, value):
@@ -36,20 +20,8 @@ def print_data_database(ctx, param, value):
     raise SystemExit()
 
 
-@click.command(command)
-@click.option(
-    "--list",
-    "-ls",
-    is_flag=True,
-    callback=print_data_database,
-    expose_value=False,
-    help="Displays a message and then exits the program.",
-)
-@clickify_parameters(config)
-@click.pass_context
-def runit(ctx, **kwargs):
-    opts = OmegaConf.create(kwargs)
-    set_logger(BIN.telsim, ctx.obj["log_level"])
+def runit(opts):
+    set_logger(BIN.telsim, opts["log_level"])
 
     msname = opts.ms
     telescope = opts.telescope

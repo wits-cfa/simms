@@ -40,7 +40,7 @@ include = ["simms"]
 include = ["simms"]
 
 [project.scripts]
-simms = "simms.parser_config:cli"
+simms = "simms.apps.main:cli"
 
 
 [project.urls]

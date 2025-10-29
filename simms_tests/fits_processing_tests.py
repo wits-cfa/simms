@@ -1,6 +1,3 @@
-import os
-import uuid
-
 import numpy as np
 import pytest
 from astropy.io import fits
@@ -10,10 +7,10 @@ from astropy.wcs import WCS
 from simms.skymodel.skymods import skymodel_from_fits
 from simms.utilities import FITSSkymodelError as SkymodelError
 
-TESTDIR = os.path.abspath(os.path.dirname(__file__))
+from . import InitTest
 
 
-class InitTests:
+class InitThisTest(InitTest):
     def __init__(self):
         """Set up common test parameters before each test method runs."""
         # Common parameters used across tests
@@ -29,17 +26,10 @@ class InitTests:
         # Store temporary files to be cleaned up
         self.test_files = []
 
-    def __del__(self):
-        """Clean up after each test method runs."""
-        # Remove any temporary files created
-        for file in self.test_files:
-            if os.path.exists(file):
-                os.remove(file)
-
 
 @pytest.fixture
 def params():
-    return InitTests()
+    return InitThisTest()
 
 
 def test_stokes_I_fits_processing(params):
@@ -66,8 +56,7 @@ def test_stokes_I_fits_processing(params):
 
     # write to FITS file
     hdu = fits.PrimaryHDU(image, header=header)
-    test_filename = os.path.join(TESTDIR, f"test_{uuid.uuid4()}.fits")
-    params.test_files.append(test_filename)
+    test_filename = params.random_named_file(suffix=".fits")
     hdu.writeto(test_filename, overwrite=True)
 
     # process the FITS file
@@ -118,8 +107,7 @@ def test_off_centre_stokes_I_processing(params):
 
     # write to FITS file
     hdu = fits.PrimaryHDU(image, header=header)
-    test_filename = os.path.join(TESTDIR, f"test_{uuid.uuid4()}.fits")
-    params.test_files.append(test_filename)
+    test_filename = params.random_named_file(suffix=".fits")
     hdu.writeto(test_filename, overwrite=True)
 
     # process the FITS file
@@ -167,8 +155,7 @@ def test_stokes_I_with_spectral_axis_processing(params):
 
     # write to FITS file
     hdu = fits.PrimaryHDU(image, header=header)
-    test_filename = os.path.join(TESTDIR, f"test_{uuid.uuid4()}.fits")
-    params.test_files.append(test_filename)
+    test_filename = params.random_named_file(suffix=".fits")
     hdu.writeto(test_filename, overwrite=True)
 
     # process the FITS file
@@ -216,8 +203,7 @@ def test_stokes_I_with_freq_interp_processing(params):
 
     # write to FITS file
     hdu = fits.PrimaryHDU(image, header=header)
-    test_filename = os.path.join(TESTDIR, f"test_{uuid.uuid4()}.fits")
-    params.test_files.append(test_filename)
+    test_filename = params.random_named_file(suffix=".fits")
     hdu.writeto(test_filename, overwrite=True)
 
     predict = skymodel_from_fits(
@@ -270,9 +256,8 @@ def test_stokes_I_processing_with_interp_bounds_error(params):
 
     # write to FITS file
     hdu = fits.PrimaryHDU(image, header=header)
-    test_filename = os.path.join(TESTDIR, f"test_{uuid.uuid4()}.fits")
+    test_filename = params.random_named_file(suffix=".fits")
     print(f"test_stokes_I_processing_with_interp_bounds_error created the file: {test_filename}")
-    params.test_files.append(test_filename)
     hdu.writeto(test_filename, overwrite=True)
 
     # process the FITS file
@@ -315,8 +300,7 @@ def test_full_stokes_fits_list_processing(params):
 
         # write to FITS file
         hdu = fits.PrimaryHDU(image, header=header)
-        test_filename = os.path.join(TESTDIR, f"test_{uuid.uuid4()}_{stokes[0]}.fits")
-        params.test_files.append(test_filename)
+        test_filename = params.random_named_file(suffix=".fits")
         hdu.writeto(test_filename, overwrite=True)
 
         test_skymodels.append(test_filename)
@@ -541,8 +525,7 @@ def test_bmaj_bmin_header_scaling(params):
     image[:, :, params.img_size // 2, params.img_size // 2] = 1.0
     hdu = fits.PrimaryHDU(image, header=header)
 
-    test_filename = os.path.join(TESTDIR, f"test_{uuid.uuid4()}_bmajmin.fits")
-    params.test_files.append(test_filename)
+    test_filename = params.random_named_file(suffix="bmajmin.fits")
     hdu.writeto(test_filename, overwrite=True)
 
     predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
@@ -591,8 +574,7 @@ def test_bmaj1_bmin1_cube_scaling(params):
     image[:, :, params.img_size // 2, params.img_size // 2] = 1.0
     hdu = fits.PrimaryHDU(image, header=header)
 
-    test_filename = os.path.join(TESTDIR, f"test_{uuid.uuid4()}_bmaj1min1.fits")
-    params.test_files.append(test_filename)
+    test_filename = params.random_named_file(suffix="bmajmin.fits")
     hdu.writeto(test_filename, overwrite=True)
 
     predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
@@ -654,8 +636,7 @@ def test_beam_table_scaling(params):
     hdu = fits.PrimaryHDU(image, header=header)
     hdul = fits.HDUList([hdu, fits.BinTableHDU(beam_table)])
 
-    test_filename = f"test_{uuid.uuid4()}_beamtable.fits"
-    params.test_files.append(test_filename)
+    test_filename = params.random_named_file(suffix=".fits")
     hdul.writeto(test_filename, overwrite=True)
 
     predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
