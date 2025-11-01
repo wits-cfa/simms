@@ -1,0 +1,111 @@
+info: "Mapper for PyBDSF GAUL sources: maps GAUL catalogue columns to the simms sky model schema using the 'alias' fields. Use with the --mapping option of simms skysim."
+
+parameters:
+  name:
+    info: Source name/label
+    alias: Source_id
+    units: null
+    ptype: string
+  ra:
+    info: Right ascension
+    alias: RA
+    units: deg
+    ptype: longitude
+    required: true
+  dec:
+    info: Declination
+    alias: DEC
+    units: deg
+    ptype: latitude
+    required: true
+  stokes_i: 
+    info: Stokes I
+    alias: Total_flux
+    units: Jy
+    ptype: flux
+    required: true
+  stokes_q:
+    info: Stokes Q
+    alias: null
+    units: Jy
+    ptype: flux
+  stokes_u:
+    info: Stokes U
+    alias: null
+    units: Jy
+    ptype: flux
+  stokes_v:
+    info: Stokes V
+    alias: null
+    units: Jy
+    ptype: flux
+  emaj:
+    info: Major axis; default units
+    alias: DC_Maj
+    units: deg
+    ptype: angle
+  emin:
+    info: Minor axis; default units [deg]
+    alias: DC_Min
+    units: deg
+    ptype: angle
+  pa:
+    info: Position angle; default units
+    alias: DC_PA
+    units: deg
+    ptype: angle
+  cont_reffreq:
+    info: Continuum reference frequency; default units
+    alias: null
+    units: Hz
+    ptype: frequency
+  cont_coeff_1: 
+    info: Spectral index term (second order term)
+    alias: null
+    units: null
+    ptype: number
+  cont_coeff_2:
+    info: Spectral curvature term (third order term)
+    alias: null
+    units: null
+    ptype: number
+  cont_coeff_3:
+    info: Spectral log-parabolic term (fourth order term)
+    alias: null
+    units: null
+    ptype: number
+  line_peak:
+    info: Line source peak frequency; default units
+    alias: null
+    units: Hz
+    ptype: frequency
+  line_width:
+    info: Line width; default units
+    alias: null
+    units: Hz
+    ptype: frequency
+  line_restfreq:
+    info: Line rest frequency; default units
+    alias: null
+    units: Hz
+    ptype: frequency
+  transient_start:
+    info: Beginning of transient event relative to observation start
+    alias: null
+    units: null
+    ptype: time
+  transient_period:
+    info:  Total time of transient event, including ingress and egress
+    alias: null
+    units: s
+    ptype: time
+  transient_ingress:  
+    info: Duration of ingress; default units
+    alias: null
+    units: s
+    ptype: time
+  transient_absorb:
+    info: Maximum fractional flux decrease during the transit
+    alias: null
+    units: null
+    ptype: number

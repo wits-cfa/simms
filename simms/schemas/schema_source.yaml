@@ -2,7 +2,7 @@ version: 2.0beta1
 
 Pointsource:
   info: defining a point source
-  stokes:
+  stokes_i:
     info: Intensity of the source(s) 
     dtype: List[float]
     required: false
