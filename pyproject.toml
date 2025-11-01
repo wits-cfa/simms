@@ -68,6 +68,7 @@ docs = [
     "sphinx_click",
     "sphinx-autodoc-typehints",
     "docutils",
+    "sphinxcontrib-autoyaml",
 ]
 
 dev = [
