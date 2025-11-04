@@ -1,36 +1,12 @@
 from itertools import combinations
-from typing import List, Union
+from types import NoneType
+from typing import Callable, List, Union
 
 import numpy as np
+from astropy import units
+from numba import njit
 
-
-class ValidationError(Exception):
-    pass
-
-
-class CatalogueError(Exception):
-    pass
-
-
-class FITSSkymodelError(Exception):
-    pass
-
-
-class ParameterError(Exception):
-    pass
-
-
-def isnummber(string):
-    try:
-        float(string)
-        return True
-    except ValueError:
-        return False
-
-
-# nicked from https://www.hackertouch.com/how-to-get-a-list-of-class-attributes-in-python.html
-def get_class_attributes(cls):
-    return [item for item in cls.__dict__ if not callable(getattr(cls, item)) and not item.startswith("__")]
+from simms.exceptions import SkymodelSchemaError
 
 
 class ObjDict(object):
@@ -45,6 +21,55 @@ class ObjDict(object):
                 setattr(self, item, getattr(items, item, None))
         # Now set the dictionary values as attributes
         self.__dict__.update(items)
+
+
+def is_numeric(string):
+    """
+    Checks if a string can be converted to a float.
+    """
+    try:
+        float(string)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+@njit
+def radec2lm(ra0: float, dec0: float, ra: float|np.ndarray, dec: float|np.ndarray):
+    """
+    Convert (RA, Dec) to direction cosine coordinates (l,m)
+
+    Args:
+        ra0 (float|np.ndarray): phase centre RA in radians.
+        dec0 (float): phase centre Dec in radians.
+        ra (float or np.ndarray): RA in radians.
+        dec (float or np.ndarray): Dec in radians.
+    Returns:
+        a tuple of l and m
+    """
+    dra = ra - ra0
+    l_coord = np.cos(dec) * np.sin(dra)
+    m_coord = np.sin(dec) * np.cos(dec0) - np.cos(dec) * np.sin(dec0) * np.cos(dra)
+
+    return l_coord, m_coord
+
+
+@njit(parallel=True)
+def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.ndarray):
+    """
+    Calculates pixel (l, m) coordinates. Returns sth akin to a 2D meshgrid
+    """
+    n_pix_l = len(ra_coords)
+    n_pix_m = len(dec_coords)
+    lm = np.zeros((n_pix_l, n_pix_m, 2), dtype=np.float64)
+    for i in njit.prange(len(ra_coords)):
+        for j in range(len(dec_coords)):
+            l_coords, m_coords = radec2lm(ra0, dec0, ra_coords[i], dec_coords[j])
+            lm[i, j, 0] = l_coords
+            lm[i, j, 1] = m_coords
+
+    return lm
+
 
 
 def get_noise(sefds: Union[List, float], dtime: int, dfreq: float):
@@ -100,3 +125,47 @@ def is_range_in_range(inner_range, outer_range):
     is_end_within = inner_end <= outer_end
 
     return is_start_within and is_end_within
+
+
+def quantity_to_value(coord:Callable|NoneType, value:str|int|float, val_units:str=None,
+                    target_units:str=None, null_value=None) -> int|float:
+    """
+    Converts a value (string or numeric) with units to a float or int in the target units.
+
+    Args:
+        coord (Callable|NoneType): Function to convert the given
+        value (str|numeric): The value to convert.
+        val_units (str): The units of the value.
+        target_units (str): The units to convert to.
+    Raises:
+        SkymodelSchemaError: If the units are unknown or invalid.
+
+    Returns:
+        float|int: The converted value in the target units.
+    """
+    if value in [None, "null"]:
+        return null_value
+
+    if isinstance(value, float|int):
+        if val_units:
+            try:
+                 quant_value =  value*getattr(units, val_units)
+            except AttributeError:
+                raise SkymodelSchemaError("Unknown parameter units '{val_units}'")
+        else:
+            quant_value = units.Quantity(value)
+    elif is_numeric(value):
+        if val_units:
+            quant_value = coord(f"{value} {val_units}")
+        else:
+            quant_value = coord(value)
+    else:
+        quant_value = coord(value)
+
+    if isinstance(quant_value, str):
+        return quant_value
+
+    if target_units:
+        return quant_value.to(target_units).to_value()
+    else:
+        return quant_value.to_value()
