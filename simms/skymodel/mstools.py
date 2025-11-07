@@ -42,7 +42,7 @@ def sim_noise(dshape: Union[List, Tuple], vis_noise: float) -> np.ndarray:
     Args:
         dshape (Union[List,Tuple]): Shape of the visibility data
         vis_noise (float): Noise per visibility
-    
+
     Returns:
         np.ndarray: Simulated complex Gaussian noise
     """
@@ -58,7 +58,7 @@ def add_noise(vis: Union[np.ndarray, float], vis_noise: float):
         vis (Union[np.ndarray,float]): Data to add noise to. Set to zero to compute a noise only visibility
         noise_vis (float): Noise per visibility
     """
-    
+
     return vis + sim_noise(vis.shape, vis_noise)
 
 

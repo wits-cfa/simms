@@ -358,7 +358,7 @@ class StokesDataFits(StokesData):
     def __init__(self, coord: xr.DataArray, dim_idx: int, data: np.ndarray):
         """
         Object that holds Stokes data from FITS file
-        
+
         Args:
             coord (xr.DataArray): Coordinate information
             dim_idx (int): Dimension index for the stokes parameter
