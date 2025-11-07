@@ -1,5 +1,6 @@
 import math
 import os
+from tkinter import N
 
 import pytest
 from astropy.coordinates import Angle, Latitude, Longitude
@@ -7,11 +8,11 @@ from omegaconf import OmegaConf
 
 from simms.exceptions import ASCIISkymodelError, ASCIISourceError
 from simms.skymodel.ascii_skies import (
-    ASCIISkyModel,
+    ASCIISkymodel,
     ASCIISource,
     ASCIISourceSchema,
 )
-from simms.skymodel.source_factory import SourceRequires, StokesData
+from simms.skymodel.source_factory import SourceType, StokesData
 
 from . import InitTest
 
@@ -34,17 +35,22 @@ def params():
 
 
 def load_default_schema() -> ASCIISourceSchema:
-	"""Load the default schema via ASCIISkyModel helper but without reading a file of sources."""
+	"""Load the default schema via ASCIISkymodel helper but without reading a file of sources."""
 	# Create a tiny valid model file to force schema load, then ignore parsing
 	from simms import SCHEMADIR
-	schema_path = os.path.join(SCHEMADIR, "skymodel_schema.yaml")
+	schema_path = os.path.join(SCHEMADIR, "source_schema.yaml")
 	schema = ASCIISourceSchema(**OmegaConf.load(schema_path))
 	return schema
 
 
-def debug():
-    src = SourceRequires(requires=["ra", "dec", "a|b|c", "e|f"])
-    src.is_valid(["ra", "dec", "a"], raise_exception=True)    
+def source_type_validation_test():
+	src = SourceType(requires=["ra", "dec", "a|b|c", "e|f"])
+	with pytest.raises(ASCIISourceError):
+		src.is_valid(["ra", "dec", "a"], raise_exception=True)    
+	
+	assert not src.is_valid(["ra", "dec", "a"])
+	assert src.is_valid(["ra", "dec", "a", "e"])
+
 
 def test_set_source_param_conversions():
 	schema = load_default_schema()
@@ -85,17 +91,14 @@ def test_finalise_point_vs_extended_and_polarisation():
 	for k, v in {"ra": "0", "dec": "0", "stokes_i": 1.0}.items():
 		s1.set_source_param(k, v)
 	s1.finalise()
-	s1.set_stokes()
 	assert s1.is_point is True
 	assert s1.is_polarised is False
-	assert isinstance(s1.stokes, StokesData)
 
 	# Extended, polarised (I and Q specified)
 	s2 = ASCIISource(schema)
 	for k, v in {"ra": 0, "dec": 0, "stokes_i": 2.0, "stokes_q": 0.5, "emaj": "0.1", "emin": "0.05"}.items():
 		s2.set_source_param(k, v)
 	s2.finalise()
-	s2.set_stokes()
 	assert s2.is_point is False
 	assert s2.is_polarised is True
 
@@ -108,7 +111,8 @@ def test_circular_polarisation_errors():
 		src.set_source_param(k, v)
 	src.finalise()
 
-	src.set_stokes(linear_basis=True)
+	freqs = [1e6, 1.2e6, 1.3e6]
+	bmatrix = src.get_brightness_matrix(chan_freqs=freqs, ncorr=2, linear_basis=True)
 	assert pytest.approx(src.stokes.I, abs=1e-6) == src.stokes_i
 
 	# check as if basis was circular. This should fail
@@ -118,7 +122,7 @@ def test_circular_polarisation_errors():
 		assert pytest.approx(src.stokes.U, abs=1e-6) == src.stokes_v
 
 	# set correct basis, it should work now
-	src.set_stokes(linear_basis=False)
+	bmatrix = src.get_brightness_matrix(chan_freqs=freqs, ncorr=2, linear_basis=False)
 	assert pytest.approx(src.stokes.V, abs=1e-6) == src.stokes_q
 	assert pytest.approx(src.stokes.Q, abs=1e-6) == src.stokes_u
 	assert pytest.approx(src.stokes.U, abs=1e-6) == src.stokes_v
@@ -161,17 +165,17 @@ def test_skymodel_header_required_and_format_errors(params):
 	# Missing #format: line
 	bad1 = params.write_temp_file("ra dec stokes_i\n0 0 1\n")
 	with pytest.raises(ASCIISkymodelError):
-		ASCIISkyModel(bad1)
+		ASCIISkymodel(bad1)
 
 	# Missing required headers
 	bad2 = params.write_temp_file("#format: ra dec\n0 0\n")
 	with pytest.raises(ASCIISkymodelError):
-		ASCIISkyModel(bad2)
+		ASCIISkymodel(bad2)
 
 	# Row length mismatch
 	bad3 = params.write_temp_file("#format: ra dec stokes_i\n0 0\n")
 	with pytest.raises(ASCIISkymodelError):
-		ASCIISkyModel(bad3)
+		ASCIISkymodel(bad3)
 
 
 def test_skymodel_parsing_space_delimited(params):
@@ -183,7 +187,7 @@ def test_skymodel_parsing_space_delimited(params):
 """.strip()
 	path = params.write_temp_file(content)
 
-	model = ASCIISkyModel(path)
+	model = ASCIISkymodel(path)
 	assert len(model.sources) == 2
 
 	s1, s2 = model.sources
@@ -236,7 +240,7 @@ def test_skymodel_parsing_csv_with_alias(params):
 	])
 	data_path = params.write_temp_file(csv_content, suffix=".csv")
 
-	model = ASCIISkyModel(data_path, delimiter=",", source_schema_file=schema_path)
+	model = ASCIISkymodel(data_path, delimiter=",", source_schema_file=schema_path)
 	assert len(model.sources) == 2
 
 	s0, s1 = model.sources

@@ -1,4 +1,5 @@
-info: "Mapper for WSClean sources: maps WSClean catalogue columns to the simms sky model schema using the 'alias' fields. Use with the --mapping option of simms skysim."
+info: "Mapper for WSClean sources: maps WSClean catalogue columns to the simms sky model schema using the 'alias' fields.
+      Use with the --mapping option of simms skysim."
 
 parameters:
   name:

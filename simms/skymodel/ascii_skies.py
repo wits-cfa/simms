@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import astropy.units as aunits
+import numpy as np
 from astropy.coordinates import (
     Angle,
     Latitude,
@@ -16,18 +17,29 @@ from scabha.cargo import Parameter
 from simms import SCHEMADIR
 from simms.exceptions import (
     ASCIISkymodelError,
-    ASCIISourceError,
+)
+from simms.skymodel.source_factory import (
+    StokesData,
+    continuum_source,
+    contspec,
+    exoplanet_transient_logistic,
+    exoplanet_transient_source,
+    gauss_1d,
+    gaussian_source,
+    line_source,
+    point_source,
+    polarised_source,
 )
 from simms.utilities import ObjDict, quantity_to_value
 
-DEFAULT_SOURCE_SCHEMA = os.path.join(SCHEMADIR, "skymodel_schema.yaml")
+DEFAULT_SOURCE_SCHEMA = os.path.join(SCHEMADIR, "source_schema.yaml")
 
 PTYPE_MAPPER = {
-    # converter, default units, null_value
+    # parameter type: (converter, default, units, null_value)
     "longitude": (Longitude, "rad", None),
     "latitude": (Latitude, "rad", None),
     "angle" : (Angle, "rad", 0),
-    "frequency":  (SpectralCoord, "Hz", None),
+    "frequency": (SpectralCoord, "Hz", None),
     "number": (aunits.Quantity, None, None),
     "flux": (aunits.Quantity, "Jy", None),
     "time": (aunits.Quantity, "s", None),
@@ -134,38 +146,92 @@ class ASCIISource:
         return mapper
 
     def finalise(self):
-        self.is_point = {"emaj", "emin"}.isdisjoint(self.existing_fields)
+        fields = self.existing_fields
+        # If the source is not a valid point source, it's not a valid source
+        point_source.is_valid(fields, raise_exception=True)
 
-        self.is_polarised =  len(set([f"stokes_{i}" for i in "iquv"]).intersection(self.existing_fields)) > 1
-
-        req_trans_flds = {"transient_start", "transient_period", "transient_ingress", "transient_absorb"}
-        # this retturns the required fields that are not in existing_field
-        missing_trans_flds = req_trans_flds - set(self.existing_fields)
+        self.is_point = not gaussian_source.is_valid(fields)
         
-        # if missing fields are the same as the required, then there's no intersection
-        # and no required transient fields are set. This is not a transient source
-        if missing_trans_flds == req_trans_flds:
-            self.is_transient = False
-        # if missing fields are not empty at this point, some required fields are set but not all
-        # transient source are all-or-nothing here, so raise an error
-        elif missing_trans_flds:
-            raise ASCIISourceError(
-                "Transient source specification is missing required parameter(s):"f" {', '.join(missing_trans_flds)}"
-                )
-        # if we get to this point, then the required fields are a subset of existing_fields
-        # this is a transient
+        self.is_polarised = polarised_source.is_valid(fields)
+
+        self.is_line = line_source.is_valid(fields)
+
+        self.is_continuum = continuum_source.is_valid(fields)
+
+        self.is_transient = self.is_exoplanet_transient = exoplanet_transient_source.is_valid(fields, none_or_all=True)
+
+    def value_or_default(self, field):
+        
+        val =  getattr(self, field, None)
+        if val is None:
+            param = getattr(self.parameters, field)
+            param.set_value(None)
+            val = param.value
+
+        return val
+
+    def get_brightness_matrix(self, chan_freqs: np.ndarray, ncorr: int, unique_times:np.ndarray = None,
+                    time_index_mapper:np.ndarray = None,
+                    full_stokes: bool = True,
+                    linear_basis:bool = True):
+        """Populate self.stokes and polarisation flag from stokes_i/q/u/v.
+
+        Builds a StokesData vector from stokes_i, stokes_q, stokes_u, and stokes_v
+        (missing components default to 0). Sets self.is_polarised to True if more
+        than one component is provided.
+
+        Args:
+            linear_basis: Whether to use the linear polarisation basis; forwarded to
+                StokesData.
+
+        """
+        self.stokes = StokesData([getattr(self, f"stokes_{x}", 0) for x in "iquv"], linear_basis=linear_basis)
+        if self.is_line:
+            specfunc = gauss_1d
+            kwargs = {
+                "x0": self.line_peak,
+                "width": self.line_width,
+            }
+        elif self.is_continuum:
+            specfunc = contspec
+            kwargs = {
+                "coeff": [
+                    self.value_or_default("cont_coeff_1"),
+                    self.value_or_default("cont_coeff_2"),
+                    self.value_or_default("cont_coeff_3"),
+                    ],
+                "nu_ref": self.value_or_default("cont_reffreq"),
+            }
+
+        self.stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
+        if self.is_transient:
+            lightcurve_func = exoplanet_transient_logistic
+            t0 = unique_times.min()
+            unique_times_rel = unique_times - t0
+            kwargs = {
+                "start_time": unique_times_rel.min(),
+                "end_time": unique_times_rel.max(),
+                "ntimes": unique_times_rel.shape[0],
+                "transient_start": self.value_or_default("transient_start"),
+                "transient_period": self.value_or_default("transient_period"),
+                "transient_ingress": self.value_or_default("self.transient_ingress"),
+                "transient_absorb": self.value_or_default("transient_absorb"),
+            }
+            self.stokes.set_lightcurve(lightcurve_func, **kwargs)
+            return self.stokes.get_brightness_matrix(ncorr)[:, time_index_mapper, ...]
         else:
-            self.is_transient = True
+            return self.stokes.get_brightness_matrix(ncorr)
 
 
 @dataclass
-class ASCIISkyModel:
+class ASCIISkymodel:
     skymodel_file: str|File
     delimiter:str = None
-    source_schema_file: str|File = File(DEFAULT_SOURCE_SCHEMA)
+    source_schema_file: str|File = None
     sources: List[ASCIISource] = None
 
     def __post_init__(self):
+        self.source_schema_file = self.source_schema_file or File(DEFAULT_SOURCE_SCHEMA)
         schema = OmegaConf.load(self.source_schema_file)
         self.schema = ASCIISourceSchema(**schema)
         sources = []
@@ -211,5 +277,29 @@ class ASCIISkyModel:
                 # source has been fully set, finalise and add it to rest of the sources
                 source.finalise()
                 sources.append(source)
-        
+
         self.sources = sources
+        
+    def _has_source_type(self, source_type:str):
+        has_it = False
+        for source in self.sources:
+            if getattr(source, f"is_{source_type}", False):
+                has_it = True
+                break
+        return has_it
+    
+    @property
+    def has_transient(self):
+        return self._has_source_type("transient")
+    
+    @property
+    def has_exoplanet_transient(self):
+        return self._has_source_type("exoplanet_transient")
+
+    @property
+    def has_line_source(self):
+        return self._has_source_type("line")
+
+    @property
+    def has_continuum_source(self):
+        return self._has_source_type("continuum")

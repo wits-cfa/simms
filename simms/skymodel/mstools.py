@@ -6,8 +6,8 @@ from daskms import xds_from_ms, xds_from_table
 from ducc0.wgridder import dirty2ms
 from scabha.basetypes import MS
 
-from simms.skymodel.converters import radec2lm
-from simms.skymodel.source_factory import Source
+from simms.skymodel.ascii_skies import ASCIISkymodel
+from simms.utilities import radec2lm
 
 
 def vis_noise_from_sefd_and_ms(ms: Union[MS, str], sefd: float, spw_id: int = 0, field_id: int = 0):
@@ -127,7 +127,7 @@ def fft_im_to_vis(
 
 
 def compute_vis(
-    sources: List[Source],
+    skymodel: ASCIISkymodel,
     uvw: np.ndarray,
     freqs: np.ndarray,
     times: np.ndarray = None,
@@ -186,14 +186,17 @@ def compute_vis(
     vis_yx = 0
     vis_yy = 0
 
-    for source in sources:
+    if skymodel.has_transient:
+        if isinstance(times, type(None)):
+            raise ValueError("parameter 'times' must be provided for skymodels with transient source")
+        unique_times, time_index_mapper = np.unique(times, return_inverse=True)
+    else:
+        unique_times = time_index_mapper = None
+
+    for source in skymodel.sources:
         phase = calculate_phase_factor(source)
-        bmatrix = source.stokes.get_brightness_matrix(ncorr, pol_basis == "linear")
-        if source.is_transient:
-            if isinstance(times, type(None)):
-                raise ValueError("Times must be provided for transient sources")
-            _, time_index_mapper = np.unique(times, return_inverse=True)
-            bmatrix = bmatrix[:, time_index_mapper, ...]
+        bmatrix = source.get_brightness_matrix(freqs, ncorr, unique_times=unique_times,
+                                            time_index_mapper=time_index_mapper, linear_basis=pol_basis == "linear")
         vis_xx += bmatrix[0, ...] * phase
         if ncorr == 2:
             if polarisation:
