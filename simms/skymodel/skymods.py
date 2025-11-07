@@ -336,8 +336,6 @@ def skymodel_from_fits(
             log.info(
                 f"More than 80% of pixels have intensity < {(tol * 1e6):.2f} μJy. "
                 "DFT will be used for visibility prediction."
-                f"More than 80% of pixels have intensity < {(tol * 1e6):.2f} μJy. "
-                "DFT will be used for visibility prediction."
             )
             use_dft = True
             non_zero_lm = compute_lm_coords(
