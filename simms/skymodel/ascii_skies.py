@@ -35,10 +35,10 @@ from simms.utilities import ObjDict, quantity_to_value
 DEFAULT_SOURCE_SCHEMA = os.path.join(SCHEMADIR, "source_schema.yaml")
 
 PTYPE_MAPPER = {
-    # parameter type: (converter, default, units, null_value)
+    # parameter type: (converter, default_units, null_value)
     "longitude": (Longitude, "rad", None),
     "latitude": (Latitude, "rad", None),
-    "angle" : (Angle, "rad", 0),
+    "angle": (Angle, "rad", 0),
     "frequency": (SpectralCoord, "Hz", None),
     "number": (aunits.Quantity, None, None),
     "flux": (aunits.Quantity, "Jy", None),
@@ -54,9 +54,9 @@ class SkymodelParameter(Parameter):
     alias: Optional[str] = None
     ptype: Optional[str] = "number"
     frame: Optional[str] = None
-    required: Optional[bool] = False 
+    required: Optional[bool] = False
 
-    def set_value(self, value:str|float|int):
+    def set_value(self, value: str | float | int):
         """Set and convert the parameter value to the appropriate type and units.
 
         This method takes a value in various formats (string, float, or int) and converts it
@@ -73,8 +73,7 @@ class SkymodelParameter(Parameter):
             determined by the PTYPE_MAPPER for this parameter's ptype.
         """
         ptype_coord, target_units, null_value = PTYPE_MAPPER[self.ptype]
-        self.value = quantity_to_value(ptype_coord, value, self.units, target_units=target_units,
-                                    null_value=null_value)
+        self.value = quantity_to_value(ptype_coord, value, self.units, target_units=target_units, null_value=null_value)
 
 
 @dataclass
@@ -88,7 +87,6 @@ class ASCIISource:
     schema: ASCIISourceSchema
 
     def __post_init__(self):
-    
         parameters = {}
 
         # use this struct to set dataclass defaults defaults
@@ -101,7 +99,7 @@ class ASCIISource:
         self.existing_fields = []
         self.is_finalised = False
 
-    def set_source_param(self, field:str, value:str|float|int):
+    def set_source_param(self, field: str, value: str | float | int):
         """Set a parameter value for the current source.
 
         This method updates a specific field of the current source with the provided value.
@@ -109,13 +107,13 @@ class ASCIISource:
         to the appropriate type if necessary.
 
         Args:
-            field (str): The name of the source parameter field to set (e.g., 'ra', 'dec', 
+            field (str): The name of the source parameter field to set (e.g., 'ra', 'dec',
                          'flux', 'name'). Must correspond to a valid source attribute.
-            value (str | float | int): The value to assign to the specified field. 
+            value (str | float | int): The value to assign to the specified field.
                                        Type will be validated against the field requirements.
 
         Raises:
-            CatalogueError: If the field name is invalid, the value type is incompatible 
+            CatalogueError: If the field name is invalid, the value type is incompatible
                             with the field, or if no source is currently active.
 
         Returns:
@@ -125,19 +123,20 @@ class ASCIISource:
         param.set_value(value)
         setattr(self, field, param.value)
         self.existing_fields.append(field)
-    
+
     def required_fields(self):
-        return list(filter(
-            lambda item: getattr(self.schema.parameters[item], "required", False),
-            self.schema.parameters,
-        ))
-    
+        return list(
+            filter(
+                lambda item: getattr(self.schema.parameters[item], "required", False),
+                self.schema.parameters,
+            )
+        )
+
     def alias_to_field_mapper(self):
         mapper = OmegaConf.create({})
         for key, val in self.schema.parameters.items():
             mapper[getattr(val, "alias", None) or key] = key
         return mapper
-
 
     def field_to_alias_mapper(self):
         mapper = OmegaConf.create({})
@@ -151,7 +150,7 @@ class ASCIISource:
         point_source.is_valid(fields, raise_exception=True)
 
         self.is_point = not gaussian_source.is_valid(fields)
-        
+
         self.is_polarised = polarised_source.is_valid(fields)
 
         self.is_line = line_source.is_valid(fields)
@@ -161,8 +160,7 @@ class ASCIISource:
         self.is_transient = self.is_exoplanet_transient = exoplanet_transient_source.is_valid(fields, none_or_all=True)
 
     def value_or_default(self, field):
-        
-        val =  getattr(self, field, None)
+        val = getattr(self, field, None)
         if val is None:
             param = getattr(self.parameters, field)
             param.set_value(None)
@@ -170,10 +168,15 @@ class ASCIISource:
 
         return val
 
-    def get_brightness_matrix(self, chan_freqs: np.ndarray, ncorr: int, unique_times:np.ndarray = None,
-                    time_index_mapper:np.ndarray = None,
-                    full_stokes: bool = True,
-                    linear_basis:bool = True):
+    def get_brightness_matrix(
+        self,
+        chan_freqs: np.ndarray,
+        ncorr: int,
+        unique_times: np.ndarray = None,
+        time_index_mapper: np.ndarray = None,
+        full_stokes: bool = True,
+        linear_basis: bool = True,
+    ):
         """Populate self.stokes and polarisation flag from stokes_i/q/u/v.
 
         Builds a StokesData vector from stokes_i, stokes_q, stokes_u, and stokes_v
@@ -199,7 +202,7 @@ class ASCIISource:
                     self.value_or_default("cont_coeff_1"),
                     self.value_or_default("cont_coeff_2"),
                     self.value_or_default("cont_coeff_3"),
-                    ],
+                ],
                 "nu_ref": self.value_or_default("cont_reffreq"),
             }
 
@@ -225,9 +228,9 @@ class ASCIISource:
 
 @dataclass
 class ASCIISkymodel:
-    skymodel_file: str|File
-    delimiter:str = None
-    source_schema_file: str|File = None
+    skymodel_file: str | File
+    delimiter: str = None
+    source_schema_file: str | File = None
     sources: List[ASCIISource] = None
 
     def __post_init__(self):
@@ -242,7 +245,7 @@ class ASCIISkymodel:
         alias_to_field = dummy_source.alias_to_field_mapper()
 
         required_fields = [field_to_alias[field] for field in dummy_source.required_fields()]
-    
+
         with open(self.skymodel_file) as stdr:
             line = stdr.readline().strip()
 
@@ -251,10 +254,11 @@ class ASCIISkymodel:
 
             header = line.strip().replace("#format:", "").strip().split(self.delimiter)
 
-            missing_required  = set(required_fields) - set(header)
+            missing_required = set(required_fields) - set(header)
             if missing_required:
-                raise ASCIISkymodelError("ASCII Sky model file header is missig required field(s): "
-                                         f"{', '.join(missing_required)}")
+                raise ASCIISkymodelError(
+                    f"ASCII Sky model file header is missig required field(s): {', '.join(missing_required)}"
+                )
 
             for counter, line in enumerate(stdr.readlines()):
                 # skip lines that are commented
@@ -267,10 +271,10 @@ class ASCIISkymodel:
                 elif len(rowdata) != len(header):
                     # plus 2 because header line is not counted (+1), and python starts counting at 0 (+1)
                     raise ASCIISkymodelError(
-                        f"The number of columns in row {counter+2} rows does not match the number of"
+                        f"The number of columns in row {counter + 2} rows does not match the number of"
                         " the number of columns in the header"
-                        )
-                
+                    )
+
                 source = ASCIISource(self.schema)
                 for param, value in zip(header, rowdata):
                     source.set_source_param(alias_to_field[param], value)
@@ -279,19 +283,19 @@ class ASCIISkymodel:
                 sources.append(source)
 
         self.sources = sources
-        
-    def _has_source_type(self, source_type:str):
+
+    def _has_source_type(self, source_type: str):
         has_it = False
         for source in self.sources:
             if getattr(source, f"is_{source_type}", False):
                 has_it = True
                 break
         return has_it
-    
+
     @property
     def has_transient(self):
         return self._has_source_type("transient")
-    
+
     @property
     def has_exoplanet_transient(self):
         return self._has_source_type("exoplanet_transient")
