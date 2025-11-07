@@ -130,17 +130,17 @@ cabs:
         dtype: str
         required: yes
         abbreviation: tel
-      subarray_list: 
+      subarray-list: 
         info: Custom list of antennas to use, e.g., M000,M005,SKA009. If specified, this must be a subarray of the given telescope.
         dtype: List[str]
         required: no
         abbreviation: sublist
-      subarray_range:
+      subarray-range:
         info: Custom range of antennas indices to use, e.g. start,end,step where step is optional. If specified, this must be a subarray of the given telescope.
         dtype: List[int]
         required: no
         abbreviation: subrange
-      subarray_file:
+      subarray-file:
         info: File with list of custom antennas to use, e.g., /path/to/subarray.yaml. File should contain antnames key, e.g., [M000,M005,SKA009]. This must be a subarray of the given telescope.
         dtype: File
         required: no
@@ -207,30 +207,30 @@ cabs:
       sefd:
         info: Antenna SEFD (one value for all frequencies)
         dtype: float
-      tsys_over_eta:
+      tsys-over-eta:
         info: Antenna system temperature over aperture efficiency (one value for all frequecies) 
         dtype: float
         abbreviation: tos
-      sensitivity_file: 
+      sensitivity-file: 
         info: File with antenna spectral sensivity information. Allowed keys (column names) are 'freq, tsys, sefd, tsys_over_eta'
         dtype: File 
         abbreviation: sfile
-      low_source_limit:
+      low-source-limit:
         info: Minimum source elevation in degrees that is considered reliable data. The data recorded when the source is below this value is flagged.
         dtype: float
         abbreviation: lsl
-      high_source_limit:
+      high-source-limit:
         info: Maximum source elevation in degrees that is considered reliable data. The data recorded when the source is above this value is flagged.
         dtype: float
         abbreviation: hsl
-      freq_range:
+      freq-range:
         info: A list containing the start frequency, end frequency, and number of channels, e.g., startfreq,endfreq,nchan.
         dtype: str
         abbreviation: fr
       smooth: 
         info: If you have provided a sensitivity file with frequencies and their corresponding sefd or tsys_over_eta, then we will fit to get the approximate sefd matching the MS frequencies. There are two fitting options, polyn and spline.
         dtype: str
-      fit_order:
+      fit-order:
         info: The fitting order to use when approximating the MS frequencies SEFDs. 
         dtype: int
         abbreviation: fo
