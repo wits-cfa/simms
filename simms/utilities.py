@@ -4,7 +4,7 @@ from typing import Callable, List, Union
 
 import numpy as np
 from astropy import units
-from numba import njit
+from numba import njit, prange
 
 from simms.exceptions import SkymodelSchemaError
 
@@ -35,7 +35,7 @@ def is_numeric(string):
 
 
 @njit
-def radec2lm(ra0: float, dec0: float, ra: float|np.ndarray, dec: float|np.ndarray):
+def radec2lm(ra0: float, dec0: float, ra: float | np.ndarray, dec: float | np.ndarray):
     """
     Convert (RA, Dec) to direction cosine coordinates (l,m)
 
@@ -62,14 +62,13 @@ def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.
     n_pix_l = len(ra_coords)
     n_pix_m = len(dec_coords)
     lm = np.zeros((n_pix_l, n_pix_m, 2), dtype=np.float64)
-    for i in njit.prange(len(ra_coords)):
-        for j in range(len(dec_coords)):
+    for i in prange(n_pix_l):
+        for j in range(n_pix_m):
             l_coords, m_coords = radec2lm(ra0, dec0, ra_coords[i], dec_coords[j])
             lm[i, j, 0] = l_coords
             lm[i, j, 1] = m_coords
 
     return lm
-
 
 
 def get_noise(sefds: Union[List, float], dtime: int, dfreq: float):
@@ -127,8 +126,13 @@ def is_range_in_range(inner_range, outer_range):
     return is_start_within and is_end_within
 
 
-def quantity_to_value(coord:Callable|NoneType, value:str|int|float, val_units:str=None,
-                    target_units:str=None, null_value=None) -> int|float:
+def quantity_to_value(
+    coord: Callable | NoneType,
+    value: str | int | float,
+    val_units: str = None,
+    target_units: str = None,
+    null_value=None,
+) -> int | float:
     """
     Converts a value (string or numeric) with units to a float or int in the target units.
 
@@ -146,10 +150,10 @@ def quantity_to_value(coord:Callable|NoneType, value:str|int|float, val_units:st
     if value in [None, "null"]:
         return null_value
 
-    if isinstance(value, float|int):
+    if isinstance(value, float | int):
         if val_units:
             try:
-                 quant_value =  value*getattr(units, val_units)
+                quant_value = value * getattr(units, val_units)
             except AttributeError:
                 raise SkymodelSchemaError("Unknown parameter units '{val_units}'")
         else:

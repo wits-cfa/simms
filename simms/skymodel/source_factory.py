@@ -16,7 +16,6 @@ class SourceType:
     inherit: Any = None
     surplus: List[str] = EmptyListDefault()
 
-
     def __post_init__(self):
         parent = getattr(self, "inherit", None)
         from_parent = []
@@ -36,20 +35,18 @@ class SourceType:
         for conds in self.cond_reqs:
             self.cond_req_groups.append(conds.split("|"))
 
-
-    def is_valid(self, fields: List[str], raise_exception:bool = False, none_or_all:bool =False):
-
+    def is_valid(self, fields: List[str], raise_exception: bool = False, none_or_all: bool = False):
         # this removes fields that are in abs_reqs
         missing_abs_req = list(set(self.abs_reqs) - set(fields))
         fields_no_abs_reqs = set(fields) - set(self.abs_reqs)
-        
+
         missing_cond_reqs = []
         missing_cond_reqs_flat = []
         # now remove fields in the conditional groups
         for group in self.cond_req_groups:
             # if one exists, remove the full group
             if fields_no_abs_reqs.isdisjoint(group):
-                missing_cond_reqs.append('|'.join(group))
+                missing_cond_reqs.append("|".join(group))
                 missing_cond_reqs_flat + group
 
         missing = missing_abs_req + missing_cond_reqs
@@ -67,36 +64,51 @@ class SourceType:
     def __str__(self):
         required = f"\nRequired fields: {self.required}"
         surplus = f"\nOptional fields: {self.surplus}" if self.surplus else ""
-    
+
         return f"Simms sky model source type: {self.name}" + required + surplus
 
+
 # These are are the supported source types
-point_source = SourceType("Point Source", required=["ra", "dec", "stokes_i|stokes_q|stokes_u|stokes_v"])
+point_source = SourceType(
+    "Point Source", required=["ra|ra_h|ra_m|ra_s", "dec|dec_d|dec_m|dec_s", "stokes_i|stokes_q|stokes_u|stokes_v"]
+)
 gaussian_source = SourceType("Gaussian Source", inherit=point_source, required=["emaj|emin"], surplus=["pa"])
-continuum_source = SourceType("Continuum Source", inherit=point_source, required=[], 
-                                surplus=["cont_ref_freq", "cont_coeff_1", "cont_coeff_2", "cont_coeff_3"])
-line_source = SourceType("Spectral Line Source", inherit=point_source, required=["line_peak", 
-                                "line_ref_freq|line_redshift"],
-                                surplus=["line_width"])
+continuum_source = SourceType(
+    "Continuum Source",
+    inherit=point_source,
+    required=[],
+    surplus=["cont_ref_freq", "cont_coeff_1", "cont_coeff_2", "cont_coeff_3"],
+)
+line_source = SourceType(
+    "Spectral Line Source",
+    inherit=point_source,
+    required=["line_peak", "line_ref_freq|line_redshift"],
+    surplus=["line_width"],
+)
 polarised_source = SourceType("Polarised Source", inherit=point_source, required=["stokes_q|stokes_u|stokes_v"])
-exoplanet_transient_source = SourceType("Exoplanet Transient Source", inherit=point_source, required=[
-        "transient_start", 
+exoplanet_transient_source = SourceType(
+    "Exoplanet Transient Source",
+    inherit=point_source,
+    required=[
+        "transient_start",
         "transient_period",
         "transient_ingress",
         "transient_absorb",
-])
+    ],
+)
+
 
 @dataclass
 class StokesData:
     """
-        Object that holds a source/image intensity (stokes data)
+    Object that holds a source/image intensity (stokes data)
 
-        Args:
-            data (List): List of stokes parameter data.
-            linear_basis (bool, optional): Is the stokes data in a linear basis? Defaults to True.
+    Args:
+        data (List): List of stokes parameter data.
+        linear_basis (bool, optional): Is the stokes data in a linear basis? Defaults to True.
     """
 
-    data:List[int] | np.ndarray
+    data: List[int] | np.ndarray
     linear_basis: Optional[bool] = True
 
     def __post_init__(self):
@@ -240,7 +252,7 @@ class StokesData:
 
 
 class StokesDataFits(StokesData):
-    def __init__(self, coord: xr.DataArray, dim_idx: int, data: np.ndarray):
+    def __init__(self, coord: xr.DataArray, dim_idx: int, data: np.ndarray, linear_basis: bool = True):
         """_summary_
 
         Args:
@@ -254,6 +266,7 @@ class StokesDataFits(StokesData):
         self.idx = dim_idx
         ndim = len(data.shape)
         self.__dslice__ = [slice(None)] * ndim
+        self.linear_basis = linear_basis
 
     def __stokes_x__(self, x: str):
         """Get intensity data for stokes parameter x = I|Q|U|V
@@ -285,7 +298,7 @@ class StokesDataFits(StokesData):
         return self.nstokes > 1
 
 
-def contspec(freqs: np.ndarray, flux: float | np.ndarray | List, coeff: float, nu_ref: float):
+def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | List, nu_ref: float):
     """
     Returns a contiuum (power law) spectral profile
 

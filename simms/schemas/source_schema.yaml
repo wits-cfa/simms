@@ -1,6 +1,6 @@
 info: These are the default parameter names and units for simms skymodel specifcation. But you can use your 
-      sky model specifcation by setting the 'alias' field of the relevant parameter, then parsing your modified file 
-      to the '--mapping' option of the 'simms skysim' command. The units given via the 'units' field must
+      own specifcation by setting the 'alias' field of the relevant parameter, then parsing your modified file 
+      to the '--source-schema' option of the 'simms skysim' command. The units given via the 'units' field must
       folow the 'astropy.units' naming convention.
 
 parameters:
@@ -14,13 +14,43 @@ parameters:
     alias: null
     units: deg
     ptype: longitude
-    required: true
+    join: [ra_h, ra_m, ra_s]
+  ra_h:
+    info: Right ascension
+    alias: null
+    units: hour
+    ptype: longitude
+  ra_m:
+    info: Right ascension
+    alias: null
+    units: min
+    ptype: longitude
+  ra_s:
+    info: Right ascension
+    alias: null
+    units: sec
+    ptype: longitude
   dec:
     info: Declination
     alias: null
     units: deg
     ptype: latitude
-    required: true
+    join: [dec_d, dec_m, dec_s]
+  dec_d:
+    info: Right ascension
+    alias: null
+    units: deg
+    ptype: longitude
+  dec_m:
+    info: Right ascension
+    alias: null
+    units: arcmin
+    ptype: longitude
+  dec_s:
+    info: Right ascension
+    alias: null
+    units: arcsec
+    ptype: longitude
   stokes_i: 
     info: Stokes I
     alias: null

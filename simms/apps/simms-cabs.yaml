@@ -88,7 +88,7 @@ cabs:
       ascii-species:
         info: Non-simms sky model type. 
         dtype: str
-        abbreviation: as
+        abbreviation: asp
         choices: [bdsf_gaul, aegean, wsclean]
       input-column:
         info: Input column (see option --mode)

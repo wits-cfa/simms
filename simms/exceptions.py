@@ -13,8 +13,10 @@ class FITSSkymodelError(Exception):
 class ParameterError(Exception):
     pass
 
+
 class ASCIISkymodelError(Exception):
     pass
+
 
 class SkymodelSchemaError(AttributeError):
     pass

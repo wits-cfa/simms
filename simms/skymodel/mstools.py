@@ -133,7 +133,7 @@ def compute_vis(
     times: np.ndarray = None,
     ncorr: int = 2,
     polarisation: bool = False,
-    pol_basis: str = "linear",
+    linear_basis: bool = True,
     ra0: float = None,
     dec0: float = None,
     noise_vis: Optional[float] = None,
@@ -156,7 +156,6 @@ def compute_vis(
     Returns:
         vis (numpy.ndarray):        Visibility array of shape (nrows, nchan, ncorr)
     """
-
     wavs = 2.99e8 / freqs
     uvw_scaled = uvw.T[..., np.newaxis] / wavs
 
@@ -195,8 +194,13 @@ def compute_vis(
 
     for source in skymodel.sources:
         phase = calculate_phase_factor(source)
-        bmatrix = source.get_brightness_matrix(freqs, ncorr, unique_times=unique_times,
-                                            time_index_mapper=time_index_mapper, linear_basis=pol_basis == "linear")
+        bmatrix = source.get_brightness_matrix(
+            freqs,
+            ncorr,
+            unique_times=unique_times,
+            time_index_mapper=time_index_mapper,
+            linear_basis=linear_basis,
+        )
         vis_xx += bmatrix[0, ...] * phase
         if ncorr == 2:
             if polarisation:

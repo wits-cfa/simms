@@ -50,10 +50,11 @@ def runit(opts):
     freqs = spw_ds.CHAN_FREQ.data[opts.spw_id].compute()
     dfreq = spw_ds.CHAN_WIDTH.data[opts.spw_id][0].compute()
     ncorr = msds.DATA.data.shape[-1]
+    linear_basis = opts.pol_basis == "linear"
 
     if ascii_sky:
         if opts.source_schema and opts.ascii_species:
-            raise ParameterError("Cannot use custom map and built-in map simultaneously")
+            raise RuntimeError("Cannot use custom map and built-in map simultaneously")
         elif opts.source_schema:
             source_schema = opts.source_schema
         elif opts.ascii_species:
@@ -61,22 +62,24 @@ def runit(opts):
         else:
             source_schema = f"{SCHEMADIR}/source_schema.yaml"
 
-        skymodel = ASCIISkymodel(ascii_sky, delimiter=opts.ascci_delimiter, source_schema_file=source_schema)
-        times_var = (msds.TIME.data, ("row", )) if skymodel.has_transient else (None, (None,))
+        skymodel = ASCIISkymodel(ascii_sky, delimiter=opts.ascii_delimiter, source_schema_file=source_schema)
+        times_var = msds.TIME.data, ("row",) if skymodel.has_transient else None, (None,)
+
+        def compute_vis_sky(*args, **kwargs):
+            return compute_vis(skymodel, *args, **kwargs)
 
         simvis = da.blockwise(
-            compute_vis,
+            compute_vis_sky,
             ("row", "chan", "corr"),
-            skymodel,
-            ("source",),
             msds.UVW.data,
             ("row", "uvw"),
             freqs,
             ("chan",),
-            times_var,
+            times_var[0],
+            times_var[1],
             ncorr=ncorr,
             polarisation=opts.polarisation,
-            pol_basis=opts.pol_basis,
+            linear_basis=linear_basis,
             noise_vis=vis_noise,
             ra0=ra0,
             dec0=dec0,
@@ -84,6 +87,7 @@ def runit(opts):
             dtype=msds.DATA.data.dtype,
             concatenate=True,
         )
+
     # TODO(Sphe,Senkhosi) This is too taylored to a specific use case and input file schema.
     # We need more generic API for handling multiple FITS images as input.
     # Something like we do in skymods.skymodel_from_fits(stack_axis)
@@ -97,19 +101,27 @@ def runit(opts):
                     fs.append(glob(f"{fs}/*U.fits")[0])
                     fs.append(glob(f"{fs}/*V.fits")[0])
                 except IndexError:
-                    raise ParameterError("Could not find all required FITS files in the specified directory")
+                    raise RuntimeError("Could not find all required FITS files in the specified directory")
 
                 if len(fs) > 4:
-                    raise ParameterError("Too many FITS files found in the specified directory")
+                    raise RuntimeError("Too many FITS files found in the specified directory")
 
             elif not fs.endswith(".fits"):
-                raise ParameterError("Invalid FITS file specified")
+                raise IOError("Invalid FITS file specified")
         else:
-            raise ParameterError("FITS file/directory does not exist")
+            raise FileNotFoundError("FITS file/directory does not exist")
 
         # process FITS sky model
         predict = skymodel_from_fits(
-            fs, ra0, dec0, freqs, dfreq, ncorr, opts.pol_basis, tol=opts.pixel_tol, interpolation=opts.fits_sky_interp
+            fs,
+            ra0,
+            dec0,
+            freqs,
+            dfreq,
+            ncorr,
+            linear_basis=linear_basis,
+            tol=opts.pixel_tol,
+            interpolation=opts.fits_sky_interp,
         )
 
         dtype = np.finfo(predict.image.dtype).dtype

@@ -18,9 +18,9 @@ def compute_lm_coords(
     phase_centre: np.ndarray,
     n_ra: float,
     n_dec: float,
-    ra_coords: Optional[np.ndarray] = None,
-    dec_coords: Optional[np.ndarray] = None,
-    tol_mask: Optional[np.ndarray] = None,
+    ra_coords: np.ndarray = None,
+    dec_coords: np.ndarray = None,
+    tol_mask: np.ndarray = None,
 ):
     """
     Calculates pixel (l, m) coordinates
@@ -45,7 +45,7 @@ def skymodel_from_fits(
     chan_freqs: np.ndarray,
     ms_delta_nu: float,
     ncorr: int,
-    basis: str,
+    linear_basis: bool = True,
     tol: float = 1e-7,
     use_dft: Optional[bool] = None,
     stack_axis="STOKES",
@@ -222,10 +222,10 @@ def skymodel_from_fits(
     else:
         expand_freq_dim = nchan > 1
 
-    skymodel = StokesDataFits(fds.coords["STOKES"], dim_idx=0, data=skymodel)
+    skymodel = StokesDataFits(fds.coords["STOKES"], dim_idx=0, data=skymodel, linear_basis=linear_basis)
     # The stokes parameters in this class will be transposed to the correct basis.
 
-    predict_image = skymodel.get_brightness_matrix(ncorr, linear_pol_basis=basis == "linear")
+    predict_image = skymodel.get_brightness_matrix(ncorr)
     predict_nchan = 1 if expand_freq_dim else nchan
     # first transpose stokes axis to the end,
     predict_image = np.transpose(predict_image, (1, 2, 3, 0))

@@ -41,7 +41,7 @@ PTYPE_MAPPER = {
     "angle": (Angle, "rad", 0),
     "frequency": (SpectralCoord, "Hz", None),
     "number": (aunits.Quantity, None, None),
-    "flux": (aunits.Quantity, "Jy", None),
+    "flux": (aunits.Quantity, "Jy", 0),
     "time": (aunits.Quantity, "s", None),
     "string": (str, None, ""),
 }
@@ -55,6 +55,7 @@ class SkymodelParameter(Parameter):
     ptype: Optional[str] = "number"
     frame: Optional[str] = None
     required: Optional[bool] = False
+    join: Optional[List[str]] = None
 
     def set_value(self, value: str | float | int):
         """Set and convert the parameter value to the appropriate type and units.
@@ -159,6 +160,12 @@ class ASCIISource:
 
         self.is_transient = self.is_exoplanet_transient = exoplanet_transient_source.is_valid(fields, none_or_all=True)
 
+        for field, param in self.parameters.items():
+            if getattr(param, "join", []) and field not in fields:
+                join_us = param.join
+                joined = np.sum([getattr(self, key, 0) for key in join_us])
+                setattr(self, field, joined)
+
     def value_or_default(self, field):
         val = getattr(self, field, None)
         if val is None:
@@ -192,8 +199,8 @@ class ASCIISource:
         if self.is_line:
             specfunc = gauss_1d
             kwargs = {
-                "x0": self.line_peak,
-                "width": self.line_width,
+                "x0": self.value_or_default("line_peak"),
+                "width": self.value_or_default("line_width"),
             }
         elif self.is_continuum:
             specfunc = contspec
@@ -241,10 +248,11 @@ class ASCIISkymodel:
 
         # make a dummy source for some book keeping
         dummy_source = ASCIISource(self.schema)
-        field_to_alias = dummy_source.field_to_alias_mapper()
+        # field_to_alias = dummy_source.field_to_alias_mapper()
         alias_to_field = dummy_source.alias_to_field_mapper()
 
-        required_fields = [field_to_alias[field] for field in dummy_source.required_fields()]
+        # update to account for ra set as h,m,s
+        # required_fields = point_source.required
 
         with open(self.skymodel_file) as stdr:
             line = stdr.readline().strip()
@@ -254,11 +262,9 @@ class ASCIISkymodel:
 
             header = line.strip().replace("#format:", "").strip().split(self.delimiter)
 
-            missing_required = set(required_fields) - set(header)
-            if missing_required:
-                raise ASCIISkymodelError(
-                    f"ASCII Sky model file header is missig required field(s): {', '.join(missing_required)}"
-                )
+            point_source.is_valid(fields=[alias_to_field[key] for key in header], raise_exception=True)
+            #    raise ASCIISkymodelError(
+            #        f"ASCII Sky model file header is missig required fields")
 
             for counter, line in enumerate(stdr.readlines()):
                 # skip lines that are commented
