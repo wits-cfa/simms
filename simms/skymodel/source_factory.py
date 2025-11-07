@@ -263,7 +263,7 @@ class CatSource:
     stokes_u: float | str = 0
     stokes_v: float | str = 0
     line_peak: float | str = None
-    line_width: float | str = None
+    line_width: float | str = 0
     line_restfreq: float | str = None
     cont_coeff_1: float | str = 0
     cont_coeff_2: float | str = 0
