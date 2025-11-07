@@ -36,26 +36,29 @@ def vis_noise_from_sefd_and_ms(ms: Union[MS, str], sefd: float, spw_id: int = 0,
 
 
 def sim_noise(dshape: Union[List, Tuple], vis_noise: float) -> np.ndarray:
-    """AI is creating summary for simnoise
+    """
+    Simulate complex Gaussian noise for visibilities
 
     Args:
-        dshape (Union[List, Tuple]): [description]
-        vis_noise (float): [description]
-
+        dshape (Union[List,Tuple]): Shape of the visibility data
+        vis_noise (float): Noise per visibility
+    
     Returns:
-        np.ndarray: [description]
+        np.ndarray: Simulated complex Gaussian noise
     """
 
     return np.random.randn(*dshape) * vis_noise + np.random.randn(*dshape) * vis_noise * 1j
 
 
 def add_noise(vis: Union[np.ndarray, float], vis_noise: float):
-    """AI is creating summary for add_noise
+    """
+    Add noise to visibility data
 
     Args:
         vis (Union[np.ndarray,float]): Data to add noise to. Set to zero to compute a noise only visibility
         noise_vis (float): Noise per visibility
     """
+    
     return vis + sim_noise(vis.shape, vis_noise)
 
 

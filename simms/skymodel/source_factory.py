@@ -246,15 +246,30 @@ class StokesData:
 
 @dataclass
 class CatSource:
-    """AI is creating summary for __init__
+    """
+    Catalogue source dataclass
 
     Args:
-        name (str): [description]
-        ra (float): [description]
-        dec (float): [description]
-        emaj (float): [description]
-        emin (float): [description]
-        pa (float): [description]
+        name (str): Source name
+        ra (float | str): Right ascension
+        dec (float | str): Declination
+        stokes_i (float | str): Stokes I flux
+        emaj (float | str, optional): Major axis size. Defaults to 0.
+        emin (float | str, optional): Minor axis size. Defaults to 0.
+        pa (float | str, optional): Position angle. Defaults to 0.
+        stokes_q (float | str, optional): Stokes Q flux. Defaults to 0.
+        stokes_u (float | str, optional): Stokes U flux. Defaults to 0.
+        stokes_v (float | str, optional): Stokes V flux. Defaults to 0.
+        line_peak (float | str, optional): Line peak flux. Defaults to None.
+        line_width (float | str, optional): Line width. Defaults to 0.
+        line_restfreq (float | str, optional): Line rest frequency. Defaults to None.
+        cont_coeff_1 (float | str, optional): Continuum coefficient 1. Defaults to 0.
+        cont_coeff_2 (float | str, optional): Continuum coefficient 2. Defaults to 0.
+        cont_reffreq (float | str, optional): Continuum reference frequency. Defaults to None.
+        transient_start (float | str, optional): Transient start time. Defaults to None.
+        transient_absorb (float | str, optional): Transient absorption depth. Defaults to None.
+        transient_ingress (float | str, optional): Transient ingress time. Defaults to None.
+        transient_period (float | str, optional): Transient period. Defaults to None.
     """
 
     name: str
@@ -268,7 +283,7 @@ class CatSource:
     stokes_u: float | str = 0
     stokes_v: float | str = 0
     line_peak: float | str = None
-    line_width: float | str = None
+    line_width: float | str = 0
     line_restfreq: float | str = None
     cont_coeff_1: float | str = 0
     cont_coeff_2: float | str = 0
@@ -341,13 +356,14 @@ class Source(CatSource):
 
 class StokesDataFits(StokesData):
     def __init__(self, coord: xr.DataArray, dim_idx: int, data: np.ndarray):
-        """_summary_
-
+        """
+        Object that holds Stokes data from FITS file
+        
         Args:
-            coord (xr.DataArray): _description_
-            dim_idx (int): _description_
-            data (np.ndarray): _description_
-            pol_basis (str, optional): _description_. Defaults to "linear".
+            coord (xr.DataArray): Coordinate information
+            dim_idx (int): Dimension index for the stokes parameter
+            data (np.ndarray): Stokes data array
+            pol_basis (str, optional): Polarization basis. Defaults to "linear".
         """
         self.data = data
         self.nstokes = coord.size
