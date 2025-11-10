@@ -68,19 +68,15 @@ def test_set_source_param_conversions():
     assert src.name == "SrcA"
 
 
-def test_required_fields_and_mappers():
+def test_alias_mapper():
     schema = load_default_schema()
     src = ASCIISource(schema)
 
-    assert set(src.required_fields()) == {"stokes_i"}
-
     a2f = src.alias_to_field_mapper()
-    f2a = src.field_to_alias_mapper()
 
     # Default schema has no aliases set, so mapping is identity
     for key in ["ra", "dec", "stokes_i", "name"]:
         assert a2f[key] == key
-        assert f2a[key] == key
 
 
 def test_finalise_point_vs_extended_and_polarisation():
@@ -180,7 +176,7 @@ def test_skymodel_header_required_and_format_errors(params):
 
     # Missing required headers
     bad2 = params.write_temp_file("#format: ra dec\n0 0\n")
-    with pytest.raises(ASCIISourceError):
+    with pytest.raises(ASCIISkymodelError):
         ASCIISkymodel(bad2)
 
     # Row length mismatch

@@ -36,12 +36,28 @@ class Array:
         subarray_file: File = None,
     ):
         """
-        layout: str|File
-                    : specify an observatory as a str or a file.
-                        If a string is given, then will attenpt to find
-                        layout in package database
-        degrees: boolean
-                    : Specify whether the long-lat is in degrees or not. Default is true.
+        Initialize the Array.
+
+        Parameters
+        ----
+        layout: Union[str, File]
+            Observatory name or path to a layout configuration (YAML). If "vla", defaults to "vla-c".
+        degrees: bool, optional
+            Whether geodetic long/lat are provided in degrees. Default is True.
+        sefd: int | float | List[int | float], optional
+            System Equivalent Flux Density per antenna (Jy). If a scalar, applied to all antennas.
+            Overrides tsys_over_eta if provided. Default is None.
+        tsys_over_eta: int | float | List[int | float], optional
+            Tsys/eta per antenna (K). Used to compute SEFD if sefd is not provided. Default is None.
+        sensitivity_file: File, optional
+            Path to a YAML file containing "sefd" and/or "tsys_over_eta" (and optional "freq"/"freqs")
+            to override values from the layout. Default is None.
+        subarray_list: List[str], optional
+            Explicit list of antenna/station names to include in a custom subarray. Default is None.
+        subarray_range: List[int], optional
+            Range [start, stop] of antenna indices to include in a custom subarray. Default is None.
+        subarray_file: File, optional
+            Path to a file describing a custom subarray selection. Default is None.
         """
 
         self.degrees = degrees
@@ -74,11 +90,11 @@ class Array:
         self.sensitivity_file = sensitivity_file
         self.noise_freqs = None
 
-        self.__set_arrayinfo()
+        self._set_arrayinfo()
         if self.layout.coord_sys == "geodetic":
             self.set_itrf()
 
-    def __set_arrayinfo(self):
+    def _set_arrayinfo(self):
         """
         - Extract the array information from the schema
         - Set values to SI units
@@ -237,7 +253,7 @@ class Array:
         An array of the antenna positions in the local frame ENU
         """
         if not hasattr(self, "antlocations"):
-            self.set_arrayinfo()
+            self._set_arrayinfo()
 
         longitude = self.antlocations[:, 0]
         latitude = self.antlocations[:, 1]
