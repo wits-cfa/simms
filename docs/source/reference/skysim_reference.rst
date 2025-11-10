@@ -3,7 +3,12 @@
 Sky Simulations (``skysim``)
 ========================================
 
-.. automodule:: simms.skymodel.skymods
+.. automodule:: simms.skymodels.ascii_skies
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: simms.skymodel.fits_skies
    :members:
    :undoc-members:
    :show-inheritance:
