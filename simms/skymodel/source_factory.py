@@ -101,11 +101,16 @@ exoplanet_transient_source = SourceType(
 @dataclass
 class StokesData:
     """
-    Object that holds a source/image intensity (stokes data)
+    Container for source/image Stokes intensity data.
 
-    Args:
-        data (List): List of stokes parameter data.
-        linear_basis (bool, optional): Is the stokes data in a linear basis? Defaults to True.
+    Parameters
+    ----------
+    data : list of int or numpy.ndarray
+        Stokes parameter data ordered as I, Q, U, V (or IVQU when not linear).
+    linear_basis : bool, optional
+        If True, the Stokes parameters are interpreted in a linear basis
+        (I, Q, U, V). If False, they are interpreted in a circular basis
+        (I, V, Q, U). Default is True.
     """
 
     data: List[int] | np.ndarray
@@ -120,12 +125,24 @@ class StokesData:
 
     def set_spectrum(self, freqs: np.ndarray, specfunc: Callable, full_pol: bool = True, **kwargs):
         """
-        Add a spectral axis
+        Add a spectral axis to the Stokes data.
 
-        Args:
-            freqs (np.ndarray): Array of frequencies
-            specfunc (Callable): Function that
-            full_pol (bool, optional): Set all 4 stokes parameters? Defaults to True.
+        Parameters
+        ----------
+        freqs : numpy.ndarray
+            Frequency array.
+        specfunc : Callable
+            Callable with signature f(freqs, flux, **kwargs) returning the
+            spectral profile.
+        full_pol : bool, optional
+            If True, compute spectra for all four Stokes parameters.
+            If False, only Stokes I is used. Default is True.
+        **kwargs
+            Additional keyword arguments forwarded to `specfunc`.
+
+        Returns
+        -------
+        None
         """
         if isinstance(freqs, list):
             freqs = np.array(freqs)
@@ -143,10 +160,18 @@ class StokesData:
 
     def set_lightcurve(self, lightcurve_func: Callable, **kwargs):
         """
-        Add a time axis
+        Add a time axis using a lightcurve.
 
-        Args:
-            lightcurve_func (Callable): _description_
+        Parameters
+        ----------
+        lightcurve_func : Callable
+            Callable returning a 1D time-series array (shape (ntimes,)).
+        **kwargs
+            Additional keyword arguments forwarded to `lightcurve_func`.
+
+        Returns
+        -------
+        None
         """
         light_curve = lightcurve_func(**kwargs)
 
@@ -161,13 +186,23 @@ class StokesData:
         self.data = self.data[tuple(dslice)] * light_curve[tuple(slc)]
 
     def __stokes_x__(self, x: str):
-        """Get intensity data for stokes parameter x = I|Q|U|V
+        """
+        Get intensity data for a Stokes parameter.
 
-        Args:
-            x (str): Stokes parameter
+        Parameters
+        ----------
+        x : {'I', 'Q', 'U', 'V'}
+            Stokes parameter to extract.
 
-        Returns:
-            int: Data along given stokes parameter. Retruns zero if no data found
+        Returns
+        -------
+        numpy.ndarray or int
+            Data array for the requested Stokes parameter, or 0 if not present.
+
+        Raises
+        ------
+        RuntimeError
+            If an unknown Stokes parameter is requested.
         """
 
         if x not in self.param_string:
@@ -181,14 +216,20 @@ class StokesData:
         return xdata
 
     def get_brightness_matrix(self, ncorr: int) -> np.ndarray:
-        """Returns the brightness matrix of this source instance
+        """
+        Build the brightness (coherency) matrix.
 
-        Args:
-            ncorr (int): Number of correlations for target MS
-            linear_pol_basis (bool): Is the polarisation basis linear?
+        Parameters
+        ----------
+        ncorr : int
+            Number of output correlations (2 or 4).
 
-        Returns:
-            np.ndarray: The brightness matrix
+        Returns
+        -------
+        numpy.ndarray
+            Brightness matrix with the same shape as `self.data` except that
+            the Stokes axis is replaced by a correlation axis of length `ncorr`.
+            For ncorr == 2 the dtype is float; for ncorr == 4 the dtype is complex.
         """
 
         dshape = list(self.data.shape)
@@ -253,13 +294,19 @@ class StokesData:
 
 class StokesDataFits(StokesData):
     def __init__(self, coord: xr.DataArray, dim_idx: int, data: np.ndarray, linear_basis: bool = True):
-        """_summary_
+        """
+        Wrap FITS Stokes data with axis mapping.
 
-        Args:
-            coord (xr.DataArray): _description_
-            dim_idx (int): _description_
-            data (np.ndarray): _description_
-            pol_basis (str, optional): _description_. Defaults to "linear".
+        Parameters
+        ----------
+        coord : xarray.DataArray
+            Coordinate array describing the Stokes axis.
+        dim_idx : int
+            Index of the Stokes dimension in `data`.
+        data : numpy.ndarray
+            FITS image/cube data containing Stokes planes.
+        linear_basis : bool, optional
+            If True, interpret data in the linear basis. Default is True.
         """
         self.data = data
         self.nstokes = coord.size
@@ -269,13 +316,23 @@ class StokesDataFits(StokesData):
         self.linear_basis = linear_basis
 
     def __stokes_x__(self, x: str):
-        """Get intensity data for stokes parameter x = I|Q|U|V
+        """
+        Get intensity data for a Stokes parameter.
 
-        Args:
-            x (str): Stokes parameter
+        Parameters
+        ----------
+        x : {'I', 'Q', 'U', 'V'}
+            Stokes parameter to extract.
 
-        Returns:
-            np.ndarray | int: Data along given stokes parameter. Retruns zero if no data found
+        Returns
+        -------
+        numpy.ndarray or int
+            Data array for the requested Stokes parameter, or 0 if not present.
+
+        Raises
+        ------
+        RuntimeError
+            If an unknown Stokes parameter is requested.
         """
 
         stokes_types = dict(I=0, Q=1, U=2, V=3)
@@ -300,16 +357,25 @@ class StokesDataFits(StokesData):
 
 def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | List, nu_ref: float):
     """
-    Returns a contiuum (power law) spectral profile
+    Continuum (power-law) spectral profile.
 
-    Args:
-        freqs (float): Frequency array
-        flux (float): Intensity
-        coeff (float|np.ndarray|List): Power law coeficient (spectral index, curvature, ...)
-        nu_ref (float): Reference frequency
+    Parameters
+    ----------
+    freqs : numpy.ndarray
+        Frequency array.
+    flux : float
+        Reference flux density at `nu_ref`.
+    coeff : float or array-like
+        Power-law coefficient(s). If array-like with length > 1, treated as
+        polynomial coefficients of log-log curvature (via numpy.polynomial).
+        If length == 1 or float, treated as spectral index.
+    nu_ref : float
+        Reference frequency.
 
-    Returns:
-        np.ndarray: Spectral profile
+    Returns
+    -------
+    numpy.ndarray
+        Spectral profile evaluated at `freqs`.
     """
     if nu_ref and coeff:
         if isinstance(coeff, (list, np.ndarray)):
@@ -326,13 +392,23 @@ def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | List, n
 
 def gauss_1d(xaxis: np.ndarray, peak: float, width: float, x0: float):
     """
-    Function for a single gaussian line spectrum
+    Single Gaussian spectral line profile.
 
-    Args:
-        xaxis (np.ndarray): x-axis grid
-        peak: Gaussian peak
-        x0: x-coordinate of peak
-        width: FWHM width in same units as xaxis
+    Parameters
+    ----------
+    xaxis : numpy.ndarray
+        Grid along the spectral axis.
+    peak : float
+        Gaussian peak amplitude.
+    width : float
+        Full width at half maximum (FWHM) in the same units as `xaxis`.
+    x0 : float
+        Centre position of the Gaussian.
+
+    Returns
+    -------
+    numpy.ndarray
+        Profile evaluated at `xaxis`.
     """
     sigma = width / FWHM_scale_fact
     return peak * np.exp(-((xaxis - x0) ** 2) / (2 * sigma**2))
@@ -348,26 +424,29 @@ def exoplanet_transient_logistic(
     transient_period: int,
 ):
     """
-    Function for a transient profile
+    Logistic transit lightcurve for an exoplanet-like transient.
 
-    Args:
-        start_time (float):
-            Start time of the observation (in seconds).
-        end_time (float):
-            End time of the observation (in seconds).
-        ntimes (int):
-            Total number of integrations between start and end.
-        transient_start (float):
-            Time at which the transit begins (seconds).
-        transient_absorb (float):
-            Maximum fractional flux decrease during the transit (e.g. 0.01 = 1% dip).
-        transient_ingress (float):
-            Duration of ingress (time it takes for the full dip to occur).
-        transient_period (float):
-            Total duration of the transit event, including ingress and egress.
+    Parameters
+    ----------
+    start_time : int
+        Start time of the observation (seconds).
+    end_time : int
+        End time of the observation (seconds).
+    ntimes : int
+        Number of time samples between start and end.
+    transient_start : int
+        Time at which the transit begins (seconds).
+    transient_absorb : float
+        Maximum fractional flux decrease during transit (e.g., 0.01 = 1% dip).
+    transient_ingress : int
+        Duration of ingress/egress (seconds).
+    transient_period : int
+        Total duration of the transit event, including ingress and egress (seconds).
 
-    Returns:
-
+    Returns
+    -------
+    numpy.ndarray
+        Normalized intensity time series of shape (ntimes,).
     """
 
     # helper function to calculate ingress/egress using logistic function

@@ -23,7 +23,39 @@ def compute_lm_coords(
     tol_mask: np.ndarray = None,
 ):
     """
-    Calculates pixel (l, m) coordinates
+    Compute direction-cosine coordinates (l, m) for an image grid.
+
+    Parameters
+    ----------
+    phase_centre : numpy.ndarray
+        Array-like of shape (2,) with [ra0, dec0] of the phase-tracking centre
+        in radians.
+    n_ra : int
+        Number of pixels along right ascension (l-axis).
+    n_dec : int
+        Number of pixels along declination (m-axis).
+    ra_coords : numpy.ndarray, optional
+        1D array of right ascension pixel coordinates in radians.
+    dec_coords : numpy.ndarray, optional
+        1D array of declination pixel coordinates in radians.
+    tol_mask : numpy.ndarray, optional
+        Boolean mask of shape (n_ra * n_dec,) selecting pixels to keep.
+        When provided, only the corresponding (l, m) rows are returned.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of direction cosines:
+        - If `tol_mask` is None, an array with the grid of (l, m) values with
+          shape (..., 2), where the last dimension stores (l, m).
+        - If `tol_mask` is provided, a 2D array with shape (N, 2) containing
+          only the selected (l, m) pairs.
+
+    Notes
+    -----
+    The conversion from (ra, dec) to (l, m) is performed by
+    `simms.utilities.pix_radec2lm` relative to the given phase centre.
+    All angular quantities are in radians.
     """
     # calculate pixel (l, m) coordinates
     ra0, dec0 = phase_centre
@@ -52,26 +84,83 @@ def skymodel_from_fits(
     interpolation="nearest",
 ) -> tuple:
     """
-    Processes FITS skymodel into DFT input
-    Args:
-        input_fitsimages: FITS image or sorted list of FITS images if polarisation is present
-        ra0 (float): RA of phase-tracking centre in radians
-        dec0 (float): Dec of phase-tracking centre in radians
-        chan_freqs (np.ndarray): MS frequencies
-        ms_delta_nu (float): MS channel width
-        ncorr (int): number of correlations
-        basis (str): polarisation basis ("linear" or "circular")
-        tol (float): tolerance for pixel brightness
-        stokes (Union[int,str]): Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). If 'all',
-        all Stokes parameters are used.
-        stack_axis (str|Dict): Stack FITS images along this axis if multiple input images given.
-        If Dict, then these should be options to 'fitstoolz.reader.FitsData.add_axis()'
-        interpolation (str): Interpolation along frequency if there's a grid mismatch between the FITS image and MS
-    Returns:
-        predict_image (np.ndarray): pixel-by-pixel brightness matrix for each channel and correlation
-        lm (np.ndarray): (l, m) coordinate grid for DFT
-    """
+    Convert one or more FITS images into a brightness array usable for visibility
+    prediction, optionally computing sparse (l, m) coordinates for DFT. Handles
+    unit conversion, frequency interpolation, Stokes stacking, and sparsity-based
+    selection between DFT and FFT workflows.
 
+    Parameters
+    ----------
+    input_fitsimages : scabha.basetypes.File or list of File
+        A single FITS image or an ordered list of FITS images (e.g., per Stokes).
+    ra0 : float
+        Right ascension of the phase-tracking centre in radians.
+    dec0 : float
+        Declination of the phase-tracking centre in radians.
+    chan_freqs : numpy.ndarray
+        1D array of MS channel centre frequencies in Hz.
+    ms_delta_nu : float
+        MS channel width in Hz.
+    ncorr : int
+        Number of output correlations (e.g., 1, 2, or 4).
+    linear_basis : bool, default True
+        If True, output correlations are in the linear basis (XX, XY, YX, YY).
+        If False, use the circular basis (RR, RL, LR, LL).
+    tol : float, default 1e-7
+        Pixel brightness threshold used to select non-zero pixels for DFT.
+        Units follow the FITS BUNIT after conversion (typically Jy).
+    use_dft : bool or None, optional
+        Whether to force DFT (True) or FFT (False). If None, the choice is made
+        based on the sparsity of the thresholded image (DFT if >= 80% zeros).
+    stack_axis : str or dict, default "STOKES"
+        Axis name to stack along when multiple input FITS images are provided.
+        If a dict, it is passed to `fitstoolz.reader.FitsData.add_axis()`.
+    interpolation : {"nearest", "linear", ...}, default "nearest"
+        Interpolation method used when regridding the FITS spectral axis to the
+        MS frequencies.
+
+    Returns
+    -------
+    ObjDict
+        Container with the following fields:
+        - image : numpy.ndarray
+            If DFT is selected or forced: shape (N_nonzero, N_freq, ncorr),
+            containing only thresholded non-zero pixels.
+            If FFT is selected: shape (n_pix_l, n_pix_m, N_freq, ncorr),
+            the full image cube.
+        - lm : numpy.ndarray or None
+            If DFT is selected or forced: array of shape (N_nonzero, 2) with
+            direction cosines (l, m) for the retained pixels. Otherwise None.
+        - is_polarised : bool
+            True if any of Q, U, V are present in the input.
+        - expand_freq_dim : bool
+            True if the FITS image had a single frequency and should be expanded
+            along the MS frequency axis downstream.
+        - use_dft : bool
+            The final choice used for visibility prediction.
+        - ra_pixel_size : float or None
+            Pixel size along RA in radians for FFT workflows; None for DFT.
+        - dec_pixel_size : float or None
+            Pixel size along Dec in radians for FFT workflows; None for DFT.
+
+    Raises
+    -------
+    TypeError
+        If `stack_axis` is neither a string nor a dict.
+    RuntimeError
+        If the requested `stack_axis` does not exist and cannot be added.
+    FITSSkymodelError
+        If the MS frequency range lies outside the FITS frequency coverage and
+        interpolation is not possible.
+
+    Notes
+    -----
+    - FITS cubes with spectral coordinates in velocity (VRAD/VOPT) are converted
+      to frequency using `astropy.units` and the Doppler convention.
+    - If BUNIT is "Jy/beam", beam areas are used to convert to Jy/pixel.
+    - When spectral grids differ, the FITS image is interpolated onto the MS
+      frequency grid, which can be memory intensive for large cubes.
+    """
     log = logging.getLogger(BIN.skysim)
 
     phase_centre = np.array([ra0, dec0])

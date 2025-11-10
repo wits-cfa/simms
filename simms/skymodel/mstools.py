@@ -12,66 +12,88 @@ from simms.utilities import radec2lm
 
 def vis_noise_from_sefd_and_ms(ms: Union[MS, str], sefd: float, spw_id: int = 0, field_id: int = 0):
     """
-    Compute per visibility noise from an SEFD and MS
+    Compute per-visibility thermal noise from an SEFD and an MS.
 
-    Args:
-        ms (Union[MS,str]): MS path
-        sefd (float): Antenna SEFD in Jy
-        spw_id (int, optional): Data description ID. Defaults to 0.
-        field_id (int, optional): Field ID. Defaults to 0.
+    Parameters
+    ----------
+    ms : MS or str
+        Measurement Set path.
+    sefd : float
+        Antenna System Equivalent Flux Density in Jy.
+    spw_id : int, optional
+        DATA_DESC_ID (spectral window) to use. Default is 0.
+    field_id : int, optional
+        FIELD_ID to filter rows. Default is 0.
 
-    Returns:
-        float: noise per visibility
+    Returns
+    -------
+    float
+        RMS noise per visibility (Jy).
     """
-
     spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
     msds = xds_from_ms(ms, group_cols=["DATA_DESC_ID"], taql_where=f"FIELD_ID=={field_id}")[spw_id]
 
     df = spw_ds.CHAN_WIDTH.data[spw_id][0]
-
     dt = msds.EXPOSURE.data[0]
     noise_vis = sefd / np.sqrt(2 * dt * df)
-
     return noise_vis
 
 
 def sim_noise(dshape: Union[List, Tuple], vis_noise: float) -> np.ndarray:
     """
-    Simulate complex Gaussian noise for visibilities
+    Simulate complex Gaussian visibility noise.
 
-    Args:
-        dshape (Union[List,Tuple]): Shape of the visibility data
-        vis_noise (float): Noise per visibility
+    Parameters
+    ----------
+    dshape : list or tuple
+        Desired output shape (e.g., (nrows, nchan, ncorr)).
+    vis_noise : float
+        RMS per visibility (Jy).
 
-    Returns:
-        np.ndarray: Simulated complex Gaussian noise
+    Returns
+    -------
+    numpy.ndarray
+        Complex noise array of shape `dshape`.
     """
-
     return np.random.randn(*dshape) * vis_noise + np.random.randn(*dshape) * vis_noise * 1j
 
 
 def add_noise(vis: Union[np.ndarray, float], vis_noise: float):
     """
-    Add noise to visibility data
+    Add complex Gaussian noise to visibilities.
 
-    Args:
-        vis (Union[np.ndarray,float]): Data to add noise to. Set to zero to compute a noise only visibility
-        noise_vis (float): Noise per visibility
+    Parameters
+    ----------
+    vis : numpy.ndarray or float
+        Visibility data. If scalar 0, returns pure noise.
+    vis_noise : float
+        RMS per visibility (Jy).
+
+    Returns
+    -------
+    numpy.ndarray
+        Noisy visibilities.
     """
-
     return vis + sim_noise(vis.shape, vis_noise)
 
 
 def add_to_vis(vis0: np.ndarray, vis1: np.ndarray, subtract: bool = False) -> np.ndarray:
-    """Add/subtract two visibility arrays
+    """
+    Add or subtract two visibility arrays.
 
-    Args:
-        vis0 (np.ndarray): Add/subtract to/from
-        vis1 (np.ndarray): data to add/subtract
-        subtract (bool, optional): Should the data be subtracted. Defaults to False.
+    Parameters
+    ----------
+    vis0 : numpy.ndarray
+        Base visibility array.
+    vis1 : numpy.ndarray
+        Array to add or subtract.
+    subtract : bool, optional
+        If True, perform vis0 - vis1; otherwise vis0 + vis1. Default False.
 
-    Returns:
-        np.ndarray: the added/subtracted visibility data
+    Returns
+    -------
+    numpy.ndarray
+        Resulting visibility array.
     """
     if subtract:
         return vis0 - vis1
@@ -81,14 +103,24 @@ def add_to_vis(vis0: np.ndarray, vis1: np.ndarray, subtract: bool = False) -> np
 
 def stack_unpolarised_vis(vis: np.ndarray, ncorr: int) -> np.ndarray:
     """
-    Takes XX or RR visibilities and creates visibility array with shape (nrows, nchan, ncorr).
-    Used to avoid double computation of identical correlations.
+    Replicate unpolarised visibilities across correlation dimension.
 
-    Args:
-        vis: numpy array of shape (nrows, nchan) containing the visibility data
-        ncorr: number of correlations (2 or 4)
-    Returns:
-        vis: numpy array of shape (nrows, nchan, ncorr) containing the visibility data
+    Parameters
+    ----------
+    vis : numpy.ndarray
+        Array of shape (nrows, nchan) with Stokes I or single correlation.
+    ncorr : int
+        Number of output correlations (2 or 4).
+
+    Returns
+    -------
+    numpy.ndarray
+        Stacked array of shape (nrows, nchan, ncorr).
+
+    Raises
+    ------
+    ValueError
+        If `ncorr` is not 2 or 4.
     """
     if ncorr == 2:
         vis = np.stack([vis, vis], axis=2)
@@ -96,7 +128,6 @@ def stack_unpolarised_vis(vis: np.ndarray, ncorr: int) -> np.ndarray:
         vis = np.stack([vis, np.zeros_like(vis), np.zeros_like(vis), vis], axis=2)
     else:
         raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
-
     return vis
 
 
@@ -111,10 +142,32 @@ def fft_im_to_vis(
     do_wstacking: Optional[bool] = True,
 ) -> np.ndarray:
     """
-    ducc0.wgridder.dirty2ms wrapper to add squeezing and conjugation.
-    NB: Image should be 2D.
-    """
+    Predict visibilities via FFT gridding (dirty2ms wrapper).
 
+    Parameters
+    ----------
+    uvw : numpy.ndarray
+        UVW coordinates (nrows, 3) or (3, nrows) accepted by dirty2ms.
+    chan_freq : numpy.ndarray
+        1D array of channel frequencies (Hz).
+    image : numpy.ndarray
+        2D image (n_l, n_m).
+    pixsize_x : float
+        Pixel size along RA (radians).
+    pixsize_y : float
+        Pixel size along Dec (radians).
+    epsilon : float, optional
+        Accuracy parameter for wgridder. Default 1e-7.
+    nthreads : int, optional
+        Number of threads. Default 8.
+    do_wstacking : bool, optional
+        Enable w-stacking. Default True.
+
+    Returns
+    -------
+    numpy.ndarray
+        Complex visibilities of shape (nrows,).
+    """
     result = dirty2ms(
         uvw,
         chan_freq,
@@ -125,7 +178,6 @@ def fft_im_to_vis(
         do_wstacking=do_wstacking,
         nthreads=nthreads,
     )
-
     return np.conj(np.squeeze(result))
 
 
@@ -142,44 +194,56 @@ def compute_vis(
     noise_vis: Optional[float] = None,
 ):
     """
-    Computes visibilities
+    Compute model visibilities for an ASCII sky model.
 
-    Args:
-        sources (list):               List of Source objects
-        uvw (numpy.ndarray):          Array of shape (3, nrows) containing the UVW coordinates
-        freqs (numpy.ndarray):        Array of shape (nchan,) containing the frequencies
-        times:                        Number of unique times
-        ncorr (int):                  Number of correlations
-        polarisation (bool):          True if polarisation information is present, False otherwise
-        pol_basis (str):              Polarisation basis ("linear" or "circular")
-        ra0 (float):                  Phase centre RA in radians
-        dec0 (float):                 Phase centre Dec in radians
-        noise_vis (float, optional):  RMS noise per visibility. If None, no noise is added. Defaults to None.
+    Parameters
+    ----------
+    skymodel : ASCIISkymodel
+        Parsed sky model object.
+    uvw : numpy.ndarray
+        UVW coordinates of shape (3, nrows) or (nrows, 3).
+    freqs : numpy.ndarray
+        Channel centre frequencies (Hz).
+    times : numpy.ndarray, optional
+        Time stamps per row if transient sources present.
+    ncorr : int, optional
+        Number of correlations (2 or 4). Default 2.
+    polarisation : bool, optional
+        If True, include cross-hands when available. Default False.
+    linear_basis : bool, optional
+        Use linear (True) or circular (False) basis. Default True.
+    ra0 : float, optional
+        Phase centre right ascension (radians).
+    dec0 : float, optional
+        Phase centre declination (radians).
+    noise_vis : float, optional
+        RMS noise per visibility (Jy). If provided, noise is added.
 
-    Returns:
-        vis (numpy.ndarray):        Visibility array of shape (nrows, nchan, ncorr)
+    Returns
+    -------
+    numpy.ndarray
+        Visibility array of shape (nrows, nchan or nchan*ntime, ncorr).
+
+    Raises
+    ------
+    ValueError
+        If transient sources exist and `times` is None.
     """
     wavs = 2.99e8 / freqs
     uvw_scaled = uvw.T[..., np.newaxis] / wavs
 
-    # helper function to calculate phase factor
     def calculate_phase_factor(src):
         el, em = radec2lm(ra0, dec0, src.ra, src.dec)
         n_term = np.sqrt(1 - el * el - em * em) - 1
         arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
-
         if not src.emaj and not src.emin:
-            # point source
             return np.exp(2 * np.pi * 1j * arg)
         else:
-            # extended source
             ell = src.emaj * np.sin(src.pa)
             emm = src.emaj * np.cos(src.pa)
             ecc = src.emin / (1.0 if src.emaj == 0.0 else src.emaj)
-
             fu1 = (uvw_scaled[0] * emm - uvw_scaled[1] * ell) * ecc
             fv1 = uvw_scaled[0] * ell + uvw_scaled[1] * emm
-
             shape_phase = fu1 * fu1 + fv1 * fv1
             return np.exp(2 * np.pi * 1j * arg - shape_phase)
 
@@ -227,7 +291,6 @@ def compute_vis(
 
     if noise_vis:
         vis = add_noise(vis, noise_vis)
-
     return vis
 
 
@@ -248,24 +311,50 @@ def augmented_im_to_vis(
     nthreads: Optional[int] = 8,
 ):
     """
-    Augmented version of im_to_vis
-    Args:
-        image: image array
-        uvw: UVW coordinates
-        lm: (l, m) coordinates (used for DFT)
-        chan_freqs: frequency array
-        polarisation: True if polarisation information is present, False otherwise (used for FFT)
-        use_dft: True if DFT should be used, False if FFT should be used
-        mode: 'add' or 'subtract' to specify whether to add or subtract model data
-        mod_data: model data to/from which computed visibilities should be added/subtracted
-        ncorr: number of correlations (must be 2 or 4; used for FFT)
-        delta_ra: pixel size in RA direction (used for FFT)
-        delta_dec: pixel size in Dec direction (used for FFT)
-        epsilon: numerical precision for FFT
-        noise: RMS noise
-        nthreads: number of threads to use for FFT
-    Returns:
-        vis: visibility array
+    Predict visibilities from an image (DFT or FFT path).
+
+    Parameters
+    ----------
+    image : numpy.ndarray
+        Image cube:
+        - DFT: shape (N_nonzero, N_freq, ncorr) or (N_nonzero, N_freq, 1).
+        - FFT: shape (n_l, n_m, N_freq, ncorr).
+    uvw : numpy.ndarray
+        UVW coordinates (nrows, 3).
+    lm : numpy.ndarray or None
+        (l, m) direction cosines for DFT workflow; None for FFT.
+    chan_freqs : numpy.ndarray
+        Full MS frequency grid (Hz).
+    polarisation : bool
+        If True, use all correlations; if False, replicate Stokes I.
+    expand_freq_dim : bool
+        If True, single-frequency input is expanded to all MS channels.
+    use_dft : bool
+        True for sparse DFT mode; False for FFT mode.
+    ncorr : int
+        Number of correlations (2 or 4).
+    delta_ra : float, optional
+        Pixel size along RA (radians) for FFT.
+    delta_dec : float, optional
+        Pixel size along Dec (radians) for FFT.
+    do_wstacking : bool, optional
+        Enable w-stacking in FFT mode. Default True.
+    epsilon : float, optional
+        Accuracy parameter for FFT gridding. Default 1e-7.
+    noise : float, optional
+        RMS noise per visibility (Jy). If provided, added to output.
+    nthreads : int, optional
+        Threads for FFT gridding. Default 8.
+
+    Returns
+    -------
+    numpy.ndarray
+        Visibility array of shape (nrows, nchan, ncorr).
+
+    Notes
+    -----
+    - DFT path uses africanus.dft.im_to_vis.
+    - FFT path uses ducc0.wgridder.dirty2ms per channel.
     """
     if expand_freq_dim:
         predict_nchan = 1
