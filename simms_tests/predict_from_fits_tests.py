@@ -36,6 +36,7 @@ class InitThisTests(InitTest):
         # image parameters
         self.img_size = 256
         self.cell_size = 3e-6  # arcsec
+        self.dtype = np.float64
 
         # Store temporary files to be cleaned up
         self.test_files = []
@@ -95,7 +96,9 @@ def test_fits_predict_stokes_I(params):
         params.freqs,
         predict.is_polarised,
         expand_freq_dim=predict.expand_freq_dim,
+        ref_chan=predict.ref_chan,
         ncorr=params.ncorr,
+        dtype=params.dtype,
         epsilon=1e-7,
         use_dft=predict.use_dft,
     )
@@ -165,6 +168,7 @@ def test_fits_predict_stokes_I_with_spectral_axis(params):
         expand_freq_dim=predict.expand_freq_dim,
         use_dft=predict.use_dft,
         ncorr=params.ncorr,
+        dtype=params.dtype,
         epsilon=1e-7,
     )
 
@@ -240,6 +244,7 @@ def test_fits_predicting_all_stokes_linear_basis(params):
         expand_freq_dim=predict.expand_freq_dim,
         use_dft=predict.use_dft,
         ncorr=params.ncorr,
+        dtype=params.dtype,
         epsilon=1e-7,
     )
 
@@ -317,6 +322,7 @@ def test_fits_predicting_all_stokes_circular_basis(params):
         expand_freq_dim=predict.expand_freq_dim,
         ncorr=params.ncorr,
         use_dft=predict.use_dft,
+        dtype=params.dtype,
         epsilon=1e-7,
     )
 

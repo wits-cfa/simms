@@ -316,8 +316,11 @@ def skymodel_from_fits(
 
     predict_image = skymodel.get_brightness_matrix(ncorr)
     predict_nchan = 1 if expand_freq_dim else nchan
+    ref_chan = np.argmin(np.abs(chan_freqs - fits_freqs[0])) if expand_freq_dim else None
+
     # first transpose stokes axis to the end,
     predict_image = np.transpose(predict_image, (1, 2, 3, 0))
+    
     # then reshape predict_image to im_to_vis expectations
     reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, predict_nchan, ncorr)
 
@@ -349,6 +352,7 @@ def skymodel_from_fits(
                     "lm": non_zero_lm,
                     "is_polarised": skymodel.is_polarised,
                     "expand_freq_dim": expand_freq_dim,
+                    "ref_chan": ref_chan,
                     "use_dft": use_dft,
                     "ra_pixel_size": None,
                     "dec_pixel_size": None,
@@ -367,6 +371,7 @@ def skymodel_from_fits(
                     "lm": None,
                     "is_polarised": skymodel.is_polarised,
                     "expand_freq_dim": expand_freq_dim,
+                    "ref_chan": ref_chan,
                     "use_dft": use_dft,
                     "ra_pixel_size": ra_pixel_size,
                     "dec_pixel_size": dec_pixel_size,
@@ -382,6 +387,7 @@ def skymodel_from_fits(
                 "lm": non_zero_lm,
                 "is_polarised": skymodel.is_polarised,
                 "expand_freq_dim": expand_freq_dim,
+                "ref_chan": ref_chan,
                 "use_dft": use_dft,
                 "ra_pixel_size": None,
                 "dec_pixel_size": None,

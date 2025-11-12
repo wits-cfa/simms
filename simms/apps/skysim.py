@@ -143,14 +143,15 @@ def runit(opts):
             ("chan",),
             polarisation=predict.is_polarised,
             expand_freq_dim=predict.expand_freq_dim,
+            ref_chan=predict.ref_chan,
             use_dft=predict.use_dft,
             ncorr=ncorr,
+            dtype=msds.DATA.data.dtype,
             delta_ra=predict.ra_pixel_size,
             delta_dec=predict.dec_pixel_size,
             epsilon=epsilon,
             do_wstacking=opts.do_wstacking,
             noise=vis_noise,
-            dtype=msds.DATA.data.dtype,
             concatenate=True,
         )
 

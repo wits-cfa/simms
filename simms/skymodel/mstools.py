@@ -1,6 +1,7 @@
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
+from astropy import constants as c
 from africanus.dft import im_to_vis as dft_im_to_vis
 from daskms import xds_from_ms, xds_from_table
 from ducc0.wgridder import dirty2ms
@@ -131,56 +132,6 @@ def stack_unpolarised_vis(vis: np.ndarray, ncorr: int) -> np.ndarray:
     return vis
 
 
-def fft_im_to_vis(
-    uvw: np.ndarray,
-    chan_freq: np.ndarray,
-    image: np.ndarray,
-    pixsize_x: float,
-    pixsize_y: float,
-    epsilon: Optional[float] = 1e-7,
-    nthreads: Optional[int] = 8,
-    do_wstacking: Optional[bool] = True,
-) -> np.ndarray:
-    """
-    Predict visibilities via FFT gridding (dirty2ms wrapper).
-
-    Parameters
-    ----------
-    uvw : numpy.ndarray
-        UVW coordinates (nrows, 3) or (3, nrows) accepted by dirty2ms.
-    chan_freq : numpy.ndarray
-        1D array of channel frequencies (Hz).
-    image : numpy.ndarray
-        2D image (n_l, n_m).
-    pixsize_x : float
-        Pixel size along RA (radians).
-    pixsize_y : float
-        Pixel size along Dec (radians).
-    epsilon : float, optional
-        Accuracy parameter for wgridder. Default 1e-7.
-    nthreads : int, optional
-        Number of threads. Default 8.
-    do_wstacking : bool, optional
-        Enable w-stacking. Default True.
-
-    Returns
-    -------
-    numpy.ndarray
-        Complex visibilities of shape (nrows,).
-    """
-    result = dirty2ms(
-        uvw,
-        chan_freq,
-        image,
-        pixsize_x=pixsize_x,
-        pixsize_y=pixsize_y,
-        epsilon=epsilon,
-        do_wstacking=do_wstacking,
-        nthreads=nthreads,
-    )
-    return np.conj(np.squeeze(result))
-
-
 def compute_vis(
     skymodel: ASCIISkymodel,
     uvw: np.ndarray,
@@ -229,7 +180,7 @@ def compute_vis(
     ValueError
         If transient sources exist and `times` is None.
     """
-    wavs = 2.99e8 / freqs
+    wavs = c.c.value / freqs
     uvw_scaled = uvw.T[..., np.newaxis] / wavs
 
     def calculate_phase_factor(src):
@@ -294,6 +245,56 @@ def compute_vis(
     return vis
 
 
+def fft_im_to_vis(
+    uvw: np.ndarray,
+    chan_freq: np.ndarray,
+    image: np.ndarray,
+    pixsize_x: float,
+    pixsize_y: float,
+    epsilon: Optional[float] = 1e-7,
+    nthreads: Optional[int] = 8,
+    do_wstacking: Optional[bool] = True,
+) -> np.ndarray:
+    """
+    Predict visibilities via FFT gridding (dirty2ms wrapper).
+
+    Parameters
+    ----------
+    uvw : numpy.ndarray
+        UVW coordinates (nrows, 3) or (3, nrows) accepted by dirty2ms.
+    chan_freq : numpy.ndarray
+        1D array of channel frequencies (Hz).
+    image : numpy.ndarray
+        2D image (n_l, n_m).
+    pixsize_x : float
+        Pixel size along RA (radians).
+    pixsize_y : float
+        Pixel size along Dec (radians).
+    epsilon : float, optional
+        Accuracy parameter for wgridder. Default 1e-7.
+    nthreads : int, optional
+        Number of threads. Default 8.
+    do_wstacking : bool, optional
+        Enable w-stacking. Default True.
+
+    Returns
+    -------
+    numpy.ndarray
+        Complex visibilities of shape (nrows,).
+    """
+    result = dirty2ms(
+        uvw,
+        chan_freq,
+        image,
+        pixsize_x=pixsize_x,
+        pixsize_y=pixsize_y,
+        epsilon=epsilon,
+        do_wstacking=do_wstacking,
+        nthreads=nthreads,
+    )
+    return np.conj(np.squeeze(result))
+
+
 def augmented_im_to_vis(
     image: np.ndarray,
     uvw: np.ndarray,
@@ -303,6 +304,8 @@ def augmented_im_to_vis(
     expand_freq_dim: bool,
     use_dft: bool,
     ncorr: int,
+    dtype: np.dtype,
+    ref_chan: Optional[int] = None,
     delta_ra: Optional[int] = None,
     delta_dec: Optional[int] = None,
     do_wstacking: Optional[bool] = True,
@@ -333,6 +336,10 @@ def augmented_im_to_vis(
         True for sparse DFT mode; False for FFT mode.
     ncorr : int
         Number of correlations (2 or 4).
+    dtype : numpy.dtype
+        Data type of input image. Required for allocating memory for output.
+    ref_chan : int, optional
+        Reference channel index for frequency expansion. Required if expand_freq_dim is True.
     delta_ra : float, optional
         Pixel size along RA (radians) for FFT.
     delta_dec : float, optional
@@ -358,10 +365,13 @@ def augmented_im_to_vis(
     """
     if expand_freq_dim:
         predict_nchan = 1
-        predict_freqs = chan_freqs[:1]
+        predict_freqs = np.array([chan_freqs[ref_chan]])
     else:
         predict_nchan = chan_freqs.size
         predict_freqs = chan_freqs
+    
+    # determine output dtype
+    vis_dtype = np.complex64 if dtype == np.float32 else np.complex128
 
     # if sparse, use DFT
     if use_dft:
@@ -371,10 +381,11 @@ def augmented_im_to_vis(
             image = image[..., 0]
             vis = dft_im_to_vis(image[..., np.newaxis], uvw, lm, predict_freqs, convention="casa")
             vis = stack_unpolarised_vis(vis[..., 0], ncorr)
+    # otherwise, use FFT
     else:
         image = np.transpose(image, axes=(3, 2, 0, 1))
         if polarisation:
-            vis = np.zeros((uvw.shape[0], predict_nchan, ncorr), dtype=np.complex128)
+            vis = np.zeros((uvw.shape[0], predict_nchan, ncorr), dtype=vis_dtype)
             for corr in range(ncorr):
                 for chan in range(predict_nchan):
                     vis[:, chan, corr] = fft_im_to_vis(
@@ -388,7 +399,7 @@ def augmented_im_to_vis(
                         nthreads=nthreads,
                     )
         else:
-            vis = np.zeros((uvw.shape[0], predict_nchan), dtype=np.complex128)
+            vis = np.zeros((uvw.shape[0], predict_nchan), dtype=vis_dtype)
             for chan in range(predict_nchan):
                 vis[:, chan] = fft_im_to_vis(
                     uvw,
@@ -404,7 +415,11 @@ def augmented_im_to_vis(
             vis = stack_unpolarised_vis(vis, ncorr)
 
     if expand_freq_dim:
-        vis = np.repeat(vis, chan_freqs.size, axis=1)
+        amps, phases = np.abs(vis), np.angle(vis)
+        wavs = c.c.value / chan_freqs
+        phase_scale_factors = wavs[ref_chan] / wavs
+        phases = phases * phase_scale_factors[np.newaxis, :, np.newaxis]
+        vis = amps * np.exp(1j * phases)
 
     if noise:
         vis = add_noise(vis, noise)
