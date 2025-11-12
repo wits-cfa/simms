@@ -1,8 +1,8 @@
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
-from astropy import constants as c
 from africanus.dft import im_to_vis as dft_im_to_vis
+from astropy import constants as c
 from daskms import xds_from_ms, xds_from_table
 from ducc0.wgridder import dirty2ms
 from scabha.basetypes import MS
@@ -369,7 +369,7 @@ def augmented_im_to_vis(
     else:
         predict_nchan = chan_freqs.size
         predict_freqs = chan_freqs
-    
+
     # determine output dtype
     vis_dtype = np.complex64 if dtype == np.float32 else np.complex128
 

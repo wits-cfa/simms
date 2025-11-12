@@ -320,7 +320,7 @@ def skymodel_from_fits(
 
     # first transpose stokes axis to the end,
     predict_image = np.transpose(predict_image, (1, 2, 3, 0))
-    
+
     # then reshape predict_image to im_to_vis expectations
     reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, predict_nchan, ncorr)
 
