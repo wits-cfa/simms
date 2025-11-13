@@ -96,7 +96,7 @@ def test_fits_predict_stokes_I(params):
         params.freqs,
         predict.is_polarised,
         expand_freq_dim=predict.expand_freq_dim,
-        ref_chan=predict.ref_chan,
+        ref_freq=predict.ref_freq,
         ncorr=params.ncorr,
         dtype=params.dtype,
         epsilon=1e-7,

@@ -305,7 +305,7 @@ def augmented_im_to_vis(
     use_dft: bool,
     ncorr: int,
     dtype: np.dtype,
-    ref_chan: Optional[int] = None,
+    ref_freq: Optional[np.ndarray] = None,
     delta_ra: Optional[int] = None,
     delta_dec: Optional[int] = None,
     do_wstacking: Optional[bool] = True,
@@ -338,8 +338,9 @@ def augmented_im_to_vis(
         Number of correlations (2 or 4).
     dtype : numpy.dtype
         Data type of input image. Required for allocating memory for output.
-    ref_chan : int, optional
-        Reference channel index for frequency expansion. Required if expand_freq_dim is True.
+    ref_freq : np.ndarray, optional
+        One-element array containing frequency (Hz) at which the input image is defined.
+        Used if `expand_freq_dim` is True.
     delta_ra : float, optional
         Pixel size along RA (radians) for FFT.
     delta_dec : float, optional
@@ -365,7 +366,7 @@ def augmented_im_to_vis(
     """
     if expand_freq_dim:
         predict_nchan = 1
-        predict_freqs = np.array([chan_freqs[ref_chan]])
+        predict_freqs = ref_freq
     else:
         predict_nchan = chan_freqs.size
         predict_freqs = chan_freqs
@@ -417,7 +418,8 @@ def augmented_im_to_vis(
     if expand_freq_dim:
         amps, phases = np.abs(vis), np.angle(vis)
         wavs = c.c.value / chan_freqs
-        phase_scale_factors = wavs[ref_chan] / wavs
+        ref_wav = c.c.value / ref_freq[0]
+        phase_scale_factors = ref_wav / wavs
         phases = phases * phase_scale_factors[np.newaxis, :, np.newaxis]
         vis = amps * np.exp(1j * phases)
 

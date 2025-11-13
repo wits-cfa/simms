@@ -143,7 +143,7 @@ def runit(opts):
             ("chan",),
             polarisation=predict.is_polarised,
             expand_freq_dim=predict.expand_freq_dim,
-            ref_chan=predict.ref_chan,
+            ref_freq=predict.ref_freq,
             use_dft=predict.use_dft,
             ncorr=ncorr,
             dtype=msds.DATA.data.dtype,
