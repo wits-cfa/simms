@@ -19,8 +19,8 @@ Introduction
    :caption: Contents:
 
    how-to/installation
-   tutorials/tutorials
    how-to/usage
+   tutorials/tutorials
    reference/reference
 
 .. Indices and tables

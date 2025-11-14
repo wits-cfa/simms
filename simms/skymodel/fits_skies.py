@@ -6,54 +6,56 @@ import numpy as np
 import xarray as xr
 from astropy import units
 from fitstoolz.reader import FitsData
-from numba import njit, prange
 from scabha.basetypes import File
 
 from simms import BIN
-from simms.skymodel.catalogue_reader import load_sources
-from simms.skymodel.converters import radec2lm
-from simms.skymodel.source_factory import (
-    CatSource,
-    StokesData,
-    StokesDataFits,
-    contspec,
-    exoplanet_transient_logistic,
-    gauss_1d,
-)
-from simms.utilities import (
-    FITSSkymodelError as SkymodelError,
-)
-from simms.utilities import ObjDict, is_range_in_range
+from simms.exceptions import FITSSkymodelError
+from simms.skymodel.source_factory import StokesDataFits
+from simms.utilities import ObjDict, is_range_in_range, pix_radec2lm
 
 
-@njit(parallel=True)
-def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.ndarray):
-    """
-    Calculates pixel (l, m) coordinates. Returns sth akin to a 2D meshgrid
-    """
-    n_pix_l = len(ra_coords)
-    n_pix_m = len(dec_coords)
-    lm = np.zeros((n_pix_l, n_pix_m, 2), dtype=np.float64)
-    for i in prange(len(ra_coords)):
-        for j in range(len(dec_coords)):
-            l_coords, m_coords = radec2lm(ra0, dec0, ra_coords[i], dec_coords[j])
-            lm[i, j, 0] = l_coords
-            lm[i, j, 1] = m_coords
-
-    return lm
-
-
-# TODO: consider assuming degrees for RA and Dec if no units are given
 def compute_lm_coords(
     phase_centre: np.ndarray,
     n_ra: float,
     n_dec: float,
-    ra_coords: Optional[np.ndarray] = None,
-    dec_coords: Optional[np.ndarray] = None,
-    tol_mask: Optional[np.ndarray] = None,
+    ra_coords: np.ndarray = None,
+    dec_coords: np.ndarray = None,
+    tol_mask: np.ndarray = None,
 ):
     """
-    Calculates pixel (l, m) coordinates
+    Compute direction-cosine coordinates (l, m) for an image grid.
+
+    Parameters
+    ----------
+    phase_centre : numpy.ndarray
+        Array-like of shape (2,) with [ra0, dec0] of the phase-tracking centre
+        in radians.
+    n_ra : int
+        Number of pixels along right ascension (l-axis).
+    n_dec : int
+        Number of pixels along declination (m-axis).
+    ra_coords : numpy.ndarray, optional
+        1D array of right ascension pixel coordinates in radians.
+    dec_coords : numpy.ndarray, optional
+        1D array of declination pixel coordinates in radians.
+    tol_mask : numpy.ndarray, optional
+        Boolean mask of shape (n_ra * n_dec,) selecting pixels to keep.
+        When provided, only the corresponding (l, m) rows are returned.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of direction cosines:
+        - If `tol_mask` is None, an array with the grid of (l, m) values with
+          shape (..., 2), where the last dimension stores (l, m).
+        - If `tol_mask` is provided, a 2D array with shape (N, 2) containing
+          only the selected (l, m) pairs.
+
+    Notes
+    -----
+    The conversion from (ra, dec) to (l, m) is performed by
+    `simms.utilities.pix_radec2lm` relative to the given phase centre.
+    All angular quantities are in radians.
     """
     # calculate pixel (l, m) coordinates
     ra0, dec0 = phase_centre
@@ -68,66 +70,6 @@ def compute_lm_coords(
     return lm
 
 
-def skymodel_from_sources(
-    sources: List[CatSource], chan_freqs: np.ndarray, unique_times: np.ndarray = None, full_stokes: bool = True
-):
-    mod_sources = []
-    for src in sources:
-        stokes = StokesData([src.stokes_i, src.stokes_q, src.stokes_u, src.stokes_v])
-        if src.line_peak:
-            specfunc = gauss_1d
-            kwargs = {
-                "x0": src.line_peak,
-                "width": src.line_width,
-            }
-        else:
-            specfunc = contspec
-            kwargs = {
-                "coeff": [src.cont_coeff_1, src.cont_coeff_2],
-                "nu_ref": src.cont_reffreq,
-            }
-
-        stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
-        if src.is_transient:
-            lightcurve_func = exoplanet_transient_logistic
-            t0 = unique_times.min()
-            unique_times_rel = unique_times - t0
-            kwargs = {
-                "start_time": unique_times_rel.min(),
-                "end_time": unique_times_rel.max(),
-                "ntimes": unique_times_rel.shape[0],
-                "transient_start": src.transient_start,
-                "transient_period": src.transient_period,
-                "transient_ingress": src.transient_ingress,
-                "transient_absorb": src.transient_absorb,
-            }
-            stokes.set_lightcurve(lightcurve_func, **kwargs)
-        setattr(src, "stokes", stokes)
-        mod_sources.append(src)
-
-    return mod_sources
-
-
-def skymodel_from_catalogue(
-    catfile: File, map_path, delimiter, chan_freqs: np.ndarray, unique_times, full_stokes: bool = True
-):
-    """AI is creating summary for skymodel_from_catalogue
-
-    Args:
-        catfile (File): [description]
-        map_path ([type]): [description]
-        delimiter ([type]): [description]
-        chan_freqs (np.ndarray): [description]
-        unique_times ([type]): [description]
-        full_stokes (bool, optional): [description]. Defaults to True.
-
-    Returns:
-        [type]: [description]
-    """
-    sources = load_sources(catfile, map_path, delimiter)
-    return skymodel_from_sources(sources, chan_freqs=chan_freqs, unique_times=unique_times, full_stokes=full_stokes)
-
-
 def skymodel_from_fits(
     input_fitsimages: Union[File, List[File]],
     ra0: float,
@@ -135,33 +77,90 @@ def skymodel_from_fits(
     chan_freqs: np.ndarray,
     ms_delta_nu: float,
     ncorr: int,
-    basis: str,
+    linear_basis: bool = True,
     tol: float = 1e-7,
     use_dft: Optional[bool] = None,
     stack_axis="STOKES",
     interpolation="nearest",
 ) -> tuple:
     """
-    Processes FITS skymodel into DFT input
-    Args:
-        input_fitsimages: FITS image or sorted list of FITS images if polarisation is present
-        ra0 (float): RA of phase-tracking centre in radians
-        dec0 (float): Dec of phase-tracking centre in radians
-        chan_freqs (np.ndarray): MS frequencies
-        ms_delta_nu (float): MS channel width
-        ncorr (int): number of correlations
-        basis (str): polarisation basis ("linear" or "circular")
-        tol (float): tolerance for pixel brightness
-        stokes (Union[int,str]): Stokes parameter to use (0 = I, 1 = Q, 2 = U, 3 = V). If 'all',
-        all Stokes parameters are used.
-        stack_axis (str|Dict): Stack FITS images along this axis if multiple input images given.
-        If Dict, then these should be options to 'fitstoolz.reader.FitsData.add_axis()'
-        interpolation (str): Interpolation along frequency if there's a grid mismatch between the FITS image and MS
-    Returns:
-        predict_image (np.ndarray): pixel-by-pixel brightness matrix for each channel and correlation
-        lm (np.ndarray): (l, m) coordinate grid for DFT
-    """
+    Convert one or more FITS images into a brightness array usable for visibility
+    prediction, optionally computing sparse (l, m) coordinates for DFT. Handles
+    unit conversion, frequency interpolation, Stokes stacking, and sparsity-based
+    selection between DFT and FFT workflows.
 
+    Parameters
+    ----------
+    input_fitsimages : scabha.basetypes.File or list of File
+        A single FITS image or an ordered list of FITS images (e.g., per Stokes).
+    ra0 : float
+        Right ascension of the phase-tracking centre in radians.
+    dec0 : float
+        Declination of the phase-tracking centre in radians.
+    chan_freqs : numpy.ndarray
+        1D array of MS channel centre frequencies in Hz.
+    ms_delta_nu : float
+        MS channel width in Hz.
+    ncorr : int
+        Number of output correlations (e.g., 1, 2, or 4).
+    linear_basis : bool, default True
+        If True, output correlations are in the linear basis (XX, XY, YX, YY).
+        If False, use the circular basis (RR, RL, LR, LL).
+    tol : float, default 1e-7
+        Pixel brightness threshold used to select non-zero pixels for DFT.
+        Units follow the FITS BUNIT after conversion (typically Jy).
+    use_dft : bool or None, optional
+        Whether to force DFT (True) or FFT (False). If None, the choice is made
+        based on the sparsity of the thresholded image (DFT if >= 80% zeros).
+    stack_axis : str or dict, default "STOKES"
+        Axis name to stack along when multiple input FITS images are provided.
+        If a dict, it is passed to `fitstoolz.reader.FitsData.add_axis()`.
+    interpolation : {"nearest", "linear", ...}, default "nearest"
+        Interpolation method used when regridding the FITS spectral axis to the
+        MS frequencies.
+
+    Returns
+    -------
+    ObjDict
+        Container with the following fields:
+        - image : numpy.ndarray
+            If DFT is selected or forced: shape (N_nonzero, N_freq, ncorr),
+            containing only thresholded non-zero pixels.
+            If FFT is selected: shape (n_pix_l, n_pix_m, N_freq, ncorr),
+            the full image cube.
+        - lm : numpy.ndarray or None
+            If DFT is selected or forced: array of shape (N_nonzero, 2) with
+            direction cosines (l, m) for the retained pixels. Otherwise None.
+        - is_polarised : bool
+            True if any of Q, U, V are present in the input.
+        - expand_freq_dim : bool
+            True if the FITS image had a single frequency and should be expanded
+            along the MS frequency axis downstream.
+        - use_dft : bool
+            The final choice used for visibility prediction.
+        - ra_pixel_size : float or None
+            Pixel size along RA in radians for FFT workflows; None for DFT.
+        - dec_pixel_size : float or None
+            Pixel size along Dec in radians for FFT workflows; None for DFT.
+
+    Raises
+    -------
+    TypeError
+        If `stack_axis` is neither a string nor a dict.
+    RuntimeError
+        If the requested `stack_axis` does not exist and cannot be added.
+    FITSSkymodelError
+        If the MS frequency range lies outside the FITS frequency coverage and
+        interpolation is not possible.
+
+    Notes
+    -----
+    - FITS cubes with spectral coordinates in velocity (VRAD/VOPT) are converted
+      to frequency using `astropy.units` and the Doppler convention.
+    - If BUNIT is "Jy/beam", beam areas are used to convert to Jy/pixel.
+    - When spectral grids differ, the FITS image is interpolated onto the MS
+      frequency grid, which can be memory intensive for large cubes.
+    """
     log = logging.getLogger(BIN.skysim)
 
     phase_centre = np.array([ra0, dec0])
@@ -255,7 +254,7 @@ def skymodel_from_fits(
     if nchan_fits == 1 and is_range_in_range(fits_range, ms_range):
         pass
     elif not is_range_in_range(ms_range, fits_range):
-        raise SkymodelError(
+        raise FITSSkymodelError(
             f"MS frequencies [{ms_start_freq / 1e9:.6f} GHz, {ms_end_freq / 1e9:.6f} GHz] "
             f"are outside the FITS image frequencies[{fits_start_freq / 1e9:.6f} GHz, {fits_end_freq / 1e9:.6f} GHz]. "
             "Cannot interpolate FITS image onto MS frequency grid."
@@ -312,13 +311,16 @@ def skymodel_from_fits(
     else:
         expand_freq_dim = nchan > 1
 
-    skymodel = StokesDataFits(fds.coords["STOKES"], dim_idx=0, data=skymodel)
+    skymodel = StokesDataFits(fds.coords["STOKES"], dim_idx=0, data=skymodel, linear_basis=linear_basis)
     # The stokes parameters in this class will be transposed to the correct basis.
 
-    predict_image = skymodel.get_brightness_matrix(ncorr, linear_pol_basis=basis == "linear")
+    predict_image = skymodel.get_brightness_matrix(ncorr)
     predict_nchan = 1 if expand_freq_dim else nchan
+    ref_freq = fits_freqs[:1] if expand_freq_dim else None
+
     # first transpose stokes axis to the end,
     predict_image = np.transpose(predict_image, (1, 2, 3, 0))
+
     # then reshape predict_image to im_to_vis expectations
     reshaped_predict_image = predict_image.reshape(n_pix_l * n_pix_m, predict_nchan, ncorr)
 
@@ -329,7 +331,6 @@ def skymodel_from_fits(
     # decide whether image is sparse enough for DFT
     sparsity = 1 - (non_zero_predict_image.size / predict_image.size)
 
-    print(f"ra_grid:{ra_grid}, dec_grid:{dec_grid}")
     if use_dft is None:
         if sparsity >= 0.8:
             log.info(
@@ -351,6 +352,7 @@ def skymodel_from_fits(
                     "lm": non_zero_lm,
                     "is_polarised": skymodel.is_polarised,
                     "expand_freq_dim": expand_freq_dim,
+                    "ref_freq": ref_freq,
                     "use_dft": use_dft,
                     "ra_pixel_size": None,
                     "dec_pixel_size": None,
@@ -369,6 +371,7 @@ def skymodel_from_fits(
                     "lm": None,
                     "is_polarised": skymodel.is_polarised,
                     "expand_freq_dim": expand_freq_dim,
+                    "ref_freq": ref_freq,
                     "use_dft": use_dft,
                     "ra_pixel_size": ra_pixel_size,
                     "dec_pixel_size": dec_pixel_size,
@@ -384,6 +387,7 @@ def skymodel_from_fits(
                 "lm": non_zero_lm,
                 "is_polarised": skymodel.is_polarised,
                 "expand_freq_dim": expand_freq_dim,
+                "ref_freq": ref_freq,
                 "use_dft": use_dft,
                 "ra_pixel_size": None,
                 "dec_pixel_size": None,

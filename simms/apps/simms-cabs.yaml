@@ -55,10 +55,10 @@ cabs:
         info: Whether to use w-stacking for FFT-based visibility prediction.
         dtype: bool
         default: true
-      cat-delim: 
-        info: Delimeter that is used in the ascii-sky 
+      ascii-delimiter: 
+        info: Delimiter that is used in the ascii-sky 
         dtype: str
-        abbreviation: cd
+        abbreviation: ad
       column:
         info: Data column for simulation
         dtype: str
@@ -85,11 +85,11 @@ cabs:
       sefd:
         info: Add noise using the this SEFD value
         dtype: float
-      cat-species:
-        info: type of catalogue e.g. PyBDSF
+      ascii-species:
+        info: Non-simms sky model type. 
         dtype: str
-        abbreviation: cs
-        choices: ['bdsf_gaul', 'aegean']
+        abbreviation: asp
+        choices: [bdsf_gaul, aegean, wsclean]
       input-column:
         info: Input column (see option --mode)
         dtype: str
@@ -107,12 +107,11 @@ cabs:
         info: "#### NOT IMPLEMENTED ### Direction dependent effects"
         dtype: File
         required: no
-      mapping:
-        info: File that specifies the names of columns that are expected vs the the names of the columns given in the catalogue
+      source_schema:
+        info: Specify a custom source schema via a YAML file that specifies how to map columns in custom sky model to the columns expected by simms.
+              See the bdsf_gaul schema file at 'https://github.com/wits-cfa/simms/tree/main/simms/schemas'
         dtype: File
         required: no
-      outputs:
-        {}
 
   telsim:
     info: Create empty MS using simms

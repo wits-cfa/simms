@@ -4,12 +4,11 @@ from importlib import metadata
 
 __version__ = metadata.version(__package__)
 
-PCKGDIR = os.path.dirname(os.path.abspath(__file__))
+PCKGDIR = __path__[0]
+SCHEMADIR = os.path.join(PCKGDIR, "schemas")
 
-SCHEMADIR = os.path.join(__path__[0], "schemas")
 
-
-def set_logger(name, level="WARNING"):
+def set_logger(name, level="INFO"):
     if isinstance(level, str):
         level = getattr(logging, level, 10)
 

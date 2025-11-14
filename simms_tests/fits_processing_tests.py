@@ -4,8 +4,8 @@ from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
 
-from simms.skymodel.skymods import skymodel_from_fits
-from simms.utilities import FITSSkymodelError as SkymodelError
+from simms.exceptions import FITSSkymodelError as SkymodelError
+from simms.skymodel.fits_skies import skymodel_from_fits
 
 from . import InitTest
 
@@ -20,7 +20,7 @@ class InitThisTest(InitTest):
         self.nchan = len(self.chan_freqs)
         self.ncorr = 2
         self.ms_delta_nu = self.chan_freqs[1] - self.chan_freqs[0]
-        self.basis = "linear"
+        self.linear_basis = True
         self.tol = 1e-7
 
         # Store temporary files to be cleaned up
@@ -60,7 +60,9 @@ def test_stokes_I_fits_processing(params):
     hdu.writeto(test_filename, overwrite=True)
 
     # process the FITS file
-    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    predict = skymodel_from_fits(
+        test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, linear_basis=params.linear_basis
+    )
     intensities = predict.image
 
     # create expected intensities
@@ -111,7 +113,9 @@ def test_off_centre_stokes_I_processing(params):
     hdu.writeto(test_filename, overwrite=True)
 
     # process the FITS file
-    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    predict = skymodel_from_fits(
+        test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, linear_basis=params.linear_basis
+    )
     intensities = predict.image
 
     # create expected intensities
@@ -159,7 +163,9 @@ def test_stokes_I_with_spectral_axis_processing(params):
     hdu.writeto(test_filename, overwrite=True)
 
     # process the FITS file
-    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    predict = skymodel_from_fits(
+        test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, linear_basis=params.linear_basis
+    )
     intensities = predict.image
 
     # create expected intensities
@@ -207,7 +213,14 @@ def test_stokes_I_with_freq_interp_processing(params):
     hdu.writeto(test_filename, overwrite=True)
 
     predict = skymodel_from_fits(
-        test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis, interpolation="linear"
+        test_filename,
+        0,
+        0,
+        params.chan_freqs,
+        params.ms_delta_nu,
+        params.ncorr,
+        linear_basis=params.linear_basis,
+        interpolation="linear",
     )
     intensities = predict.image
 
@@ -263,7 +276,13 @@ def test_stokes_I_processing_with_interp_bounds_error(params):
     # process the FITS file
     with pytest.raises(SkymodelError) as exception:
         skymodel_from_fits(
-            test_filename, 0.0, np.deg2rad(-30.0), params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis
+            test_filename,
+            0.0,
+            np.deg2rad(-30.0),
+            params.chan_freqs,
+            params.ms_delta_nu,
+            params.ncorr,
+            linear_basis=params.linear_basis,
         )
 
     assert exception.type is SkymodelError
@@ -307,7 +326,7 @@ def test_full_stokes_fits_list_processing(params):
 
     # process the FITS files
     intensities = skymodel_from_fits(
-        test_skymodels, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis
+        test_skymodels, 0.0, 0.0, params.chan_freqs, params.ms_delta_nu, params.ncorr, linear_basis=params.linear_basis
     ).image
 
     # create expected intensities
@@ -528,7 +547,9 @@ def test_bmaj_bmin_header_scaling(params):
     test_filename = params.random_named_file(suffix="bmajmin.fits")
     hdu.writeto(test_filename, overwrite=True)
 
-    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    predict = skymodel_from_fits(
+        test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, linear_basis=params.linear_basis
+    )
     intensities = predict.image
 
     # Calculate expected scaling
@@ -577,7 +598,9 @@ def test_bmaj1_bmin1_cube_scaling(params):
     test_filename = params.random_named_file(suffix="bmajmin.fits")
     hdu.writeto(test_filename, overwrite=True)
 
-    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    predict = skymodel_from_fits(
+        test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, linear_basis=params.linear_basis
+    )
     intensities = predict.image.real
     pixel_area = np.abs(np.deg2rad(header["CDELT1"])) * np.abs(np.deg2rad(header["CDELT2"]))
 
@@ -639,7 +662,9 @@ def test_beam_table_scaling(params):
     test_filename = params.random_named_file(suffix=".fits")
     hdul.writeto(test_filename, overwrite=True)
 
-    predict = skymodel_from_fits(test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, params.basis)
+    predict = skymodel_from_fits(
+        test_filename, 0, 0, params.chan_freqs, params.ms_delta_nu, params.ncorr, linear_basis=params.linear_basis
+    )
     intensities = predict.image
 
     pixel_area = np.abs(np.deg2rad(header["CDELT1"])) * np.abs(np.deg2rad(header["CDELT2"]))
