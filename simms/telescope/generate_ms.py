@@ -64,8 +64,8 @@ def create_ms(
     subarray_list: List[str] = None,
     subarray_range: List[int] = None,
     subarray_file: File = None,
-    low_source_limit: Union[float, str] = None,
-    high_source_limit: Union[float, str] = None,
+    low_elevation_limit: Union[float, str] = None,
+    high_elevation_limit: Union[float, str] = None,
 ):
     "Creates an empty Measurement Set for an observation using given observation parameters"
 
@@ -262,14 +262,14 @@ def create_ms(
 
     flag_row = np.zeros(num_rows, dtype=bool)
 
-    if low_source_limit:
+    if low_elevation_limit:
         for i in range(num_rows):
-            if expanded_src_elevations[i] < low_source_limit:
+            if expanded_src_elevations[i] < low_elevation_limit:
                 flag_row[i] = True
 
-    if high_source_limit:
+    if high_elevation_limit:
         for i in range(num_rows):
-            if expanded_src_elevations[i] > high_source_limit:
+            if expanded_src_elevations[i] > high_elevation_limit:
                 flag_row[i] = True
 
     ds["FLAG_ROW"] = (("row",), da.from_array(flag_row, chunks=num_row_chunks))

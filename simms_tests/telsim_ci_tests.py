@@ -29,7 +29,7 @@ def test_telsim_subarray(params):
             "telsim",
             "--telescope",
             "skamid-aastar",
-            "--ntime",
+            "--ntimes",
             "1",
             params.random_named_directory(suffix=".ms"),
         ]

@@ -31,7 +31,7 @@ cabs:
         - cubic
         abbreviation: fsi
       polarisation:
-        info: Simulate all available stokes paraemters (correlations). If false, only consider stokes I
+        info: Simulate all available stokes parameters (correlations). If false, only consider stokes I.
         default: true
         dtype:  bool
         abbreviation: pol
@@ -41,7 +41,7 @@ cabs:
         default: linear
         choices: ['linear', 'circular']
       pixel-tol:
-        info: minimum brightness for a pixel to be considered in direct Fourier transform
+        info: Minimum brightness for a pixel to be considered in direct Fourier transform
         dtype: float
         required: no
         default: 1e-7
@@ -83,10 +83,10 @@ cabs:
         dtype: int
         default: 0
       sefd:
-        info: Add noise using the this SEFD value
+        info: Add noise using this SEFD value
         dtype: float
       cat-species:
-        info: type of catalogue e.g. PyBDSF
+        info: Type of catalogue e.g. PyBDSF
         dtype: str
         abbreviation: cs
         choices: ['bdsf_gaul', 'aegean']
@@ -108,7 +108,7 @@ cabs:
         dtype: File
         required: no
       mapping:
-        info: File that specifies the names of columns that are expected vs the the names of the columns given in the catalogue
+        info: File that specifies the names of columns that are expected vs. the names of the columns given in the catalogue
         dtype: File
         required: no
       outputs:
@@ -165,7 +165,7 @@ cabs:
         dtype: float
         default: 8
         abbreviation: dt
-      ntime:
+      ntimes:
         info: Number of times slots for MS. Default is 10.
         dtype: int
         default: 10
@@ -185,13 +185,17 @@ cabs:
         dtype: int
         default: 9
         abbreviation: nc
+      freq_range:
+        info: A list containing the start frequency, end frequency, and number of channels, e.g., startfreq,endfreq,nchan.
+        dtype: str
+        abbreviation: fr
       correlations:
         info: Feed correlations for MS, e.g., 'XX,YY'. Default is 'XX,YY'.
         dtype: str
         default: XX,YY
         abbreviation: corr
       nworkers:
-        info: Number of workers (one per CPU). Default is 4.
+        info: Number of workers (one per CPU). Default is 4.###Not IMPLEMENTED###
         dtype: int
         default: 4
       rowchunks:
@@ -212,23 +216,19 @@ cabs:
         dtype: float
         abbreviation: tos
       sensitivity_file: 
-        info: File with antenna spectral sensivity information. Allowed keys (column names) are 'freq, tsys, sefd, tsys_over_eta'
+        info: File with antenna spectral sensivity information. Allowed keys (column names) are 'freq, tsys, sefd, tsys_over_eta'.
         dtype: File 
         abbreviation: sfile
-      low_source_limit:
+      low_elevation_limit:
         info: Minimum source elevation in degrees that is considered reliable data. The data recorded when the source is below this value is flagged.
         dtype: float
-        abbreviation: lsl
-      high_source_limit:
+        abbreviation: lel
+      high_elevation_limit:
         info: Maximum source elevation in degrees that is considered reliable data. The data recorded when the source is above this value is flagged.
         dtype: float
-        abbreviation: hsl
-      freq_range:
-        info: A list containing the start frequency, end frequency, and number of channels, e.g., startfreq,endfreq,nchan.
-        dtype: str
-        abbreviation: fr
+        abbreviation: hel
       smooth: 
-        info: If you have provided a sensitivity file with frequencies and their corresponding sefd or tsys_over_eta, then we will fit to get the approximate sefd matching the MS frequencies. There are two fitting options, polyn and spline.
+        info: If you have provided a sensitivity file with frequencies and their corresponding SEFD or tsys_over_eta, then we will fit to get the approximate SEFD matching the MS frequencies. There are two fitting options, polyn and spline.
         dtype: str
       fit_order:
         info: The fitting order to use when approximating the MS frequencies SEFDs. 

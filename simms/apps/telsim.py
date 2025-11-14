@@ -28,7 +28,7 @@ def runit(opts):
     direction = opts.direction.split(",")
     starttime = opts.starttime
     dtime = opts.dtime
-    ntimes = opts.ntime
+    ntimes = opts.ntimes
     startfreq = opts.startfreq
     dfreq = opts.dfreq
     nchan = opts.nchan
@@ -38,8 +38,8 @@ def runit(opts):
     tsys_over_eta = opts.tsys_over_eta
     column = opts.column
     startha = opts.startha
-    l_src_limit = opts.low_source_limit
-    h_src_limit = opts.high_source_limit
+    l_src_limit = opts.low_elevation_limit
+    h_src_limit = opts.high_elevation_limit
     freq_range = opts.freq_range
     sfile = opts.sensitivity_file
     if freq_range is not None:
@@ -73,6 +73,6 @@ def runit(opts):
         subarray_list=subarray_list,
         subarray_range=subarray_range,
         subarray_file=subarray_file,
-        low_source_limit=l_src_limit,
-        high_source_limit=h_src_limit,
+        low_elevation_limit=l_src_limit,
+        high_elevation_limit=h_src_limit,
     )
