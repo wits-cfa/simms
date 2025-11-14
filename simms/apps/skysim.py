@@ -124,8 +124,8 @@ def runit(opts):
             interpolation=opts.fits_sky_interp,
         )
 
-        dtype = np.finfo(predict.image.dtype).dtype
-        if dtype == np.float32:
+        fs_dtype = np.finfo(predict.image.dtype).dtype
+        if fs_dtype == np.float32:
             epsilon = 1e-6
         else:
             epsilon = 1e-7 if opts.fft_precision == "double" else 1e-6
@@ -143,10 +143,10 @@ def runit(opts):
             ("chan",),
             polarisation=predict.is_polarised,
             expand_freq_dim=predict.expand_freq_dim,
-            ref_freq=predict.ref_freq,
             use_dft=predict.use_dft,
             ncorr=ncorr,
             dtype=msds.DATA.data.dtype,
+            ref_freq=predict.ref_freq,
             delta_ra=predict.ra_pixel_size,
             delta_dec=predict.dec_pixel_size,
             epsilon=epsilon,
