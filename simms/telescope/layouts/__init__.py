@@ -5,16 +5,14 @@ from typing import Dict
 from omegaconf import OmegaConf
 from scabha.basetypes import File
 
-# workaround the issue stated in
-#  https://github.com/python/mypy/issues/1422
-__path__ = os.path.dirname(__file__)
+thisdir = os.path.dirname(__file__)
 
 
 def simms_telescopes() -> Dict:
     """
     Returns a dictionary of known array layouts
     """
-    lays = map(File, glob.glob(f"{__path__}/*.geodetic.yaml"))
+    lays = map(File, glob.glob(f"{thisdir}/*.geodetic.yaml"))
     laysdict = {}
     for layout in lays:
         # Array name
@@ -65,10 +63,10 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
     """
     Returns a dictionary of a custom array layout.
     """
-    lays = glob.glob(f"{__path__}/{layout}.geodetic.yaml")
+    layout_file = os.path.join(thisdir, f"{layout}.geodetic.yaml")
     laysdict = {}
 
-    arrayinfo = OmegaConf.load(lays[0])
+    arrayinfo = OmegaConf.load(layout_file)
     allants = list(arrayinfo.antnames)
     all_locations = list(arrayinfo.antlocations)
     anant = len(all_locations)

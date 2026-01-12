@@ -3,8 +3,8 @@ import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 
+from simms.skymodel.fits_skies import skymodel_from_fits
 from simms.skymodel.mstools import augmented_im_to_vis as im_to_vis
-from simms.skymodel.skymods import skymodel_from_fits
 from simms.telescope.array_utilities import Array
 
 from . import InitTest
@@ -31,10 +31,12 @@ class InitThisTests(InitTest):
         self.ra0 = 0.0
         self.dec0 = np.deg2rad(-30.0)
         self.ncorr = 2
+        self.linear_basis = True
 
         # image parameters
         self.img_size = 256
         self.cell_size = 3e-6  # arcsec
+        self.dtype = np.float64
 
         # Store temporary files to be cleaned up
         self.test_files = []
@@ -83,7 +85,7 @@ def test_fits_predict_stokes_I(params):
         params.freqs,
         params.freqs[1] - params.freqs[0],
         params.ncorr,
-        "linear",
+        linear_basis=params.linear_basis,
     )
 
     # predict visibilities
@@ -94,7 +96,9 @@ def test_fits_predict_stokes_I(params):
         params.freqs,
         predict.is_polarised,
         expand_freq_dim=predict.expand_freq_dim,
+        ref_freq=predict.ref_freq,
         ncorr=params.ncorr,
+        dtype=params.dtype,
         epsilon=1e-7,
         use_dft=predict.use_dft,
     )
@@ -151,7 +155,7 @@ def test_fits_predict_stokes_I_with_spectral_axis(params):
         params.freqs,
         params.freqs[1] - params.freqs[0],
         params.ncorr,
-        "linear",
+        linear_basis=params.linear_basis,
     )
 
     # predict visibilities
@@ -164,6 +168,7 @@ def test_fits_predict_stokes_I_with_spectral_axis(params):
         expand_freq_dim=predict.expand_freq_dim,
         use_dft=predict.use_dft,
         ncorr=params.ncorr,
+        dtype=params.dtype,
         epsilon=1e-7,
     )
 
@@ -226,7 +231,7 @@ def test_fits_predicting_all_stokes_linear_basis(params):
         params.freqs,
         params.freqs[1] - params.freqs[0],
         params.ncorr,
-        basis="linear",
+        linear_basis=params.linear_basis,
     )
 
     # predict visibilities
@@ -239,6 +244,7 @@ def test_fits_predicting_all_stokes_linear_basis(params):
         expand_freq_dim=predict.expand_freq_dim,
         use_dft=predict.use_dft,
         ncorr=params.ncorr,
+        dtype=params.dtype,
         epsilon=1e-7,
     )
 
@@ -303,7 +309,7 @@ def test_fits_predicting_all_stokes_circular_basis(params):
         params.freqs,
         params.freqs[1] - params.freqs[0],
         params.ncorr,
-        basis="circular",
+        linear_basis=False,
     )
 
     # predict visibilities
@@ -316,6 +322,7 @@ def test_fits_predicting_all_stokes_circular_basis(params):
         expand_freq_dim=predict.expand_freq_dim,
         ncorr=params.ncorr,
         use_dft=predict.use_dft,
+        dtype=params.dtype,
         epsilon=1e-7,
     )
 

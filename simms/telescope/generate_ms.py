@@ -67,8 +67,64 @@ def create_ms(
     low_source_limit: Union[float, str] = None,
     high_source_limit: Union[float, str] = None,
 ):
-    "Creates an empty Measurement Set for an observation using given observation parameters"
+    """Generate a CASA Measurement Set (MS) for a simulated observation.
 
+    Parameters
+    ----------
+    ms : str
+        Path to output Measurement Set directory (will be overwritten if it exists).
+    telescope_name : Union[str, File]
+        Telescope or array definition (name or configuration file).
+    pointing_direction : str
+        Target sky direction (e.g. 'J2000 12:34:56.7 -45.23.10').
+    dtime : int
+        Integration time per visibility (seconds).
+    ntimes : int
+        Number of time steps.
+    start_freq : Union[str, float]
+        Starting frequency (string with units or raw Hz).
+    dfreq : Union[str, float]
+        Channel frequency increment (string with units or raw Hz).
+    nchan : int
+        Number of spectral channels.
+    correlations : str
+        Correlation types (e.g. 'XX', 'YY', 'RR', 'LL').
+    row_chunks : int
+        Dask chunk size along the row (time-baseline) dimension.
+    sefd : float
+        System Equivalent Flux Density (Jy). If provided, noise is generated.
+    column : str
+        Name of data column to populate (e.g. 'DATA' or 'CORRECTED_DATA').
+    smooth : str, optional
+        SEFD frequency smoothing method ('polyn' or 'spline').
+    fit_order : int, optional
+        Polynomial degree or spline smoothing parameter.
+    start_time : Union[str, List[str]], optional
+        Observation start time (string or list for multi-part definitions).
+    start_ha : float, optional
+        Starting hour angle (radians).
+    freq_range : str, optional
+        Alternative frequency specification: [start, end, nchan].
+    sfile : File, optional
+        Sensitivity file to override SEFD values.
+    tsys_over_eta : float, optional
+        Tsys/eta value used when deriving SEFD if not explicitly given.
+    subarray_list : List[str], optional
+        List of antenna names to include.
+    subarray_range : List[int], optional
+        Index range of antennas to include.
+    subarray_file : File, optional
+        File specifying subarray selection.
+    low_source_limit : Union[float, str], optional
+        Elevation (deg) below which rows are flagged.
+    high_source_limit : Union[float, str], optional
+        Elevation (deg) above which rows are flagged.
+
+    Returns
+    -------
+    None
+        Writes the Measurement Set and its subtables to disk.
+    """
     remove_ms(ms)
     telescope_array = autils.Array(
         telescope_name,
@@ -422,17 +478,6 @@ def create_ms(
         dask.compute(
             write_pntng,
         )
-
-    # # check this
-    # dir_ds = {
-    #     "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
-    # }
-
-    # dir_table = daskms.Dataset(dir_ds)
-
-    # write_dir = xds_to_table(dir_table, f"{ms}::POINTING", columns=["DIRECTION"], descriptor=ms_desc)
-    # with TqdmCallback(desc=f"Writing the DIRECTION column to POINTING table to {ms}"):
-    #     dask.compute(write_dir)
 
     # add PROCESSOR table
     processor_table = daskms.Dataset(

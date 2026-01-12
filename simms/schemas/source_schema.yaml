@@ -1,0 +1,144 @@
+info: These are the default parameter names and units for simms skymodel specifcation. But you can use your 
+      own specifcation by setting the 'alias' field of the relevant parameter, then parsing your modified file 
+      to the '--source-schema' option of the 'simms skysim' command. The units given via the 'units' field must
+      folow the 'astropy.units' naming convention.
+
+parameters:
+  name:
+    info: Source name/label
+    alias: null
+    units: null
+    ptype: string
+  ra:
+    info: Right ascension
+    alias: null
+    units: deg
+    ptype: longitude
+    join: [ra_h, ra_m, ra_s]
+  ra_h:
+    info: Right ascension
+    alias: null
+    units: hour
+    ptype: longitude
+  ra_m:
+    info: Right ascension
+    alias: null
+    units: min
+    ptype: longitude
+  ra_s:
+    info: Right ascension
+    alias: null
+    units: sec
+    ptype: longitude
+  dec:
+    info: Declination
+    alias: null
+    units: deg
+    ptype: latitude
+    join: [dec_d, dec_m, dec_s]
+  dec_d:
+    info: Right ascension
+    alias: null
+    units: deg
+    ptype: longitude
+  dec_m:
+    info: Right ascension
+    alias: null
+    units: arcmin
+    ptype: longitude
+  dec_s:
+    info: Right ascension
+    alias: null
+    units: arcsec
+    ptype: longitude
+  stokes_i: 
+    info: Stokes I
+    alias: null
+    units: Jy
+    ptype: flux
+    required: true
+  stokes_q:
+    info: Stokes Q
+    alias: null
+    units: Jy
+    ptype: flux
+  stokes_u:
+    info: Stokes U
+    alias: null
+    units: Jy
+    ptype: flux
+  stokes_v:
+    info: Stokes V
+    alias: null
+    units: Jy
+    ptype: flux
+  emaj:
+    info: Major axis; default units
+    alias: null
+    units: deg
+    ptype: angle
+  emin:
+    info: Minor axis; default units [deg]
+    alias: null
+    units: deg
+    ptype: angle
+  pa:
+    info: Position angle; default units
+    alias: null
+    units: deg
+    ptype: angle
+  cont_reffreq:
+    info: Continuum reference frequency; default units
+    alias: null
+    units: Hz
+    ptype: frequency
+  cont_coeff_1: 
+    info: Spectral index term (second order term)
+    alias: null
+    units: null
+    ptype: number
+  cont_coeff_2:
+    info: Spectral curvature term (third order term)
+    alias: null
+    units: null
+    ptype: number
+  cont_coeff_3:
+    info: Spectral log-parabolic term (fourth order term)
+    alias: null
+    units: null
+    ptype: number
+  line_peak:
+    info: Line source peak frequency; default units
+    alias: null
+    units: Hz
+    ptype: frequency
+  line_width:
+    info: Line width; default units
+    alias: null
+    units: Hz
+    ptype: frequency
+  line_restfreq:
+    info: Line rest frequency; default units
+    alias: null
+    units: Hz
+    ptype: frequency
+  transient_start:
+    info: Beginning of transient event relative to observation start
+    alias: null
+    units: null
+    ptype: time
+  transient_period:
+    info:  Total time of transient event, including ingress and egress
+    alias: null
+    units: s
+    ptype: time
+  transient_ingress:  
+    info: Duration of ingress; default units
+    alias: null
+    units: s
+    ptype: time
+  transient_absorb:
+    info: Maximum fractional flux decrease during the transit
+    alias: null
+    units: null
+    ptype: number

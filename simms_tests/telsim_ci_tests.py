@@ -56,7 +56,7 @@ def test_telsim_skysim_chain(params):
         f"{TESTDIR}/testsky.txt",
     ]
 
-    subprocess.check_call(main_args + telsim_args + simms_args)
+    subprocess.check_output(main_args + telsim_args + simms_args)
 
 
 def test_error_telsim_chain_double_ms_spec(params):

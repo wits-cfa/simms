@@ -9,3 +9,4 @@ Reference
 
     telsim_reference
     skysim_reference
+    schemas
