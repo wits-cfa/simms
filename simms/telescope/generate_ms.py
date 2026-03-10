@@ -461,13 +461,18 @@ def create_ms(
     with TqdmCallback(desc=f"Writing the POLARIZATION table to {ms}"):
         dask.compute(write_pol)
 
-    phase_arr = da.from_array(np.full((num_rows, 1, 2), phase_dir))
+    phase_dir_arr = np.asarray(phase_dir).reshape((1, 1, 2))
+    phase_dir_small = da.from_array(phase_dir_arr, chunks=-1)
+    phase_arr = da.broadcast_to(
+        phase_dir_small,
+        (num_rows, 1, 2),
+        chunks=(row_chunks, 1, 2)
+    )
 
     pntng_ds = {
-        # "TARGET": (("row", "point-poly", "radec"), phase_arr),
-        "TIME": (("row"), da.from_array(uvcoverage_data.times)),
-        "INTERVAL": (("row"), da.from_array(np.full(num_rows, dtime))),
-        "TRACKING": (("row"), da.from_array(np.full(num_rows, True))),
+        "TIME": (("row",), da.from_array(uvcoverage_data.times, chunks=row_chunks)),
+        "INTERVAL": (("row",), da.full(num_rows, dtime, chunks=row_chunks)),
+        "TRACKING": (("row",), da.full(num_rows, True, chunks=row_chunks, dtype=bool)),
         "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
     }
 
