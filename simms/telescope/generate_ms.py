@@ -461,8 +461,7 @@ def create_ms(
     with TqdmCallback(desc=f"Writing the POLARIZATION table to {ms}"):
         dask.compute(write_pol)
 
-    phase_dir_arr = np.asarray(phase_dir).reshape((1, 1, 2))
-    phase_dir_small = da.from_array(phase_dir_arr, chunks=-1)
+    phase_dir_small = da.from_array(phase_dir, chunks=-1)
     phase_arr = da.broadcast_to(phase_dir_small, (num_rows, 1, 2), chunks=(row_chunks, 1, 2))
 
     pntng_ds = {
