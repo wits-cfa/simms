@@ -20,9 +20,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: anomalyco/opencode/github@latest
-        env:
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_PR_REVIEW }}
         with:
           use_github_token: true
-          model: deepseek-v4-pro
+          model: opencode/deepseek-v4-pro
           variant: medium
