@@ -13,7 +13,7 @@ class InitTest:
         if not hasattr(self, "test_files"):
             self.test_files = []
 
-        file_obj = tempfile.NamedTemporaryFile(suffix=suffix, dir=TESTDIR, delete_on_close=False)
+        file_obj = tempfile.NamedTemporaryFile(suffix=suffix, dir=TESTDIR, delete=False)
         name = file_obj.name
         file_obj.close()
 
@@ -24,8 +24,7 @@ class InitTest:
         if not hasattr(self, "test_files"):
             self.test_files = []
 
-        dir_obj = tempfile.TemporaryDirectory(suffix=suffix, dir=TESTDIR, delete=False)
-        name = dir_obj.name
+        name = tempfile.mkdtemp(suffix=suffix, dir=TESTDIR)
 
         self.test_files.append(name)
         return name
