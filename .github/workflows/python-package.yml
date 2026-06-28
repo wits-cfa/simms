@@ -60,7 +60,8 @@ jobs:
       - uses: anomalyco/opencode/github@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_GO_API }}
         with:
           use_github_token: true
-          model: opencode/deepseek-v4-flash-free
+          model: opencode-go/deepseek-v4-pro
           variant: medium
