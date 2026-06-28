@@ -88,19 +88,18 @@ def runit(opts):
             concatenate=True,
         )
 
-    # TODO(Sphe,Senkhosi) This is too tailored to a specific use case and input file schema.
+    # TODO(Sphe,Senkhosi) This is too taylored to a specific use case and input file schema.
     # We need more generic API for handling multiple FITS images as input.
     # Something like we do in skymods.skymodel_from_fits(stack_axis)
     elif fs:
         if os.path.exists(fs):
             if os.path.isdir(fs):
-                fits_dir = fs
                 fs = []
                 try:
-                    fs.append(glob.glob(f"{fits_dir}/*I.fits")[0])
-                    fs.append(glob.glob(f"{fits_dir}/*Q.fits")[0])
-                    fs.append(glob.glob(f"{fits_dir}/*U.fits")[0])
-                    fs.append(glob.glob(f"{fits_dir}/*V.fits")[0])
+                    fs.append(glob(f"{fs}/*I.fits")[0])  # the wildcard pattern must be a user input
+                    fs.append(glob(f"{fs}/*Q.fits")[0])
+                    fs.append(glob(f"{fs}/*U.fits")[0])
+                    fs.append(glob(f"{fs}/*V.fits")[0])
                 except IndexError:
                     raise RuntimeError("Could not find all required FITS files in the specified directory")
 

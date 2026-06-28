@@ -20,7 +20,6 @@ def simms_telescopes() -> Dict:
         allants = list(arrayinfo.antnames)
         all_locations = list(arrayinfo.antlocations)
         anant = len(all_locations)
-        ant_to_idx = {name: i for i, name in enumerate(allants)}
 
         allsizes = arrayinfo.size
         if isinstance(allsizes, (float, int)):
@@ -35,7 +34,7 @@ def simms_telescopes() -> Dict:
             antlocations = []
             antsizes = []
             for ant in antnames:
-                idx = ant_to_idx[ant]
+                idx = allants.index(ant)
                 antlocations.append(all_locations[idx])
                 antsizes.append(allsizes[idx])
 
@@ -79,12 +78,11 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
         allsizes = list(allsizes)
 
     if subarray_list:
-        ant_to_idx = {name: i for i, name in enumerate(allants)}
         antnames = subarray_list
         antlocations = []
         antsizes = []
         for ant in antnames:
-            idx = ant_to_idx[ant]
+            idx = allants.index(ant)
             antlocations.append(all_locations[idx])
             antsizes.append(allsizes[idx])
 
@@ -104,12 +102,11 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
         subarray_data = OmegaConf.load(subarray_file)
 
         if "antnames" in subarray_data:
-            ant_to_idx = {name: i for i, name in enumerate(allants)}
             antnames = subarray_data["antnames"]
             antlocations = []
             antsizes = []
             for ant in antnames:
-                idx = ant_to_idx[ant]
+                idx = allants.index(ant)
                 antlocations.append(all_locations[idx])
                 antsizes.append(allsizes[idx])
 

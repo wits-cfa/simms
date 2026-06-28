@@ -33,7 +33,7 @@ Best Practices
 Command-Line Abbreviations
 --------------------------
 
-Refer to ``simms-cabs.yaml`` for a full list of abbreviations.
+Refer to ``simms-cab.yaml`` for a full list of abbreviations.
 
 +--------+-----------------+
 | Abbrev | Full Option     |

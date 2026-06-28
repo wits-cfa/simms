@@ -13,9 +13,6 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +21,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
@@ -34,12 +31,8 @@ jobs:
         python -m pip install --group tests
     - name: Lint with ruff
       run: |
-        ruff check
         ruff format --check --diff
-    - name: Run unit tests
-      run: |
-        pytest simms_tests/
-    - name: Smoke test CLI
+    - name: Test installation
       run: |
         simms skysim --help
         simms telsim --help

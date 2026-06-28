@@ -279,7 +279,7 @@ class ASCIISource:
                 "ntimes": unique_times_rel.shape[0],
                 "transient_start": self.value_or_default("transient_start"),
                 "transient_period": self.value_or_default("transient_period"),
-                "transient_ingress": self.value_or_default("transient_ingress"),
+                "transient_ingress": self.value_or_default("self.transient_ingress"),
                 "transient_absorb": self.value_or_default("transient_absorb"),
             }
             self.stokes.set_lightcurve(lightcurve_func, **kwargs)
@@ -373,3 +373,15 @@ class ASCIISkymodel:
     @property
     def has_transient(self):
         return self._has_source_type("transient")
+
+    @property
+    def has_exoplanet_transient(self):
+        return self._has_source_type("exoplanet_transient")
+
+    @property
+    def has_line_source(self):
+        return self._has_source_type("line")
+
+    @property
+    def has_continuum_source(self):
+        return self._has_source_type("continuum")

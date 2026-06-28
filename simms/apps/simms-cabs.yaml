@@ -31,7 +31,7 @@ cabs:
         - cubic
         abbreviation: fsi
       polarisation:
-        info: Simulate all available stokes parameters (correlations). If false, only consider stokes I
+        info: Simulate all available stokes paraemters (correlations). If false, only consider stokes I
         default: true
         dtype:  bool
         abbreviation: pol
@@ -99,6 +99,14 @@ cabs:
         dtype: str
         default: sim
         choices: ['sim', 'add', 'subtract']
+      die:
+        info: "#### NOT IMPLEMENTED #### Direction independent effects"
+        dtype: File
+        required: no
+      dde:
+        info: "#### NOT IMPLEMENTED ### Direction dependent effects"
+        dtype: File
+        required: no
       source_schema:
         info: Specify a custom source schema via a YAML file that specifies how to map columns in custom sky model to the columns expected by simms.
               See the bdsf_gaul schema file at 'https://github.com/wits-cfa/simms/tree/main/simms/schemas'
@@ -199,11 +207,11 @@ cabs:
         info: Antenna SEFD (one value for all frequencies)
         dtype: float
       tsys-over-eta:
-        info: Antenna system temperature over aperture efficiency (one value for all frequencies) 
+        info: Antenna system temperature over aperture efficiency (one value for all frequecies) 
         dtype: float
         abbreviation: tos
       sensitivity-file: 
-        info: File with antenna spectral sensitivity information. Allowed keys (column names) are 'freq, tsys, sefd, tsys_over_eta'
+        info: File with antenna spectral sensivity information. Allowed keys (column names) are 'freq, tsys, sefd, tsys_over_eta'
         dtype: File 
         abbreviation: sfile
       low-source-limit:
