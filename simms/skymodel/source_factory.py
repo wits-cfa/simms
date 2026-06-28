@@ -133,13 +133,13 @@ class StokesData:
         freqs : numpy.ndarray
             Frequency array.
         specfunc : Callable
-            Callable with signature f(freqs, flux, **kwargs) returning the
+            Callable with signature ``f(freqs, flux, **kwargs)`` returning the
             spectral profile.
         full_pol : bool, optional
             If True, compute spectra for all four Stokes parameters.
             If False, only Stokes I is used. Default is True.
         **kwargs
-            Additional keyword arguments forwarded to `specfunc`.
+            Additional keyword arguments forwarded to ``specfunc``.
 
         Returns
         -------

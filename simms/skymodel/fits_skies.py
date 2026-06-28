@@ -47,11 +47,10 @@ def compute_lm_coords(
     Returns
     -------
     numpy.ndarray
-        Array of direction cosines:
-        - If `tol_mask` is None, an array with the grid of (l, m) values with
-          shape (..., 2), where the last dimension stores (l, m).
-        - If `tol_mask` is provided, a 2D array with shape (N, 2) containing
-          only the selected (l, m) pairs.
+        Array of direction cosines. If ``tol_mask`` is None, the result is a
+        grid of (l, m) values with shape (..., 2) where the last dimension
+        stores (l, m). If ``tol_mask`` is provided, only the selected (l, m)
+        pairs are returned as a 2D array of shape (N, 2).
 
     Notes
     -----
@@ -124,26 +123,9 @@ def skymodel_from_fits(
     Returns
     -------
     ObjDict
-        Container with the following fields:
-        - image : numpy.ndarray
-            If DFT is selected or forced: shape (N_nonzero, N_freq, ncorr),
-            containing only thresholded non-zero pixels.
-            If FFT is selected: shape (n_pix_l, n_pix_m, N_freq, ncorr),
-            the full image cube.
-        - lm : numpy.ndarray or None
-            If DFT is selected or forced: array of shape (N_nonzero, 2) with
-            direction cosines (l, m) for the retained pixels. Otherwise None.
-        - is_polarised : bool
-            True if any of Q, U, V are present in the input.
-        - expand_freq_dim : bool
-            True if the FITS image had a single frequency and should be expanded
-            along the MS frequency axis downstream.
-        - use_dft : bool
-            The final choice used for visibility prediction.
-        - ra_pixel_size : float or None
-            Pixel size along RA in radians for FFT workflows; None for DFT.
-        - dec_pixel_size : float or None
-            Pixel size along Dec in radians for FFT workflows; None for DFT.
+        Container with fields ``image``, ``lm``, ``is_polarised``,
+        ``expand_freq_dim``, ``use_dft``, ``ra_pixel_size``, and
+        ``dec_pixel_size``. See the class documentation for field descriptions.
 
     Raises
     -------
