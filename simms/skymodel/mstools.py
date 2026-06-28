@@ -54,9 +54,10 @@ def sim_noise(dshape: list | tuple, vis_noise: float) -> np.ndarray:
     Returns
     -------
     numpy.ndarray
-        Complex noise array of shape `dshape`.
+        Complex noise array of shape ``dshape``.
     """
-    return np.random.randn(*dshape) * vis_noise + np.random.randn(*dshape) * vis_noise * 1j
+    rng = np.random.default_rng()
+    return rng.standard_normal(dshape) * vis_noise + rng.standard_normal(dshape) * vis_noise * 1j
 
 
 def add_noise(vis: np.ndarray | float, vis_noise: float):

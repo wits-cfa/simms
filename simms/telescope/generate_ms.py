@@ -307,13 +307,7 @@ def create_ms(
         ds[column] = (("row", "chan", "corr"), noisy_data)
 
     src_elevs = uvcoverage_data.source_elevations
-    expanded_src_elevations = []
-
-    for elevation in src_elevs:
-        all_baselines_elevation_per_time = [elevation] * nbaselines
-        expanded_src_elevations.append(all_baselines_elevation_per_time)
-
-    expanded_src_elevations = np.array(expanded_src_elevations).flatten()
+    expanded_src_elevations = np.repeat(src_elevs, nbaselines)
 
     flag_row = np.zeros(num_rows, dtype=bool)
 
