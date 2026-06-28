@@ -13,6 +13,8 @@ from simms.exceptions import FITSSkymodelError
 from simms.skymodel.source_factory import StokesDataFits
 from simms.utilities import ObjDict, is_range_in_range, pix_radec2lm
 
+log = logging.getLogger(__name__)
+
 
 def compute_lm_coords(
     phase_centre: np.ndarray,
@@ -245,7 +247,7 @@ def skymodel_from_fits(
     ra_pixel_size = ra_coords.pixel_size * getattr(units, ra_coords.units).to("rad")
     dec_pixel_size = dec_coords.pixel_size * getattr(units, dec_coords.units).to("rad")
 
-    print(f"dec_pix:{np.rad2deg(dec_pixel_size)}, ra_pix:{np.rad2deg(ra_pixel_size)}")
+    log.debug("dec_pix:%s, ra_pix:%s", np.rad2deg(dec_pixel_size), np.rad2deg(ra_pixel_size))
     pixel_area = abs(ra_pixel_size * dec_pixel_size)
 
     ms_range = (ms_start_freq, ms_end_freq)

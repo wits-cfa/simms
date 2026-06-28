@@ -1,4 +1,4 @@
-version: 1.0beta1
+version: 3.0beta3
 
 Observation:
   ms:
@@ -9,7 +9,7 @@ Observation:
   desc:
     info: Observation description
     dtype: str
-    default: Simulated observation from simms 2.0 
+    default: Simulated observation from simms 3.0 
   layout:
     info: Array layout
     dtype:

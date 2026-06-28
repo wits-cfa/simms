@@ -122,6 +122,7 @@ class StokesData:
             self.param_string = "IQUV"
         else:
             self.param_string = "IVQU"
+        self._stokes_idx = {p: i for i, p in enumerate(self.param_string)}
 
     def set_spectrum(self, freqs: np.ndarray, specfunc: Callable, full_pol: bool = True, **kwargs):
         """
@@ -209,7 +210,7 @@ class StokesData:
             raise RuntimeError(f"Uknown Stokes paramter '{x}'")
 
         try:
-            xdata = self.data[self.param_string.index(x)]
+            xdata = self.data[self._stokes_idx[x]]
         except IndexError:
             xdata = 0
 
@@ -293,6 +294,8 @@ class StokesData:
 
 
 class StokesDataFits(StokesData):
+    _STOKES_IDX = {"I": 0, "Q": 1, "U": 2, "V": 3}
+
     def __init__(self, coord: xr.DataArray, dim_idx: int, data: np.ndarray, linear_basis: bool = True):
         """
         Wrap FITS Stokes data with axis mapping.
@@ -335,13 +338,11 @@ class StokesDataFits(StokesData):
             If an unknown Stokes parameter is requested.
         """
 
-        stokes_types = dict(I=0, Q=1, U=2, V=3)
-
-        if x not in stokes_types.keys():
+        if x not in self._STOKES_IDX:
             raise RuntimeError(f"Uknown Stokes paramter '{x}'")
 
         dslice = list(self.__dslice__)
-        dslice[self.idx] = stokes_types[x]
+        dslice[self.idx] = self._STOKES_IDX[x]
 
         try:
             xdata = self.data[tuple(dslice)]

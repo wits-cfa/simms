@@ -15,7 +15,7 @@ Array:
     dtype: str
     default: ALT-AZ
   size:
-    info: Apperture size in metres
+    info: Aperture size in metres
     dtype: float
     default: 1.0
   antnames:
@@ -42,13 +42,13 @@ Antenna:
     dtype: str
     required: true
   subarray:
-    info: Antennas (strings or indicices)
+    info: Antennas (strings or indices)
     dtype: List[Union[str,int]]
   mount:
     info: Antenna mount
     dtype: str
     default: "ALT-AZ"
   size:
-    info: 
+    info: Aperture size in metres
     dtype: float
     default: 13.5
