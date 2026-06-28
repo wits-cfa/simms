@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Union
+from __future__ import annotations
 
 import numpy as np
 from africanus.dft import im_to_vis as dft_im_to_vis
@@ -11,7 +11,7 @@ from simms.skymodel.ascii_skies import ASCIISkymodel
 from simms.utilities import radec2lm
 
 
-def vis_noise_from_sefd_and_ms(ms: Union[MS, str], sefd: float, spw_id: int = 0, field_id: int = 0):
+def vis_noise_from_sefd_and_ms(ms: MS | str, sefd: float, spw_id: int = 0, field_id: int = 0):
     """
     Compute per-visibility thermal noise from an SEFD and an MS.
 
@@ -40,7 +40,7 @@ def vis_noise_from_sefd_and_ms(ms: Union[MS, str], sefd: float, spw_id: int = 0,
     return noise_vis
 
 
-def sim_noise(dshape: Union[List, Tuple], vis_noise: float) -> np.ndarray:
+def sim_noise(dshape: list | tuple, vis_noise: float) -> np.ndarray:
     """
     Simulate complex Gaussian visibility noise.
 
@@ -59,7 +59,7 @@ def sim_noise(dshape: Union[List, Tuple], vis_noise: float) -> np.ndarray:
     return np.random.randn(*dshape) * vis_noise + np.random.randn(*dshape) * vis_noise * 1j
 
 
-def add_noise(vis: Union[np.ndarray, float], vis_noise: float):
+def add_noise(vis: np.ndarray | float, vis_noise: float):
     """
     Add complex Gaussian noise to visibilities.
 
@@ -76,30 +76,6 @@ def add_noise(vis: Union[np.ndarray, float], vis_noise: float):
         Noisy visibilities.
     """
     return vis + sim_noise(vis.shape, vis_noise)
-
-
-def add_to_vis(vis0: np.ndarray, vis1: np.ndarray, subtract: bool = False) -> np.ndarray:
-    """
-    Add or subtract two visibility arrays.
-
-    Parameters
-    ----------
-    vis0 : numpy.ndarray
-        Base visibility array.
-    vis1 : numpy.ndarray
-        Array to add or subtract.
-    subtract : bool, optional
-        If True, perform vis0 - vis1; otherwise vis0 + vis1. Default False.
-
-    Returns
-    -------
-    numpy.ndarray
-        Resulting visibility array.
-    """
-    if subtract:
-        return vis0 - vis1
-    else:
-        return vis0 + vis1
 
 
 def stack_unpolarised_vis(vis: np.ndarray, ncorr: int) -> np.ndarray:
@@ -140,9 +116,9 @@ def compute_vis(
     ncorr: int = 2,
     polarisation: bool = False,
     linear_basis: bool = True,
-    ra0: float = None,
-    dec0: float = None,
-    noise_vis: Optional[float] = None,
+    ra0: float | None = None,
+    dec0: float | None = None,
+    noise_vis: float | None = None,
 ):
     """
     Compute model visibilities for an ASCII sky model.
@@ -204,7 +180,7 @@ def compute_vis(
     vis_yy = 0
 
     if skymodel.has_transient:
-        if isinstance(times, type(None)):
+        if times is None:
             raise ValueError("parameter 'times' must be provided for skymodels with transient source")
         unique_times, time_index_mapper = np.unique(times, return_inverse=True)
     else:
@@ -251,9 +227,9 @@ def fft_im_to_vis(
     image: np.ndarray,
     pixsize_x: float,
     pixsize_y: float,
-    epsilon: Optional[float] = 1e-7,
-    nthreads: Optional[int] = 8,
-    do_wstacking: Optional[bool] = True,
+    epsilon: float | None = 1e-7,
+    nthreads: int | None = 8,
+    do_wstacking: None | bool = True,
 ) -> np.ndarray:
     """
     Predict visibilities via FFT gridding (dirty2ms wrapper).
@@ -298,20 +274,19 @@ def fft_im_to_vis(
 def augmented_im_to_vis(
     image: np.ndarray,
     uvw: np.ndarray,
-    lm: Union[None, np.ndarray],
+    lm: None | np.ndarray,
     chan_freqs: np.ndarray,
     polarisation: bool,
     expand_freq_dim: bool,
     use_dft: bool,
     ncorr: int,
-    dtype: np.dtype,
-    ref_freq: Optional[np.ndarray] = None,
-    delta_ra: Optional[int] = None,
-    delta_dec: Optional[int] = None,
-    do_wstacking: Optional[bool] = True,
-    epsilon: Optional[float] = 1e-7,
-    noise: Optional[float] = None,
-    nthreads: Optional[int] = 8,
+    ref_freq: np.ndarray | None = None,
+    delta_ra: int | None = None,
+    delta_dec: int | None = None,
+    do_wstacking: bool | None = True,
+    epsilon: float | None = 1e-7,
+    noise: float | None = None,
+    nthreads: int | None = 8,
 ):
     """
     Predict visibilities from an image (DFT or FFT path).
@@ -336,8 +311,6 @@ def augmented_im_to_vis(
         True for sparse DFT mode; False for FFT mode.
     ncorr : int
         Number of correlations (2 or 4).
-    dtype : numpy.dtype
-        Data type of input image. Required for allocating memory for output.
     ref_freq : np.ndarray, optional
         One-element array containing frequency (Hz) at which the input image is defined.
         Used if `expand_freq_dim` is True.
@@ -372,7 +345,7 @@ def augmented_im_to_vis(
         predict_freqs = chan_freqs
 
     # determine output dtype
-    vis_dtype = np.complex64 if dtype == np.float32 else np.complex128
+    vis_dtype = np.complex128 if np.finfo(image.dtype).precision == 15 else np.complex64
 
     # if sparse, use DFT
     if use_dft:
@@ -388,30 +361,27 @@ def augmented_im_to_vis(
         if polarisation:
             vis = np.zeros((uvw.shape[0], predict_nchan, ncorr), dtype=vis_dtype)
             for corr in range(ncorr):
-                for chan in range(predict_nchan):
-                    vis[:, chan, corr] = fft_im_to_vis(
-                        uvw,
-                        np.array([predict_freqs[chan]]),
-                        image[corr, chan],
-                        pixsize_x=np.abs(delta_ra),
-                        pixsize_y=delta_dec,
-                        epsilon=epsilon,
-                        do_wstacking=do_wstacking,
-                        nthreads=nthreads,
-                    )
-        else:
-            vis = np.zeros((uvw.shape[0], predict_nchan), dtype=vis_dtype)
-            for chan in range(predict_nchan):
-                vis[:, chan] = fft_im_to_vis(
+                vis[:, :, corr] = fft_im_to_vis(
                     uvw,
-                    np.array([predict_freqs[chan]]),
-                    image[0, chan],
+                    predict_freqs,
+                    image[corr],
                     pixsize_x=np.abs(delta_ra),
                     pixsize_y=delta_dec,
                     epsilon=epsilon,
                     do_wstacking=do_wstacking,
                     nthreads=nthreads,
                 )
+        else:
+            vis = fft_im_to_vis(
+                uvw,
+                predict_freqs,
+                image[0],
+                pixsize_x=np.abs(delta_ra),
+                pixsize_y=delta_dec,
+                epsilon=epsilon,
+                do_wstacking=do_wstacking,
+                nthreads=nthreads,
+            )
 
             vis = stack_unpolarised_vis(vis, ncorr)
 

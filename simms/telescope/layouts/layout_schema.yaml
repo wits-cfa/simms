@@ -18,7 +18,7 @@ Array:
     dtype: Union[str, List[str]]
     default: ALT-AZ
   size:
-    info: Apperture size in metres
+    info: Aperture size in metres
     dtype: Union[float, List[float]]
     default: 1.0
   antnames:
@@ -38,7 +38,7 @@ Antenna:
     dtype: str
     required: true
   group:
-    info: Antennas (strings or indicices)
+    info: Antennas (strings or indices)
     dtype:
       - List[str]
       - List[int]
@@ -47,15 +47,15 @@ Antenna:
     dtype: str
     default: "ALT-AZ"
   size:
-    info: 
+    info: Aperture size in metres
     dtype: float
     default: 13.5
   sefd:
     info: Antenna SEFD (one value for all frequencies)
     dtype: Union[float,List[float]]
   tsys_over_eta:
-    info: Antenna system temperature over aperture efficiency (one value for all frequecies) 
+    info: Antenna system temperature over aperture efficiency (one value for all frequencies) 
     dtype: Union[float,List[float]]
   sensitivity_file: 
-    info: File with antenna spectral sensivity information. Allowed keys (column names) are 'freq, tsys, sefd, tsys_over_eta'
+    info: File with antenna spectral sensitivity information. Allowed keys (column names) are 'freq, tsys, sefd, tsys_over_eta'
     dtype: File

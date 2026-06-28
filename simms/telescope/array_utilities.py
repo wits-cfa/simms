@@ -8,7 +8,6 @@ import yaml
 from astropy.constants import k_B
 from astropy.time import Time
 from casacore.measures import measures
-from casacore.tables import table
 from omegaconf import OmegaConf
 from scabha.basetypes import File, List
 
@@ -244,42 +243,6 @@ class Array:
 
         return geodetic
 
-    def geodetic2local(self):
-        """
-        Converts the antenna positions from the geodetic (WGS84) frame to the local (ENU) frame
-
-        Returns
-        ---
-        An array of the antenna positions in the local frame ENU
-        """
-        if not hasattr(self, "antlocations"):
-            self._set_arrayinfo()
-
-        longitude = self.antlocations[:, 0]
-        latitude = self.antlocations[:, 1]
-
-        # we need the positions in xyz
-        xyz, xyz0 = self.geodetic2global()
-        x, y, z = zip(*xyz)
-        x0, y0, z0 = xyz0[0, 0], xyz0[0, 1], xyz0[0, 2]
-
-        delta_x = x - x0
-        delta_y = y - y0
-        delta_z = z - z0
-
-        cos_long = np.cos(longitude)
-        sin_long = np.sin(longitude)
-        cos_lat = np.cos(latitude)
-        sin_lat = np.sin(latitude)
-
-        east = -sin_long * delta_x + cos_long * delta_y + 0 * delta_z
-        north = -sin_lat * cos_long * delta_x - sin_lat * sin_long * delta_y + cos_lat * delta_z
-        height = cos_lat * cos_long * delta_x + cos_lat * sin_long * delta_y + sin_lat * delta_z
-
-        enu = np.column_stack((east, north, height))
-
-        return enu
-
     def uvgen(
         self, pointing_direction, dtime, ntimes, start_freq, dfreq, nchan, start_time=None, start_ha=None
     ) -> ObjDict:
@@ -364,16 +327,12 @@ class Array:
 
         antenna1_list = []
         antenna2_list = []
-        baseline_list = []
 
-        # Compute baselines and track antenna coordinates
-        for i in range(self.nant):
-            for j in range(i + 1, self.nant):
-                baseline_list.append(self.antlocations[j] - self.antlocations[i])
-                antenna1_list.append(i)
-                antenna2_list.append(j)
-
-        bl_array = np.vstack(baseline_list)
+        # Compute baselines and track antenna coordinates (vectorized)
+        i_idx, j_idx = np.triu_indices(self.nant, k=1)
+        bl_array = self.antlocations[j_idx] - self.antlocations[i_idx]
+        antenna1_list = i_idx.tolist()
+        antenna2_list = j_idx.tolist()
 
         u_coord = (
             np.outer(transform_matrix[0, 0], bl_array[:, 0])
@@ -394,12 +353,7 @@ class Array:
         u_coord, v_coord, w_coord = [x.flatten() for x in (u_coord, v_coord, w_coord)]
         uvw = np.column_stack((u_coord, v_coord, w_coord))
 
-        time_table = []
-        for time_entry in time_entries:
-            baseline_time = [time_entry] * len(baseline_list)
-            time_table.append(baseline_time)
-
-        time_table = np.array(time_table).flatten()
+        time_table = np.repeat(time_entries[:, np.newaxis], len(antenna1_list), axis=1).flatten()
 
         start_freq = dm.frequency(v0=start_freq)["m0"]["value"]
         dfreq = dm.frequency(v0=dfreq)["m0"]["value"]
@@ -448,50 +402,6 @@ class Array:
         elevation = np.degrees(np.arcsin(sin_elevation))
 
         return elevation
-
-    def get_antenna_elevation(self, ant_latitudes: List[float], dec: float, h0: float, ntimes: int) -> List[float]:
-        """
-        Get the elevations of the antennas at the observing times.
-
-        Parameters
-        ---
-
-        ant_latitudes: Array[float]
-                : latitudes of all the antennas in radians.
-        declination: float
-                : declination of the source in radians.
-        h0: Array[float]
-                : hour angles of the source in radians
-
-        Returns
-        ---
-
-        antenna_elevations: Array[float]
-                : the elevations of the antennas in degrees.
-        """
-
-        nants = self.nant
-        antenna_elevations = np.zeros((nants, ntimes))
-
-        for i in range(nants):
-            antenna_elevations[i] = np.sin(dec) * np.sin(ant_latitudes[i]) + np.cos(dec) * np.cos(
-                ant_latitudes[i]
-            ) * np.cos(h0)
-
-        altitude = np.degrees(np.arcsin(antenna_elevations))
-
-        return altitude
-
-
-def ms_addrow(ms, subtable: str, nrows: int):
-    subtab = table(f"{ms}::{subtable}", readonly=False, lockoptions="user", ack=False)
-    try:
-        subtab.lock(write=True)
-        subtab.addrows(nrows)
-
-    finally:
-        subtab.unlock()
-        subtab.close()
 
 
 def calculate_array_centre(ant_locations: List[List[float]]) -> List[float]:
