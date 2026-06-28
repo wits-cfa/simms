@@ -13,6 +13,8 @@ from simms.exceptions import FITSSkymodelError
 from simms.skymodel.source_factory import StokesDataFits
 from simms.utilities import ObjDict, is_range_in_range, pix_radec2lm
 
+log = logging.getLogger(__name__)
+
 
 def compute_lm_coords(
     phase_centre: np.ndarray,
@@ -45,11 +47,10 @@ def compute_lm_coords(
     Returns
     -------
     numpy.ndarray
-        Array of direction cosines:
-        - If `tol_mask` is None, an array with the grid of (l, m) values with
-          shape (..., 2), where the last dimension stores (l, m).
-        - If `tol_mask` is provided, a 2D array with shape (N, 2) containing
-          only the selected (l, m) pairs.
+        Array of direction cosines. If ``tol_mask`` is None, the result is a
+        grid of (l, m) values with shape (..., 2) where the last dimension
+        stores (l, m). If ``tol_mask`` is provided, only the selected (l, m)
+        pairs are returned as a 2D array of shape (N, 2).
 
     Notes
     -----
@@ -122,26 +123,9 @@ def skymodel_from_fits(
     Returns
     -------
     ObjDict
-        Container with the following fields:
-        - image : numpy.ndarray
-            If DFT is selected or forced: shape (N_nonzero, N_freq, ncorr),
-            containing only thresholded non-zero pixels.
-            If FFT is selected: shape (n_pix_l, n_pix_m, N_freq, ncorr),
-            the full image cube.
-        - lm : numpy.ndarray or None
-            If DFT is selected or forced: array of shape (N_nonzero, 2) with
-            direction cosines (l, m) for the retained pixels. Otherwise None.
-        - is_polarised : bool
-            True if any of Q, U, V are present in the input.
-        - expand_freq_dim : bool
-            True if the FITS image had a single frequency and should be expanded
-            along the MS frequency axis downstream.
-        - use_dft : bool
-            The final choice used for visibility prediction.
-        - ra_pixel_size : float or None
-            Pixel size along RA in radians for FFT workflows; None for DFT.
-        - dec_pixel_size : float or None
-            Pixel size along Dec in radians for FFT workflows; None for DFT.
+        Container with fields ``image``, ``lm``, ``is_polarised``,
+        ``expand_freq_dim``, ``use_dft``, ``ra_pixel_size``, and
+        ``dec_pixel_size``. See the class documentation for field descriptions.
 
     Raises
     -------
@@ -245,7 +229,7 @@ def skymodel_from_fits(
     ra_pixel_size = ra_coords.pixel_size * getattr(units, ra_coords.units).to("rad")
     dec_pixel_size = dec_coords.pixel_size * getattr(units, dec_coords.units).to("rad")
 
-    print(f"dec_pix:{np.rad2deg(dec_pixel_size)}, ra_pix:{np.rad2deg(ra_pixel_size)}")
+    log.debug("dec_pix:%s, ra_pix:%s", np.rad2deg(dec_pixel_size), np.rad2deg(ra_pixel_size))
     pixel_area = abs(ra_pixel_size * dec_pixel_size)
 
     ms_range = (ms_start_freq, ms_end_freq)

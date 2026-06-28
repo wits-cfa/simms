@@ -64,9 +64,9 @@ Custom ASCII sky models
 
 .. code-block:: bash
 
-   simms skysim --ascii-sky pybdsf.txt --cat-species bdsf_gaul --column DATA visdata.ms
+    simms skysim --ascii-sky pybdsf.txt --ascii-species bdsf_gaul --column DATA visdata.ms
 
-- ``--cat-species`` specifies the catalogue type. This automatically uses the correct mapping for a PyBDSF catalogue. You have to specify ``--cat-species`` if the catalogue is different from the default.
+- ``--ascii-species`` specifies the catalogue type. This automatically uses the correct mapping for a PyBDSF catalogue. You have to specify ``--ascii-species`` if the catalogue is different from the default.
 
 2. FITS sky models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -92,13 +92,13 @@ You can subtract or add simulated data (or any data you already have) from/to an
 
    ::
 
-      simm skysim --ic DATA --column MODEL_DATA --mode add visdata.ms
+       simms skysim --ic DATA --column MODEL_DATA --mode add visdata.ms
 
-   **Subtracting:**
+    **Subtracting:**
 
-   ::
+    ::
 
-      simm skysim --ic DATA --column MODEL_DATA --mode subtract visdata.ms
+       simms skysim --ic DATA --column MODEL_DATA --mode subtract visdata.ms
 
    Where:
 

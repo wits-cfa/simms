@@ -12,18 +12,18 @@ authors = [
     ]
 
 readme = "README.rst"
-license = "GPL-3.0"
+license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "numpy",
-    "tdqm",
+    "tqdm",
     "click>=8.1.3,<9.0",
     "dask-ms[xarray]>=0.2.18,<1.0",
     "ephem>=4.1,<5.0",
-    "scabha @ git+https://github.com/caracal-pipeline/scabha ; python_version >= '3.11'",
+    "scabha>=2.2.0rc2 ; python_version >= '3.11'",
     "codex-africanus[complete]>=0.3.7,<1.0",
-    "fitstoolz @ git+https://github.com/caracal-pipeline/fitstoolz"
+    "fitstoolz @ git+https://github.com/caracal-pipeline/fitstoolz@383f74dac54c58a531f905c9ce7e200b5b450114"
 ]
 
 [build-system]
@@ -44,10 +44,10 @@ simms = "simms.apps.main:cli"
 
 
 [project.urls]
-Documentation = "https://simms.readthedocs.org"
+Documentation = "https://simms.readthedocs.io"
 Repository = "https://github.com/wits-cfa/simms.git"
 "Issue Tracker" = "https://github.com/wits-cfa/simms/issues"
-Changelog = "https://github.com/wits-cfa/simms/blob/master/CHANGES.md"
+Changelog = "https://github.com/wits-cfa/simms/blob/main/CHANGES.md"
 
 [dependency-groups]
 
@@ -57,7 +57,7 @@ ruff = [
 ]
 
 tests = [
-    "pytest>=7.1.3,<8.0",
+    "pytest>=7.1.3",
     {include-group = "ruff"},
 ]
 
@@ -76,3 +76,7 @@ dev = [
     "matplotlib",
     {include-group = "ruff"},
 ]
+
+[tool.pytest.ini_options]
+python_files = ["*_tests.py"]
+testpaths = ["tests"]

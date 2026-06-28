@@ -197,12 +197,9 @@ def create_ms(
     uvw = da.from_array(uvcoverage_data.uvw, chunks=(num_row_chunks, 3))
     antenna1 = da.from_array(ant1, chunks=num_row_chunks)
     antenna2 = da.from_array(ant2, chunks=num_row_chunks)
-    interval = da.full(num_rows, dtime)
-    interval = da.rechunk(interval, chunks=num_row_chunks)
-    sigma = da.full((num_rows, num_corr), 1.0)
-    sigma = da.rechunk(sigma, chunks=(num_row_chunks, num_corr))
-    sigma_spec = da.full((num_rows, num_chans, num_corr), 1.0)
-    sigma_spec = da.rechunk(sigma_spec, chunks=(num_row_chunks, num_chans, num_corr))
+    interval = da.full(num_rows, dtime, chunks=num_row_chunks)
+    sigma = da.full((num_rows, num_corr), 1.0, chunks=(num_row_chunks, num_corr))
+    sigma_spec = da.full((num_rows, num_chans, num_corr), 1.0, chunks=(num_row_chunks, num_chans, num_corr))
     flag = da.zeros(
         (num_rows, num_chans, num_corr),
         dtype=bool,
@@ -259,8 +256,10 @@ def create_ms(
     noise_freqs = telescope_array.noise_freqs
 
     if sefd:
-        dummy_data = np.random.randn(num_rows, num_chans, num_corr) + 1j * np.random.randn(
-            num_rows, num_chans, num_corr
+        dummy_data = da.random.standard_normal(
+            (num_rows, num_chans, num_corr), chunks=(num_row_chunks, num_chans, num_corr)
+        ) + 1j * da.random.standard_normal(
+            (num_rows, num_chans, num_corr), chunks=(num_row_chunks, num_chans, num_corr)
         )
 
         # Lifted from https://github.com/SpheMakh/msutils/blob/master/MSUtils/ClassESW.py
@@ -308,25 +307,15 @@ def create_ms(
         ds[column] = (("row", "chan", "corr"), noisy_data)
 
     src_elevs = uvcoverage_data.source_elevations
-    expanded_src_elevations = []
-
-    for elevation in src_elevs:
-        all_baselines_elevation_per_time = [elevation] * nbaselines
-        expanded_src_elevations.append(all_baselines_elevation_per_time)
-
-    expanded_src_elevations = np.array(expanded_src_elevations).flatten()
+    expanded_src_elevations = np.repeat(src_elevs, nbaselines)
 
     flag_row = np.zeros(num_rows, dtype=bool)
 
     if low_source_limit:
-        for i in range(num_rows):
-            if expanded_src_elevations[i] < low_source_limit:
-                flag_row[i] = True
+        flag_row |= expanded_src_elevations < low_source_limit
 
     if high_source_limit:
-        for i in range(num_rows):
-            if expanded_src_elevations[i] > high_source_limit:
-                flag_row[i] = True
+        flag_row |= expanded_src_elevations > high_source_limit
 
     ds["FLAG_ROW"] = (("row",), da.from_array(flag_row, chunks=num_row_chunks))
 

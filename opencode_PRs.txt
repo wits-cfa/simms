@@ -1,0 +1,5 @@
+Created .github/workflows/opencode-review.yml. To activate it:
+1. Install the OpenCode GitHub App (https://github.com/apps/opencode-agent) on the repo/organization
+2. Set ANTHROPIC_API_KEY (or your provider's key) in repo Settings → Secrets and variables → Actions
+3. Push the workflow file
+Once active, every PR will get an automated code review from OpenCode. You can also trigger it on-demand by commenting /opencode review or /oc on any PR.
