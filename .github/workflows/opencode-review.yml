@@ -19,6 +19,6 @@ jobs:
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_PR_REVIEW }}
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          model: opencode/deepseek-v4-pro
+          use_github_token: true
+          model: deepseek-v4-pro
           variant: medium
