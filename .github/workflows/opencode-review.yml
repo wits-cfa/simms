@@ -24,5 +24,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           use_github_token: true
-          model: opencode/deepseek-v4-pro
+          model: opencode/deepseek-v4-flash-free
           variant: medium

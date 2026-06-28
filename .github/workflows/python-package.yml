@@ -49,8 +49,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
       pull-requests: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,5 +62,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           use_github_token: true
-          model: deepseek-v4-pro
+          model: opencode/deepseek-v4-flash-free
           variant: medium
