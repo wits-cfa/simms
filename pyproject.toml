@@ -79,4 +79,4 @@ dev = [
 
 [tool.pytest.ini_options]
 python_files = ["*_tests.py"]
-testpaths = ["simms_tests"]
+testpaths = ["tests"]
