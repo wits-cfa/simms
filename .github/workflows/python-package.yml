@@ -60,5 +60,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           use_github_token: true
-          model: opencode-go/deepseek-v4-pro
+          model: deepseek-v4-pro
           variant: medium
