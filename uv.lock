@@ -701,7 +701,7 @@ wheels = [
 [[package]]
 name = "fitstoolz"
 version = "0.0.1b2"
-source = { git = "https://github.com/caracal-pipeline/fitstoolz#383f74dac54c58a531f905c9ce7e200b5b450114" }
+source = { git = "https://github.com/caracal-pipeline/fitstoolz?rev=383f74dac54c58a531f905c9ce7e200b5b450114#383f74dac54c58a531f905c9ce7e200b5b450114" }
 dependencies = [
     { name = "astropy" },
     { name = "dask", extra = ["array"] },
@@ -2702,9 +2702,9 @@ requires-dist = [
     { name = "codex-africanus", extras = ["complete"], specifier = ">=0.3.7,<1.0" },
     { name = "dask-ms", extras = ["xarray"], specifier = ">=0.2.18,<1.0" },
     { name = "ephem", specifier = ">=4.1,<5.0" },
-    { name = "fitstoolz", git = "https://github.com/caracal-pipeline/fitstoolz" },
+    { name = "fitstoolz", git = "https://github.com/caracal-pipeline/fitstoolz?rev=383f74dac54c58a531f905c9ce7e200b5b450114" },
     { name = "numpy" },
-    { name = "scabha", marker = "python_full_version >= '3.11'", git = "https://github.com/caracal-pipeline/scabha" },
+    { name = "scabha", marker = "python_full_version >= '3.11'", specifier = ">=2.2.0rc2" },
     { name = "tqdm" },
 ]
 

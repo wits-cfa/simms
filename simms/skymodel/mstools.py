@@ -287,6 +287,7 @@ def augmented_im_to_vis(
     epsilon: float | None = 1e-7,
     noise: float | None = None,
     nthreads: int | None = 8,
+    dtype: np.dtype | None = None,
 ):
     """
     Predict visibilities from an image (DFT or FFT path).
@@ -345,7 +346,10 @@ def augmented_im_to_vis(
         predict_freqs = chan_freqs
 
     # determine output dtype
-    vis_dtype = np.complex128 if np.finfo(image.dtype).precision == 15 else np.complex64
+    if dtype is not None:
+        vis_dtype = np.complex128 if np.finfo(dtype).precision == 15 else np.complex64
+    else:
+        vis_dtype = np.complex128 if np.finfo(image.dtype).precision == 15 else np.complex64
 
     # if sparse, use DFT
     if use_dft:
