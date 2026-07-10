@@ -51,14 +51,25 @@ class _BeamContext:
             raise RuntimeError("Primary beam requires a linear polarisation basis (--pol-basis linear).")
         beam_config = load_beam_config(opts.primary_beam)
         ant_ds = xds_from_table(f"{ms}::ANTENNA")[0]
-        tnames, mount, pos, t0, t1, interval = dask.compute(
+        pol_ds = xds_from_table(f"{ms}::POLARIZATION")[0]
+        tnames, mount, pos, t0, t1, interval, corr_type = dask.compute(
             ant_ds.TELESCOPE_NAME.data,
             ant_ds.MOUNT.data,
             ant_ds.POSITION.data,
             msds.TIME.data.min(),
             msds.TIME.data.max(),
             msds.INTERVAL.data[0],
+            pol_ds.CORR_TYPE.data[0],
         )
+        # The beam's per-correlation feed mapping (corr_feed_maps) assumes the canonical
+        # linear correlation order; validate the MS actually uses it (XX=9 .. YY=12).
+        expected = {2: [9, 12], 4: [9, 10, 11, 12]}.get(ncorr)
+        actual = list(np.asarray(corr_type).ravel())
+        if expected is None or actual != expected:
+            raise RuntimeError(
+                f"Primary beam requires linear correlations {expected} (POLARIZATION.CORR_TYPE "
+                f"codes), but the MS has {actual}. Regenerate with linear correlations."
+            )
         self.ant_type, self.providers, self.type_is_altaz = resolve_antenna_beams(
             tnames, mount, beam_config, opts.beam_band
         )
@@ -150,9 +161,12 @@ def runit(opts):
     vis_dtype = msds.DATA.data.dtype
     linear_basis = opts.pol_basis == "linear"
 
-    # Primary beam (component skies only). When enabled, the model must carry every
-    # correlation so the per-feed voltage can be applied (nspec == ncorr).
-    beam_ctx = _BeamContext(opts, ms, msds, ra0, dec0, ncorr, linear_basis) if opts.primary_beam else None
+    # Primary beam (sky models only, not noise-only runs). When enabled, the model must
+    # carry every correlation so the per-feed voltage can be applied (nspec == ncorr).
+    has_sky = bool(ascii_sky or wsclean_sky or fs)
+    if opts.primary_beam and not has_sky:
+        log.warning("--primary-beam is set but no sky model was given; the primary beam is ignored.")
+    beam_ctx = _BeamContext(opts, ms, msds, ra0, dec0, ncorr, linear_basis) if opts.primary_beam and has_sky else None
 
     # Channel chunking. A channel-index array carries the chan dimension into
     # da.blockwise; each predict task restricts the model to its own channels.

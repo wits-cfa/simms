@@ -101,3 +101,37 @@ def test_beam_requires_linear_basis(e2e):
     opts.pol_basis = "circular"
     with pytest.raises(RuntimeError, match="linear polarisation basis"):
         skysim.runit(opts)
+
+
+def test_beam_rejects_nonlinear_correlations(e2e):
+    # A circular-correlation MS must be refused: the beam's feed mapping is linear-only.
+    ms = e2e.random_named_directory(suffix=".ms")
+    create_ms(
+        ms,
+        telescope_name="skamid",
+        pointing_direction=["J2000", "0h0m20s", "-30deg"],
+        dtime=600,
+        ntimes=2,
+        start_freq="1420MHz",
+        dfreq="4MHz",
+        nchan=2,
+        correlations=["RR", "LL"],
+        row_chunks=100000,
+        sefd=None,
+        column="DATA",
+        start_time="2025-03-06T20:00:00",
+        smooth=None,
+        fit_order=None,
+        subarray_range=[60, 68],
+    )
+    with pytest.raises(RuntimeError, match="linear correlations"):
+        skysim.runit(_opts(ms, e2e.sky, primary_beam=e2e.beams))
+
+
+def test_primary_beam_ignored_without_sky_model(e2e):
+    # --primary-beam with a noise-only run (no sky model) must be a no-op, not a crash.
+    opts = _opts(e2e.ms, ascii_sky=None, primary_beam=e2e.beams, column="NOISEONLY")
+    opts.sefd = 500.0
+    skysim.runit(opts)  # must not raise (beam ignored, noise written)
+    ds = xds_from_ms(e2e.ms)[0]
+    assert np.any(ds.NOISEONLY.data.compute() != 0)

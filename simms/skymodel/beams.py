@@ -498,15 +498,17 @@ def pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step_deg):
 def build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid):
     """Sample every type's voltage beam on the PA grid.
 
-    Returns an array of shape ``(ntype, n_pa, nsrc, nchan, 2)`` (complex). Alt-az types
-    use ``chi_grid``; others are evaluated at zero parallactic angle (no rotation).
+    Returns an array of shape ``(ntype, n_pa, nsrc, nchan, 2)``. Stored as ``complex64``
+    (halving this large array vs ``complex128``); a beam voltage is O(1), so single
+    precision is ample and visibilities still accumulate in double. Alt-az types use
+    ``chi_grid``; others are evaluated at zero parallactic angle (no rotation).
     """
     ntype = len(providers)
-    grid = np.empty((ntype, chi_grid.size, ell.size, freqs.size, 2), dtype=np.complex128)
+    grid = np.empty((ntype, chi_grid.size, ell.size, freqs.size, 2), dtype=np.complex64)
     zeros = np.zeros_like(chi_grid)
     for ti, prov in enumerate(providers):
         use_chi = chi_grid if type_is_altaz[ti] else zeros
-        grid[ti] = prov.voltage(ell, emm, freqs, use_chi)
+        grid[ti] = prov.voltage(ell, emm, freqs, use_chi)  # complex128 -> complex64 on assign
     return grid
 
 
