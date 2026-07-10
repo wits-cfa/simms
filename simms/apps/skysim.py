@@ -1,6 +1,7 @@
 import glob
 import os.path
 
+import dask
 import dask.array as da
 import numpy as np
 from dask import config as dask_config
@@ -12,8 +13,9 @@ from simms.skymodel.ascii_skies import ASCIISkymodel
 from simms.skymodel.fits_skies import skymodel_from_fits
 from simms.skymodel.mstools import (
     augmented_im_to_vis,
-    compute_vis,
-    sim_noise,
+    predict_block,
+    prepare_skymodel,
+    sim_noise_block,
     vis_noise_from_sefd_and_ms,
 )
 
@@ -45,11 +47,14 @@ def runit(opts):
     spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
     field_ds = xds_from_table(f"{ms}::FIELD")[0]
 
-    radec0 = field_ds.PHASE_DIR.data[opts.field_id].compute()
+    radec0, freqs, dfreq = dask.compute(
+        field_ds.PHASE_DIR.data[opts.field_id],
+        spw_ds.CHAN_FREQ.data[opts.spw_id],
+        spw_ds.CHAN_WIDTH.data[opts.spw_id][0],
+    )
     ra0, dec0 = radec0[0][0], radec0[0][1]
-    freqs = spw_ds.CHAN_FREQ.data[opts.spw_id].compute()
-    dfreq = spw_ds.CHAN_WIDTH.data[opts.spw_id][0].compute()
     ncorr = msds.DATA.data.shape[-1]
+    vis_dtype = msds.DATA.data.dtype
     linear_basis = opts.pol_basis == "linear"
 
     if ascii_sky:
@@ -63,28 +68,42 @@ def runit(opts):
             source_schema = f"{SCHEMADIR}/source_schema.yaml"
 
         skymodel = ASCIISkymodel(ascii_sky, delimiter=opts.ascii_delimiter, source_schema_file=source_schema)
-        times_var = msds.TIME.data, ("row",) if skymodel.has_transient else None, (None,)
 
-        def compute_vis_sky(*args, **kwargs):
-            return compute_vis(skymodel, *args, **kwargs)
+        # Transient lightcurves are defined relative to the start of the
+        # observation, so the time axis has to be resolved globally rather than
+        # per row block.
+        unique_times = np.unique(msds.TIME.data.compute()) if skymodel.has_transient else None
 
-        simvis = da.blockwise(
-            compute_vis_sky,
-            ("row", "chan", "corr"),
-            msds.UVW.data,
-            ("row", "uvw"),
+        # Prepared once and shared by every block, rather than rebuilt per block.
+        # Sources are summed in double precision regardless of the column dtype.
+        prepared = prepare_skymodel(
+            skymodel,
             freqs,
-            ("chan",),
-            times_var[0],
-            times_var[1],
+            ra0,
+            dec0,
             ncorr=ncorr,
             polarisation=opts.polarisation,
             linear_basis=linear_basis,
+            unique_times=unique_times,
+        )
+
+        # A blockwise index of None passes the argument through untouched, so a
+        # model without transients must be handed a literal None, not the
+        # (unblocked) TIME dask array.
+        time_args = (msds.TIME.data, ("row",)) if skymodel.has_transient else (None, None)
+
+        simvis = da.blockwise(
+            predict_block,
+            ("row", "chan", "corr"),
+            prepared,
+            None,
+            msds.UVW.data,
+            ("row", "uvw"),
+            *time_args,
             noise_vis=vis_noise,
-            ra0=ra0,
-            dec0=dec0,
-            new_axes={"corr": ncorr},
-            dtype=msds.DATA.data.dtype,
+            out_dtype=vis_dtype,
+            new_axes={"chan": freqs.size, "corr": ncorr},
+            dtype=vis_dtype,
             concatenate=True,
         )
 
@@ -157,13 +176,20 @@ def runit(opts):
         )
 
     elif opts.sefd:
-        # Simulate noise if no skymodel is given
+        # Simulate noise if no skymodel is given. UVW only supplies the row
+        # extent and its chunking; blockwise cannot size the output without it.
         simvis = da.blockwise(
-            sim_noise,
-            ("nrow", "nchan", "ncorr"),
-            dshape=msds.DATA.data.shape,
-            noise=vis_noise,
-            dtype=msds.DATA.data.dtype,
+            sim_noise_block,
+            ("row", "chan", "corr"),
+            msds.UVW.data,
+            ("row", "uvw"),
+            freqs,
+            ("chan",),
+            ncorr=ncorr,
+            vis_noise=vis_noise,
+            out_dtype=vis_dtype,
+            dtype=vis_dtype,
+            new_axes={"corr": ncorr},
             concatenate=True,
         )
 

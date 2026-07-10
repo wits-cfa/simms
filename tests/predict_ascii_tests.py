@@ -1,0 +1,242 @@
+"""Tests for visibility prediction from ASCII sky models.
+
+The reference in these tests is a direct transcription of the RIME, evaluated
+with an explicit triple loop, so it shares no code with the prediction kernel.
+"""
+
+import numpy as np
+import pytest
+
+from simms import SCHEMADIR
+from simms.constants import C
+from simms.skymodel.ascii_skies import ASCIISkymodel
+from simms.skymodel.kernels import is_uniform_grid
+from simms.skymodel.mstools import compute_vis, predict_block, prepare_skymodel
+from simms.skymodel.source_factory import contspec
+
+from . import InitTest
+
+SCHEMA = f"{SCHEMADIR}/source_schema.yaml"
+RA0, DEC0 = np.deg2rad(15.0), np.deg2rad(-31.0)
+
+UNIFORM_FREQS = 1.4e9 + np.arange(4) * 1e7
+IRREGULAR_FREQS = np.array([1.40e9, 1.41e9, 1.43e9, 1.48e9])
+
+
+class InitThisTest(InitTest):
+    def write_temp_file(self, content: str, suffix: str = ".txt") -> str:
+        path = self.random_named_file(suffix=suffix)
+        with open(path, "w") as fh:
+            fh.write(content)
+        return path
+
+
+@pytest.fixture
+def params():
+    return InitThisTest()
+
+
+@pytest.fixture
+def uvw():
+    return np.random.default_rng(11).normal(0, 1500, (6, 3))
+
+
+def brute_force_vis(sources, uvw, freqs, ncorr, polarisation, linear_basis):
+    """Textbook RIME reference, sharing no code with the prediction kernel."""
+    vis = np.zeros((uvw.shape[0], freqs.size, ncorr), np.complex128)
+    for src in sources:
+        dra = src.ra - RA0
+        el = np.cos(src.dec) * np.sin(dra)
+        em = np.sin(src.dec) * np.cos(DEC0) - np.cos(src.dec) * np.sin(DEC0) * np.cos(dra)
+        en = np.sqrt(1 - el * el - em * em) - 1
+
+        stokes = [getattr(src, f"stokes_{x}", 0.0) for x in "iquv"]
+        # In the circular basis the ascii stokes_q/u/v columns are read as V/Q/U.
+        if linear_basis:
+            i_, q_, u_, v_ = stokes
+        else:
+            i_, v_, q_, u_ = stokes
+
+        emaj = src.value_or_default("emaj")
+        emin = src.value_or_default("emin")
+        pa = src.value_or_default("pa")
+
+        if linear_basis:
+            corrs = [i_ + q_, u_ + 1j * v_, u_ - 1j * v_, i_ - q_]
+        else:
+            corrs = [i_ + v_, q_ + 1j * u_, q_ - 1j * u_, i_ - v_]
+        if not polarisation:
+            corrs = [corrs[0], 0, 0, corrs[0]]
+        selection = [0, 3] if ncorr == 2 else [0, 1, 2, 3]
+
+        for row in range(uvw.shape[0]):
+            u, v, w = uvw[row]
+            for chan in range(freqs.size):
+                scale = freqs[chan] / C
+                phasor = np.exp(2j * np.pi * (u * el + v * em + w * en) * scale)
+                if emaj or emin:
+                    ell, emm = emaj * np.sin(pa), emaj * np.cos(pa)
+                    ecc = emin / (1.0 if emaj == 0 else emaj)
+                    fu1 = (u * scale * emm - v * scale * ell) * ecc
+                    fv1 = u * scale * ell + v * scale * emm
+                    phasor *= np.exp(-(fu1 * fu1 + fv1 * fv1))
+                for corr, idx in enumerate(selection):
+                    vis[row, chan, corr] += corrs[idx] * phasor
+    return vis
+
+
+POINTS = "\n".join(
+    [
+        "#format: name ra dec stokes_i emaj emin pa",
+        "s0 15.06deg -31.20deg 1.25 0 0 0",
+        "s1 14.88deg -30.91deg 0.61 0 0 0",
+    ]
+)
+GAUSSIANS = "\n".join(
+    [
+        "#format: name ra dec stokes_i emaj emin pa",
+        "g0 15.06deg -31.20deg 1.25 12arcsec 4arcsec 30deg",
+        "g1 14.88deg -30.91deg 0.61 20arcsec 9arcsec 110deg",
+    ]
+)
+POLARISED = "\n".join(
+    [
+        "#format: name ra dec stokes_i stokes_q stokes_u stokes_v emaj emin pa",
+        "p0 15.06deg -31.20deg 1.25 0.09 -0.11 0.03 0 0 0",
+        "p1 14.88deg -30.91deg 0.61 -0.04 0.07 -0.02 12arcsec 4arcsec 30deg",
+    ]
+)
+
+
+@pytest.mark.parametrize("model", [POINTS, GAUSSIANS, POLARISED], ids=["point", "gaussian", "polarised"])
+@pytest.mark.parametrize("freqs", [UNIFORM_FREQS, IRREGULAR_FREQS], ids=["uniform", "irregular"])
+@pytest.mark.parametrize("ncorr", [2, 4])
+@pytest.mark.parametrize("polarisation", [False, True])
+@pytest.mark.parametrize("linear_basis", [True, False])
+def test_predict_matches_brute_force_rime(params, uvw, model, freqs, ncorr, polarisation, linear_basis):
+    sky = ASCIISkymodel(params.write_temp_file(model), source_schema_file=SCHEMA)
+    got = compute_vis(
+        sky, uvw, freqs, ncorr=ncorr, polarisation=polarisation, linear_basis=linear_basis, ra0=RA0, dec0=DEC0
+    )
+    expected = brute_force_vis(sky.sources, uvw, freqs, ncorr, polarisation, linear_basis)
+    np.testing.assert_allclose(got, expected, rtol=1e-11, atol=1e-13)
+
+
+def test_unpolarised_four_correlations_do_not_accumulate_into_yy(params, uvw):
+    """Regression: YY used to be summed cumulatively, so source k was added n-k+1 times."""
+    sky = ASCIISkymodel(params.write_temp_file(POINTS), source_schema_file=SCHEMA)
+    vis = compute_vis(sky, uvw, UNIFORM_FREQS, ncorr=4, polarisation=False, ra0=RA0, dec0=DEC0)
+
+    np.testing.assert_array_equal(vis[..., 0], vis[..., 3])
+    assert not np.any(vis[..., 1])
+    assert not np.any(vis[..., 2])
+
+
+def test_point_source_without_shape_columns(params, uvw):
+    """Regression: a catalogue with no emaj/emin columns raised AttributeError."""
+    model = "\n".join(["#format: name ra dec stokes_i", "s0 15.06deg -31.20deg 1.25"])
+    sky = ASCIISkymodel(params.write_temp_file(model), source_schema_file=SCHEMA)
+    vis = compute_vis(sky, uvw, UNIFORM_FREQS, ncorr=2, ra0=RA0, dec0=DEC0)
+    assert np.all(np.isfinite(vis))
+    assert np.abs(vis).max() == pytest.approx(1.25, rel=1e-6)
+
+
+def test_transient_lightcurve_is_independent_of_row_blocking(params):
+    """Regression: the lightcurve was referenced to each row block's own first time."""
+    model = "\n".join(
+        [
+            "#format: name ra dec stokes_i transient_start transient_period transient_ingress transient_absorb",
+            "t0 15.06deg -31.20deg 1.25 100s 200 40 0.02",
+        ]
+    )
+    sky = ASCIISkymodel(params.write_temp_file(model), source_schema_file=SCHEMA)
+    assert sky.has_transient
+
+    rng = np.random.default_rng(3)
+    uvw = rng.normal(0, 1500, (80, 3))
+    # 40 time slots of 8s spans 312s, so the 100s-300s transit falls inside it
+    times = np.repeat(5.0e9 + np.arange(40) * 8.0, 2)
+    unique_times = np.unique(times)
+
+    prepared = prepare_skymodel(sky, UNIFORM_FREQS, RA0, DEC0, ncorr=2, unique_times=unique_times)
+    whole = predict_block(prepared, uvw, times=times)
+    blocked = np.concatenate(
+        [predict_block(prepared, uvw[i : i + 20], times=times[i : i + 20]) for i in range(0, 80, 20)]
+    )
+
+    np.testing.assert_array_equal(whole, blocked)
+    # the transit actually dips by transient_absorb
+    assert prepared.lightcurve[0].min() == pytest.approx(0.98, abs=1e-6)
+    assert prepared.lightcurve[0].max() == pytest.approx(1.0, abs=1e-6)
+
+
+def test_transient_requires_unique_times(params):
+    model = "\n".join(
+        [
+            "#format: name ra dec stokes_i transient_start transient_period transient_ingress transient_absorb",
+            "t0 15.06deg -31.20deg 1.25 100s 200 40 0.02",
+        ]
+    )
+    sky = ASCIISkymodel(params.write_temp_file(model), source_schema_file=SCHEMA)
+    with pytest.raises(ValueError, match="unique_times"):
+        prepare_skymodel(sky, UNIFORM_FREQS, RA0, DEC0, ncorr=2)
+
+
+def test_frequency_recurrence_matches_per_channel_sincos(params):
+    """The uniform-grid rotation recurrence must agree with an explicit sincos."""
+    sky = ASCIISkymodel(params.write_temp_file(POINTS), source_schema_file=SCHEMA)
+    uvw = np.random.default_rng(5).normal(0, 8000, (16, 3))
+    freqs = 1.4e9 + np.arange(4096) * 1e5
+
+    recurrence = prepare_skymodel(sky, freqs, RA0, DEC0, ncorr=2)
+    assert recurrence.uniform_freqs
+
+    per_channel = prepare_skymodel(sky, freqs, RA0, DEC0, ncorr=2)
+    per_channel.uniform_freqs = False
+
+    np.testing.assert_allclose(predict_block(recurrence, uvw), predict_block(per_channel, uvw), rtol=1e-10)
+
+
+def test_is_uniform_grid():
+    assert is_uniform_grid(np.array([1.4e9]))
+    assert is_uniform_grid(np.array([1.4e9, 1.5e9]))
+    assert is_uniform_grid(1.4e9 + np.arange(64) * 1e6)
+    assert not is_uniform_grid(np.array([1.0, 2.0, 3.0, 9.0]))
+
+
+def test_invalid_ncorr(params, uvw):
+    sky = ASCIISkymodel(params.write_temp_file(POINTS), source_schema_file=SCHEMA)
+    with pytest.raises(ValueError, match="two or four correlations"):
+        compute_vis(sky, uvw, UNIFORM_FREQS, ncorr=3, ra0=RA0, dec0=DEC0)
+
+
+@pytest.mark.parametrize("coeff", [[-0.7], [-0.7, 0.05], [-0.7, 0.05, -0.01]])
+def test_contspec_log_polynomial(coeff):
+    """Regression: a multi-term coefficient list raised TypeError (array ** Polynomial)."""
+    freqs = np.array([1.0e9, 1.4e9, 2.0e9])
+    nu_ref, flux = 1.4e9, 2.5
+
+    log_ratio = np.log(freqs / nu_ref)
+    exponent = sum(c * log_ratio**i for i, c in enumerate(coeff))
+    expected = flux * (freqs / nu_ref) ** exponent
+
+    np.testing.assert_allclose(contspec(freqs, flux, coeff, nu_ref), expected, rtol=1e-12)
+
+
+def test_contspec_without_reference_frequency_is_flat():
+    freqs = np.array([1.0e9, 1.4e9, 2.0e9])
+    np.testing.assert_allclose(contspec(freqs, 2.5, [-0.7], None), 2.5)
+
+
+def test_continuum_source_predicts_a_sloped_spectrum(params, uvw):
+    model = "\n".join(
+        [
+            "#format: name ra dec stokes_i cont_reffreq cont_coeff_1",
+            "c0 15.0deg -31.0deg 1.0 1.4GHz -0.7",
+        ]
+    )
+    sky = ASCIISkymodel(params.write_temp_file(model), source_schema_file=SCHEMA)
+    # place the source at the phase centre so the phasor is unity and |vis| is the spectrum
+    vis = compute_vis(sky, np.zeros((1, 3)), UNIFORM_FREQS, ncorr=2, ra0=RA0, dec0=DEC0)
+    expected = 1.0 * (UNIFORM_FREQS / 1.4e9) ** -0.7
+    np.testing.assert_allclose(vis[0, :, 0].real, expected, rtol=1e-6)
