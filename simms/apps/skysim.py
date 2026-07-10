@@ -17,6 +17,7 @@ from simms.skymodel.mstools import (
     sim_noise_block,
     vis_noise_from_sefd_and_ms,
 )
+from simms.skymodel.wsclean_skies import prepare_wsclean_sky
 
 
 def runit(opts):
@@ -25,11 +26,12 @@ def runit(opts):
     ms = opts.ms
     ascii_sky = opts.ascii_sky
     fs = opts.fits_sky
+    wsclean_sky = opts.wsclean_sky
 
     dask_config.set(scheduler="threads", num_workers=opts.nworkers)
 
-    if ascii_sky and fs:
-        raise RuntimeError("Cannot use an ASCII and FITS sky model simultaneously")
+    if sum(bool(x) for x in (ascii_sky, fs, wsclean_sky)) > 1:
+        raise RuntimeError("Choose a single sky model: one of --ascii-sky, --fits-sky, or --wsclean-sky.")
 
     msds = xds_from_ms(
         ms,
@@ -99,6 +101,25 @@ def runit(opts):
             msds.UVW.data,
             ("row", "uvw"),
             *time_args,
+            noise_vis=vis_noise,
+            out_dtype=vis_dtype,
+            new_axes={"chan": freqs.size, "corr": ncorr},
+            dtype=vis_dtype,
+            concatenate=True,
+        )
+
+    elif wsclean_sky:
+        # A WSClean component list shares the ASCII prediction path: it is flattened
+        # into a PreparedSky and handed to the same kernel.
+        prepared = prepare_wsclean_sky(wsclean_sky, freqs, ra0, dec0, ncorr=ncorr)
+
+        simvis = da.blockwise(
+            predict_block,
+            ("row", "chan", "corr"),
+            prepared,
+            None,
+            msds.UVW.data,
+            ("row", "uvw"),
             noise_vis=vis_noise,
             out_dtype=vis_dtype,
             new_axes={"chan": freqs.size, "corr": ncorr},

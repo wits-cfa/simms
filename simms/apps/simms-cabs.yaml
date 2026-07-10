@@ -21,6 +21,11 @@ cabs:
         dtype: Union[File, List[File]]
         required: no
         abbreviation: fs
+      wsclean-sky:
+        info: WSClean component list (point and Gaussian components, Stokes I).
+        dtype: File
+        required: no
+        abbreviation: ws
       fits-sky-interp:
         info: >-
           Interpolation method when the MS and FITS frequency grids do not match and the
