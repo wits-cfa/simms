@@ -493,3 +493,71 @@ def test_image_beam_planes_use_mid_freq_for_single_plane():
     np.testing.assert_allclose(prepared.planes, power.reshape(5, 5, 1)[None])
     # Centre pixel (l = m = 0) attenuated least; corners most.
     assert prepared.planes[0, 2, 2, 0] > prepared.planes[0, 0, 0, 0]
+
+
+# --- Review fixes: PA-grid cap and descending FITS axes --------------------------
+
+from simms.skymodel.beams import MAX_PA_SAMPLES  # noqa: E402
+
+
+def test_pa_sample_grid_caps_near_zenith_transit():
+    # A field transiting through the zenith (dec == latitude) has a diverging PA rate;
+    # the grid must be capped instead of blowing up to millions of samples.
+    duration = 2 * 3600.0
+    ra0 = float(local_sidereal_time(np.array([BASE_TIME + duration / 2]), MKAT_LON)[0])
+    tgrid, chi_grid = pa_sample_grid(BASE_TIME, duration, ra0, MKAT_LAT, MKAT_LON, MKAT_LAT, 1.0)
+    assert tgrid.size == chi_grid.size == MAX_PA_SAMPLES
+    # A normal (well off-zenith) field stays far below the cap.
+    tg2, _ = pa_sample_grid(BASE_TIME, duration, ra0, np.deg2rad(-55.0), MKAT_LON, MKAT_LAT, 1.0)
+    assert tg2.size < 200
+
+
+def test_fits_provider_handles_descending_grid():
+    # FITS L/M axes commonly descend (negative CDELT); the constructor must re-sort
+    # ascending rather than let RegularGridInterpolator raise, with identical results.
+    beam = CosineTaperBeam.from_builtin("MKAT-AA-L-JIM-2020")
+    l_grid = np.linspace(-0.06, 0.06, 81)
+    m_grid = np.linspace(-0.06, 0.06, 81)
+    freqs = np.array([1.35e9, 1.45e9])
+    cube = _jimbeam_cube(beam, l_grid, m_grid, freqs)
+
+    asc = FitsBeamProvider.from_arrays(l_grid, m_grid, freqs, cube)
+    desc = FitsBeamProvider.from_arrays(l_grid[::-1], m_grid[::-1], freqs, cube[::-1, ::-1])
+
+    ell = np.array([0.0, 0.02, -0.03])
+    emm = np.array([0.01, -0.02, 0.0])
+    chi = np.array([0.0, 0.2])
+    np.testing.assert_allclose(desc.voltage(ell, emm, freqs, chi), asc.voltage(ell, emm, freqs, chi), atol=1e-12)
+
+
+def test_fits_provider_from_fits_negative_cdelt(tmp_path):
+    from astropy.io import fits
+
+    beam = CosineTaperBeam.from_builtin("MKAT-AA-L-JIM-2020")
+    l_grid = np.linspace(-0.05, 0.05, 41)  # ascending physical l per pixel index
+    m_grid = np.linspace(-0.05, 0.05, 41)
+    freqs = np.array([1.4e9])
+    cube = _jimbeam_cube(beam, l_grid, m_grid, freqs)
+    hh = cube[..., 0].transpose(2, 1, 0)
+    vv = cube[..., 1].transpose(2, 1, 0)
+    data = np.stack([hh.real, hh.imag, vv.real, vv.imag], axis=0)
+
+    # Negative CDELT1: pixel 0 holds the largest l, so l decreases with pixel index.
+    hdr = fits.Header()
+    hdr["CRPIX1"], hdr["CRVAL1"], hdr["CDELT1"] = 1, np.degrees(l_grid[-1]), -np.degrees(l_grid[1] - l_grid[0])
+    hdr["CRPIX2"], hdr["CRVAL2"], hdr["CDELT2"] = 1, np.degrees(m_grid[0]), np.degrees(m_grid[1] - m_grid[0])
+    hdr["CRPIX3"], hdr["CRVAL3"], hdr["CDELT3"] = 1, freqs[0], 1.0
+    hdr["CRPIX4"], hdr["CRVAL4"], hdr["CDELT4"] = 1, 0, 1
+    # Data pixel index runs opposite to physical l, so flip the l axis of the planes too.
+    path = tmp_path / "neg_cdelt.fits"
+    fits.PrimaryHDU(data=data[:, :, :, ::-1], header=hdr).writeto(path)
+
+    prov = FitsBeamProvider.from_fits(path)  # must not raise
+    jim = JimBeamProvider(beam)
+    ell = np.array([0.0, 0.015])
+    emm = np.array([0.0, -0.02])
+    np.testing.assert_allclose(
+        prov.voltage(ell, emm, freqs, np.array([0.0])),
+        jim.voltage(ell, emm, freqs, np.array([0.0])),
+        atol=2e-3,
+    )

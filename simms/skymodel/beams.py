@@ -271,6 +271,13 @@ class JimBeamProvider(BeamProvider):
         return self.beam.voltages(x_deg, y_deg, freqs / 1e6)
 
 
+def _ascending(grid, values, axis):
+    """Return ``(grid, values)`` with ``grid`` ascending, flipping ``values`` along ``axis`` if not."""
+    if grid.size > 1 and grid[0] > grid[-1]:
+        return grid[::-1].copy(), np.flip(values, axis=axis)
+    return grid, values
+
+
 class FitsBeamProvider(BeamProvider):
     """Per-feed voltage beam interpolated from a gridded FITS cube (measured/eidos beams).
 
@@ -293,6 +300,11 @@ class FitsBeamProvider(BeamProvider):
         voltages = np.asarray(voltages, dtype=np.complex128)  # (nl, nm, nfreq, 2)
         if voltages.shape != (l_grid.size, m_grid.size, freqs_hz.size, 2):
             raise ValueError("voltages must have shape (nl, nm, nfreq, 2)")
+        # RegularGridInterpolator requires strictly ascending axes; FITS L/M axes often
+        # descend (negative CDELT), so flip any descending axis and its data together.
+        l_grid, voltages = _ascending(l_grid, voltages, 0)
+        m_grid, voltages = _ascending(m_grid, voltages, 1)
+        freqs_hz, voltages = _ascending(freqs_hz, voltages, 2)
         self.name = name
         self.l_grid, self.m_grid, self.freqs_hz = l_grid, m_grid, freqs_hz
         # One interpolator per feed; a single-channel cube can't interpolate in frequency,
@@ -440,12 +452,19 @@ def resolve_antenna_beams(telescope_names, mount, beam_config, beam_band: str = 
     return ant_type, providers, np.array(type_is_altaz, dtype=bool)
 
 
+# Hard cap on the parallactic-angle grid. Sizing by the peak PA rate diverges as a
+# source approaches the zenith (rate -> infinity at transit through zenith), which would
+# otherwise blow up the beam grid; cap it and warn that the fast region is under-resolved.
+MAX_PA_SAMPLES = 2048
+
+
 def pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step_deg):
     """A parallactic-angle sample grid spanning the observation, uniform in time.
 
     The grid is uniform in *time* (so a row is indexed by its timestamp, monotonically
     and without ``arctan2`` wrap issues) and sized by the *maximum* PA rate over the span
-    so a fast (near-zenith) transit is still resolved to ``pa_step_deg``.
+    so a fast (near-zenith) transit is resolved to ``pa_step_deg``, up to
+    :data:`MAX_PA_SAMPLES` samples.
 
     Returns
     -------
@@ -462,6 +481,15 @@ def pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step_deg):
         rate = np.abs(np.gradient(chi_fine, fine_t)).max()  # rad/s
         span_deg = np.degrees(rate * duration)
         n_pa = max(2, int(np.ceil(span_deg / max(pa_step_deg, 1e-6))) + 1)
+        if n_pa > MAX_PA_SAMPLES:
+            log.warning(
+                "Parallactic-angle sampling wants %d grid points (fast/near-zenith "
+                "transit); capping at %d. The beam near transit is under-resolved -- "
+                "raise --beam-pa-step or avoid a near-zenith field for full accuracy.",
+                n_pa,
+                MAX_PA_SAMPLES,
+            )
+            n_pa = MAX_PA_SAMPLES
     tgrid = t_start + np.linspace(0.0, duration, n_pa)
     chi_grid = np.unwrap(parallactic_angle(tgrid, ra0, dec0, lon, lat))
     return tgrid, chi_grid
