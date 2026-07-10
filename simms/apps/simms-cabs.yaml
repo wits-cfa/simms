@@ -22,9 +22,12 @@ cabs:
         required: no
         abbreviation: fs
       fits-sky-interp:
-        info: Interpolation method when MS and FITS image grids do not match. Interpolation is only done within the overlap region. 
+        info: >-
+          Interpolation method when the MS and FITS frequency grids do not match and the
+          cube is kept. 'nearest' costs about 1e-3 in flux; prefer an analytic spectrum
+          (--fits-spectrum poly) where the spectrum allows it.
         dtype: str
-        default: nearest
+        default: linear
         choices:
         - nearest
         - linear
@@ -46,6 +49,31 @@ cabs:
         required: no
         default: 1e-7
         abbreviation: pt
+      fits-spectrum:
+        info: >-
+          How the FITS sky model varies with frequency. 'flat' is one frequency-independent
+          plane; 'poly' is a flux at a reference frequency times a per-pixel log-polynomial;
+          'cube' keeps the explicit planes. 'auto' fits a log-polynomial to a cube and falls
+          back to the cube when the fit is poor.
+        dtype: str
+        default: auto
+        choices: ['auto', 'flat', 'poly', 'cube']
+        abbreviation: fsp
+      fits-spi:
+        info: >-
+          Spectral-index (and higher-order) coefficient maps, ordered c1, c2, ... Given these,
+          the spectrum is analytic and nothing is fitted. Requires --fits-ref-freq.
+        dtype: List[File]
+        required: no
+      fits-ref-freq:
+        info: Reference frequency (Hz) of an analytic FITS spectrum. Defaults to the MS band centre.
+        dtype: float
+        required: no
+        abbreviation: frf
+      fits-spectrum-order:
+        info: Order of the fitted log-polynomial spectrum. 1 is a plain spectral index.
+        dtype: int
+        default: 2
       predict-backend:
         info: >-
           Backend for FITS sky model prediction. 'dft' is exact for any projection;

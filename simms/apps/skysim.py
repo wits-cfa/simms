@@ -143,6 +143,10 @@ def runit(opts):
             polarisation=opts.polarisation,
             tol=opts.pixel_tol,
             backend=opts.predict_backend,
+            spectrum=opts.fits_spectrum,
+            spi_maps=opts.fits_spi,
+            ref_freq=opts.fits_ref_freq,
+            spectrum_order=opts.fits_spectrum_order,
             interpolation=opts.fits_sky_interp,
         )
 

@@ -19,6 +19,7 @@ from simms.skymodel.fits_skies import (
     prepare_fits_sky,
     reproject_to_sin,
 )
+from simms.skymodel.fits_spectrum import SpectralKind
 
 from . import InitTest
 
@@ -433,9 +434,18 @@ def test_spectral_interpolation_onto_the_ms_grid(params, uvw):
     path = write_image(params, np.transpose(cube, (2, 1, 0)), header)
 
     prepared = prepare_fits_sky(
-        path, RA0, DEC0, chan_freqs, 4e7, 2, nrow=uvw.shape[0], backend="dft", interpolation="linear"
+        path,
+        RA0,
+        DEC0,
+        chan_freqs,
+        4e7,
+        2,
+        nrow=uvw.shape[0],
+        backend="dft",
+        spectrum="cube",
+        interpolation="linear",
     )
-    assert not prepared.flat_spectrum
+    assert prepared.spectrum.kind is SpectralKind.CUBE
     assert prepared.ncomp == 1
     # linear interpolation of a linear spectrum is exact
     expected = 2.0 * (chan_freqs / fits_freqs[0])
@@ -473,3 +483,210 @@ def test_no_stokes_i_plane_raises(params, uvw):
     path = write_image(params, data, header)
     with pytest.raises(FITSSkymodelError, match="no Stokes I plane"):
         prepare_fits_sky(path, RA0, DEC0, np.array([1.4e9]), 1e6, 2, nrow=uvw.shape[0])
+
+
+# --------------------------------------------------------------------------- analytic spectra
+
+
+def powerlaw_cube(npix, nsrc, rng, freqs, ref_freq, c1, c2=0.0):
+    """A cube whose every pixel follows S0 * (nu/nu0)**(c1 + c2*ln(nu/nu0))."""
+    plane = np.zeros((npix, npix))
+    idx = rng.choice(npix * npix, nsrc, replace=False)
+    ii, jj = np.unravel_index(idx, (npix, npix))
+    plane[ii, jj] = rng.uniform(0.3, 1.0, nsrc)
+    x = np.log(freqs / ref_freq)
+    scale = np.exp(c1 * x + c2 * x**2)
+    return plane[:, :, np.newaxis] * scale[np.newaxis, np.newaxis, :]
+
+
+@pytest.mark.parametrize("backend", ["dft", "fft"])
+def test_auto_fits_a_log_polynomial_and_keeps_one_plane(params, uvw, backend):
+    """A power-law cube is reduced to one reference plane plus coefficient maps,
+    and still predicts the same visibilities as the cube it came from."""
+    npix, nchan = 64, 6
+    chan_freqs = np.linspace(1.2e9, 1.7e9, nchan)
+    ref_freq = float(0.5 * (chan_freqs[0] + chan_freqs[-1]))
+    rng = np.random.default_rng(23)
+    cube = powerlaw_cube(npix, 5, rng, chan_freqs, ref_freq, c1=-0.7, c2=0.05)
+
+    header = make_header(npix, nchan=nchan, freqs=chan_freqs)
+    path = write_image(params, np.transpose(cube, (2, 1, 0)), header)
+
+    prepared = prepare_fits_sky(
+        path,
+        RA0,
+        DEC0,
+        chan_freqs,
+        chan_freqs[1] - chan_freqs[0],
+        2,
+        nrow=uvw.shape[0],
+        backend=backend,
+        ref_freq=ref_freq,
+    )
+    assert prepared.spectrum.kind is SpectralKind.POLY
+    # an exact fit; the residual floor is set by cancellation in the normal equations
+    assert prepared.spectrum.residual < 1e-6
+    if backend == "fft":
+        # one plane held, not nchan: this is the memory claim
+        assert prepared.planes.shape[-1] == 1
+        assert prepared.spectrum.coeffs.shape == (2, npix, npix)
+
+    got = predict_fits_block(prepared, uvw, epsilon=1e-11)
+    expected = brute_force_vis(cube[np.newaxis], header, uvw, chan_freqs, 2, False, True)
+    assert np.abs(got - expected).max() / np.abs(expected).max() < 1e-6
+
+
+def test_auto_keeps_the_cube_when_the_spectrum_is_not_a_power_law(params, uvw):
+    """A spectral line is not a log-polynomial; auto must not force one."""
+    npix, nchan = 32, 8
+    chan_freqs = np.linspace(1.2e9, 1.7e9, nchan)
+    rng = np.random.default_rng(29)
+    cube = powerlaw_cube(npix, 3, rng, chan_freqs, chan_freqs[0], c1=-0.7)
+    cube[..., nchan // 2] *= 4.0  # an emission line
+
+    header = make_header(npix, nchan=nchan, freqs=chan_freqs)
+    path = write_image(params, np.transpose(cube, (2, 1, 0)), header)
+
+    prepared = prepare_fits_sky(
+        path, RA0, DEC0, chan_freqs, chan_freqs[1] - chan_freqs[0], 2, nrow=uvw.shape[0], backend="dft"
+    )
+    assert prepared.spectrum.kind is SpectralKind.CUBE
+
+    got = predict_fits_block(prepared, uvw)
+    expected = brute_force_vis(cube[np.newaxis], header, uvw, chan_freqs, 2, False, True)
+    assert np.abs(got - expected).max() / np.abs(expected).max() < 1e-9
+
+
+@pytest.mark.parametrize("backend", ["dft", "fft"])
+def test_intensity_map_plus_spectral_index_map(params, uvw, backend):
+    """Issue #110: predict from an intensity map and a spectral-index map."""
+    npix, nchan = 64, 5
+    chan_freqs = np.linspace(1.2e9, 1.7e9, nchan)
+    ref_freq = 1.4e9
+    rng = np.random.default_rng(31)
+
+    intensity = np.zeros((npix, npix))
+    idx = rng.choice(npix * npix, 6, replace=False)
+    ii, jj = np.unravel_index(idx, (npix, npix))
+    intensity[ii, jj] = rng.uniform(0.3, 1.0, 6)
+    alpha = np.full((npix, npix), -0.8)
+    alpha[ii[:3], jj[:3]] = -0.2  # a couple of flatter-spectrum sources
+
+    header = make_header(npix)
+    image_path = write_image(params, np.ascontiguousarray(intensity.T), header)
+    alpha_path = write_image(params, np.ascontiguousarray(alpha.T), header)
+
+    prepared = prepare_fits_sky(
+        image_path,
+        RA0,
+        DEC0,
+        chan_freqs,
+        1e8,
+        2,
+        nrow=uvw.shape[0],
+        backend=backend,
+        spi_maps=[alpha_path],
+        ref_freq=ref_freq,
+    )
+    assert prepared.spectrum.kind is SpectralKind.POLY
+    assert prepared.spectrum.ref_freq == ref_freq
+
+    # the cube the maps describe
+    cube = intensity[:, :, np.newaxis] * (chan_freqs / ref_freq)[np.newaxis, np.newaxis, :] ** alpha[:, :, np.newaxis]
+    cube_header = make_header(npix, nchan=nchan, freqs=chan_freqs)
+    got = predict_fits_block(prepared, uvw, epsilon=1e-11)
+    expected = brute_force_vis(cube[np.newaxis], cube_header, uvw, chan_freqs, 2, False, True)
+    assert np.abs(got - expected).max() / np.abs(expected).max() < 1e-6
+
+
+def test_spi_maps_require_a_reference_frequency(params, uvw):
+    npix = 32
+    header = make_header(npix)
+    image_path = write_image(params, np.zeros((npix, npix)), header)
+    alpha_path = write_image(params, np.full((npix, npix), -0.7), header)
+    with pytest.raises(FITSSkymodelError, match="reference frequency"):
+        prepare_fits_sky(image_path, RA0, DEC0, np.array([1.4e9]), 1e6, 2, nrow=uvw.shape[0], spi_maps=[alpha_path])
+
+
+def test_spi_map_shape_must_match(params, uvw):
+    header = make_header(32)
+    image_path = write_image(params, np.zeros((32, 32)), header)
+    alpha_path = write_image(params, np.full((16, 16), -0.7), make_header(16))
+    with pytest.raises(FITSSkymodelError, match="but the intensity map is"):
+        prepare_fits_sky(
+            image_path,
+            RA0,
+            DEC0,
+            np.array([1.4e9]),
+            1e6,
+            2,
+            nrow=uvw.shape[0],
+            spi_maps=[alpha_path],
+            ref_freq=1.4e9,
+        )
+
+
+def test_reprojection_does_not_flux_scale_the_coefficient_maps(params, uvw):
+    """Spectral indices are exponents, not densities. Scaling them by |det J| would
+    tilt the spectrum wherever the pixel area changes."""
+    npix = WIDE_TAN_NPIX
+    chan_freqs = np.array([1.3e9, 1.5e9])
+    yy, xx = np.mgrid[:npix, :npix]
+    intensity = np.exp(-(((xx - 320) ** 2 + (yy - 205) ** 2) / (2 * 6.0**2)))
+    alpha = np.full((npix, npix), -0.7)  # uniform, so any scaling is visible
+
+    header = make_header(npix, proj="TAN", cell=WIDE_TAN_CELL)
+    assert not fit_lm_grid(WCS(header).celestial, RA0, DEC0, npix, npix).is_regular
+
+    image_path = write_image(params, np.ascontiguousarray(intensity.T), header)
+    alpha_path = write_image(params, np.ascontiguousarray(alpha.T), header)
+
+    prepared = prepare_fits_sky(
+        image_path,
+        RA0,
+        DEC0,
+        chan_freqs,
+        1e8,
+        2,
+        nrow=uvw.shape[0],
+        backend="fft",
+        spi_maps=[alpha_path],
+        ref_freq=1.4e9,
+        tol=1e-6,
+    )
+    assert prepared.grid.is_regular, "the image must have been reprojected"
+    assert (prepared.npix_l, prepared.npix_m) != (npix, npix)
+
+    # the Jacobian is not unity across a wide TAN image, so an erroneous scaling would show
+    interior = prepared.spectrum.coeffs[0][8:-8, 8:-8]
+    np.testing.assert_allclose(interior, -0.7, rtol=1e-6)
+
+
+def test_explicit_flat_rejects_a_cube(params, uvw):
+    npix, nchan = 32, 4
+    chan_freqs = np.linspace(1.3e9, 1.5e9, nchan)
+    header = make_header(npix, nchan=nchan, freqs=chan_freqs)
+    path = write_image(params, np.zeros((nchan, npix, npix)), header)
+    with pytest.raises(FITSSkymodelError, match="'flat' spectrum needs a single frequency plane"):
+        prepare_fits_sky(path, RA0, DEC0, chan_freqs, 5e7, 2, nrow=uvw.shape[0], spectrum="flat")
+
+
+def test_explicit_poly_rejects_a_single_plane(params, uvw):
+    header = make_header(32)
+    path = write_image(params, np.zeros((32, 32)), header)
+    with pytest.raises(FITSSkymodelError, match="single frequency plane"):
+        prepare_fits_sky(path, RA0, DEC0, np.array([1.4e9]), 1e6, 2, nrow=uvw.shape[0], spectrum="poly")
+
+
+def test_short_cube_lowers_the_fit_order_rather_than_failing(params, uvw):
+    """auto must degrade an order-2 fit to order 1 when only two channels exist."""
+    npix, nchan = 32, 2
+    chan_freqs = np.array([1.3e9, 1.5e9])
+    rng = np.random.default_rng(37)
+    cube = powerlaw_cube(npix, 3, rng, chan_freqs, 1.4e9, c1=-0.7)
+    header = make_header(npix, nchan=nchan, freqs=chan_freqs)
+    path = write_image(params, np.transpose(cube, (2, 1, 0)), header)
+
+    prepared = prepare_fits_sky(path, RA0, DEC0, chan_freqs, 2e8, 2, nrow=uvw.shape[0], backend="dft")
+    assert prepared.spectrum.kind is SpectralKind.POLY
+    assert prepared.spectrum.coeffs.shape[0] == 1  # order dropped from 2 to 1

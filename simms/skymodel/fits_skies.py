@@ -40,6 +40,15 @@ from scipy.ndimage import map_coordinates
 
 from simms import BIN
 from simms.exceptions import FITSSkymodelError
+from simms.skymodel.fits_spectrum import (
+    DEFAULT_FIT_TOLERANCE,
+    FitsSpectrum,
+    SpectralKind,
+    evaluate_scale,
+    fit_log_polynomial,
+    interpolate_planes_at,
+    read_spi_maps,
+)
 from simms.skymodel.kernels import is_uniform_grid, predict_vis
 from simms.skymodel.mstools import add_noise, stack_unpolarised_vis
 from simms.utilities import is_range_in_range, radec2lm
@@ -101,7 +110,7 @@ class PreparedFitsSky:
     """A FITS sky model reduced to what a prediction backend needs."""
 
     chan_freqs: np.ndarray  # MS channel centres (Hz)
-    flat_spectrum: bool  # True when the model has a single, frequency-independent plane
+    spectrum: FitsSpectrum  # how the model varies with frequency
     backend: str  # "dft" or "fft"
     ncorr: int
     polarisation: bool
@@ -110,7 +119,9 @@ class PreparedFitsSky:
     npix_l: int
     npix_m: int
 
-    # FFT backend: real Stokes planes, (nstokes, npix_l, npix_m, nchan_model)
+    # FFT backend: real Stokes planes, (nstokes, npix_l, npix_m, nchan_model).
+    # FLAT and POLY store one plane, at the reference frequency; CUBE stores the
+    # whole MS channel grid.
     planes: Optional[np.ndarray] = None
     stokes_names: Optional[List[str]] = None
     grid: Optional[FitsGrid] = None
@@ -123,6 +134,11 @@ class PreparedFitsSky:
     @property
     def nspec(self) -> int:
         return self.ncorr if self.polarisation else 1
+
+    @property
+    def flat_spectrum(self) -> bool:
+        """True when one image serves every channel, so the gridder runs once."""
+        return self.spectrum.kind is SpectralKind.FLAT
 
 
 # --------------------------------------------------------------------------- geometry
@@ -211,9 +227,44 @@ def fit_lm_grid(cel: WCS, ra0: float, dec0: float, npix_l: int, npix_m: int, sam
     )
 
 
-def reproject_to_sin(planes: np.ndarray, cel: WCS, ra0: float, dec0: float, cell: float, order: int = 3):
+@dataclass
+class SinResampler:
+    """A fixed mapping from a SIN target grid onto an arbitrary source image.
+
+    Built once so that flux maps and spectral coefficient maps are resampled onto
+    exactly the same target pixels, differing only in whether the Jacobian is
+    applied.
     """
-    Resample image planes onto a SIN grid tangent at the phase centre.
+
+    coords: np.ndarray  # (2, out_l * out_m) source pixel coordinates
+    jacobian: np.ndarray  # (out_l, out_m) |det J| of target -> source pixels
+    shape: tuple  # (out_l, out_m)
+    grid: FitsGrid
+    order: int = 3
+
+    def __call__(self, planes: np.ndarray, conserve_flux: bool = True) -> np.ndarray:
+        """
+        Resample ``(..., npix_l, npix_m)`` onto the target grid.
+
+        Set ``conserve_flux`` for a density in pixel index, such as Jy/pixel: the
+        interpolated value is scaled by ``|det J|``, so the total flux survives a
+        change of pixel area. Clear it for an intensive quantity, such as a
+        spectral index, which must be carried across unscaled.
+        """
+        source_shape = planes.shape[-2:]
+        flat = planes.reshape(-1, *source_shape)
+        out = np.empty((flat.shape[0], *self.shape), dtype=np.float64)
+        for index, plane in enumerate(flat):
+            resampled = map_coordinates(plane, self.coords, order=self.order, mode="constant", cval=0.0)
+            out[index] = resampled.reshape(self.shape)
+            if conserve_flux:
+                out[index] *= self.jacobian
+        return out.reshape(planes.shape[:-2] + self.shape)
+
+
+def sin_resampler(cel: WCS, ra0: float, dec0: float, cell: float, npix_l: int, npix_m: int, order: int = 3):
+    """
+    Build a resampler onto a SIN grid tangent at the phase centre.
 
     Flux is conserved exactly (to interpolation accuracy) without any solid-angle
     bookkeeping: Jy/pixel is a density with respect to pixel index, so scaling the
@@ -222,25 +273,22 @@ def reproject_to_sin(planes: np.ndarray, cel: WCS, ra0: float, dec0: float, cell
 
     Parameters
     ----------
-    planes : numpy.ndarray
-        Image planes of shape ``(..., npix_l, npix_m)``, in Jy/pixel.
     cel : astropy.wcs.WCS
         Celestial sub-WCS of the source image.
     ra0, dec0 : float
         Phase centre (radians).
     cell : float
         Pixel size of the target grid, in radians.
+    npix_l, npix_m : int
+        Shape of the source image.
     order : int, optional
         Spline order for :func:`scipy.ndimage.map_coordinates`. Default 3.
 
     Returns
     -------
-    tuple
-        ``(resampled_planes, grid)`` where ``grid`` is the exactly regular
-        :class:`FitsGrid` of the new image.
+    SinResampler
     """
     lng, lat = cel.wcs.lng, cel.wcs.lat
-    npix_l, npix_m = planes.shape[-2], planes.shape[-1]
 
     # Angular extent of the source, sampled on its border.
     edge = np.linspace(0, npix_l - 1, 64).astype(int)
@@ -273,13 +321,6 @@ def reproject_to_sin(planes: np.ndarray, cel: WCS, ra0: float, dec0: float, cell
     dj_dl, dj_dm = np.gradient(src_j)
     jacobian = np.abs(di_dl * dj_dm - di_dm * dj_dl)
 
-    coords = np.stack([src_i.ravel(), src_j.ravel()])
-    flat = planes.reshape(-1, npix_l, npix_m)
-    out = np.empty((flat.shape[0], out_l, out_m), dtype=np.float64)
-    for k, plane in enumerate(flat):
-        resampled = map_coordinates(plane, coords, order=order, mode="constant", cval=0.0)
-        out[k] = resampled.reshape(out_l, out_m) * jacobian
-
     grid = FitsGrid(
         delta_l=delta_l,
         delta_m=delta_m,
@@ -289,7 +330,19 @@ def reproject_to_sin(planes: np.ndarray, cel: WCS, ra0: float, dec0: float, cell
         m_ref=0.0,
         deviation_pixels=0.0,
     )
-    return out.reshape(planes.shape[:-2] + (out_l, out_m)), grid
+    return SinResampler(
+        coords=np.stack([src_i.ravel(), src_j.ravel()]),
+        jacobian=jacobian,
+        shape=(out_l, out_m),
+        grid=grid,
+        order=order,
+    )
+
+
+def reproject_to_sin(planes: np.ndarray, cel: WCS, ra0: float, dec0: float, cell: float, order: int = 3):
+    """Resample flux planes onto a SIN grid tangent at the phase centre."""
+    resampler = sin_resampler(cel, ra0, dec0, cell, planes.shape[-2], planes.shape[-1], order=order)
+    return resampler(planes, conserve_flux=True), resampler.grid
 
 
 # --------------------------------------------------------------------------- polarisation
@@ -427,7 +480,12 @@ def prepare_fits_sky(
     polarisation: bool = True,
     tol: float = 1e-7,
     backend: str = "auto",
-    interpolation: str = "nearest",
+    spectrum: str = "auto",
+    spi_maps: Optional[List[File]] = None,
+    ref_freq: Optional[float] = None,
+    spectrum_order: int = 2,
+    spectrum_tol: float = DEFAULT_FIT_TOLERANCE,
+    interpolation: str = "linear",
     stack_axis: str = "STOKES",
     reproject_order: int = 3,
 ) -> PreparedFitsSky:
@@ -456,8 +514,24 @@ def prepare_fits_sky(
         Pixels below this brightness (Jy) are dropped from the component list.
     backend : {"auto", "dft", "fft"}, optional
         Prediction backend. "auto" uses :func:`choose_backend`.
+    spectrum : {"auto", "flat", "poly", "cube"}, optional
+        How the model varies with frequency. "auto" takes a single plane as flat,
+        and for a cube fits a log-polynomial, falling back to the cube when the fit
+        residual exceeds `spectrum_tol`.
+    spi_maps : list of File, optional
+        Spectral-index (and higher-order) coefficient maps, ordered c1, c2, ...
+        When given, the spectrum is analytic and nothing is fitted.
+    ref_freq : float, optional
+        Reference frequency of the analytic spectrum (Hz). Defaults to the MS band
+        centre.
+    spectrum_order : int, optional
+        Order of the fitted log-polynomial. 1 is a plain spectral index. Default 2.
+    spectrum_tol : float, optional
+        Largest fractional flux residual for which a fitted log-polynomial is
+        accepted under `spectrum="auto"`.
     interpolation : str, optional
-        Spectral interpolation method when the FITS and MS channel grids differ.
+        Spectral interpolation method when the FITS and MS channel grids differ and
+        the cube is kept.
     stack_axis : str, optional
         Axis along which a list of FITS images is stacked.
     reproject_order : int, optional
@@ -511,22 +585,43 @@ def prepare_fits_sky(
     cel = fds.wcs.celestial
     npix_l = fds.coords["RA"].size
     npix_m = fds.coords["DEC"].size
-
-    # One evaluation of the lazy cube, not one per correlation.
-    cube = np.asarray(fds.get_xds(transpose=["STOKES", "RA", "DEC", "FREQ"]).data.compute(), dtype=np.float64)
+    stokes_i = stokes_names.index("I")
 
     grid = fit_lm_grid(cel, ra0, dec0, npix_l, npix_m)
     pixel_area = abs(grid.delta_l * grid.delta_m)
-    cube = _jy_per_pixel(cube, fds, pixel_area)
-    fds.close()
 
-    flat_spectrum = nchan_fits == 1
-    if not flat_spectrum:
-        cube = _interpolate_spectrum(cube, fits_freqs, chan_freqs, interpolation)
+    # Kept lazy: a POLY fit streams over channel blocks and never holds the cube.
+    lazy_cube = fds.get_xds(transpose=["STOKES", "RA", "DEC", "FREQ"]).data
+    lazy_cube = _jy_per_pixel(lazy_cube, fds, pixel_area)
+
+    if spi_maps and ref_freq is None:
+        raise FITSSkymodelError(
+            "Supplied spectral-index maps are defined at a particular frequency, which cannot be guessed. "
+            "Set a reference frequency (--fits-ref-freq, in Hz)."
+        )
+    if ref_freq is None:
+        ref_freq = float(0.5 * (ms_start_freq + ms_end_freq))
+
+    planes, spectrum, peak = _resolve_spectrum(
+        lazy_cube,
+        fits_freqs,
+        chan_freqs,
+        ref_freq,
+        stokes_i,
+        spectrum=spectrum,
+        spi_maps=spi_maps,
+        order=spectrum_order,
+        fit_tol=spectrum_tol,
+        tol=tol,
+        interpolation=interpolation,
+        shape=(npix_l, npix_m),
+        log=log,
+    )
+    fds.close()
 
     polarisation = bool(polarisation) and len(stokes_names) > 1
 
-    support = np.abs(cube).max(axis=(0, 3)) > tol
+    support = peak > tol
     ncomp = int(support.sum())
     if ncomp == 0:
         log.warning(f"No FITS pixel exceeds the {tol * 1e6:.2f}-uJy tolerance; the model is empty.")
@@ -543,7 +638,7 @@ def prepare_fits_sky(
 
     prepared = PreparedFitsSky(
         chan_freqs=chan_freqs,
-        flat_spectrum=flat_spectrum,
+        spectrum=spectrum,
         backend=backend,
         ncorr=ncorr,
         polarisation=polarisation,
@@ -561,13 +656,20 @@ def prepare_fits_sky(
         lmn[:, 0], lmn[:, 1] = el, em
         lmn[:, 2] = np.sqrt(np.maximum(1 - el * el - em * em, 0.0)) - 1
 
-        # (nstokes, ncomp, nchan_model) -> correlations -> (ncomp, nspec, nchan)
-        comps = cube[:, i_pix, j_pix, :]
-        corrs = stokes_to_correlations(_stokes_getter(comps, stokes_names), ncorr, polarisation, linear_basis)
+        # (nstokes, ncomp, nchan_model) -> (nstokes, ncomp, nchan) on the MS grid
+        comps = planes[:, i_pix, j_pix, :]
+        if spectrum.kind is SpectralKind.CUBE:
+            comps_at_chan = comps
+        else:
+            # (nchan, ncomp) for POLY, scalar 1.0 for FLAT
+            scale = spectrum.scale_at_pixels(chan_freqs, i_pix, j_pix)
+            comps_at_chan = comps[..., 0][..., np.newaxis] * np.atleast_2d(scale).T
+
+        corrs = stokes_to_correlations(_stokes_getter(comps_at_chan, stokes_names), ncorr, polarisation, linear_basis)
         nspec = prepared.nspec
         bmat = np.zeros((ncomp, nspec, nchan), dtype=np.complex128)
-        for c in range(nspec):
-            bmat[:, c, :] = corrs[c] if not flat_spectrum else corrs[c][:, 0:1]
+        for corr in range(nspec):
+            bmat[:, corr, :] = corrs[corr]
         prepared.lmn = lmn
         prepared.bmat = bmat
         prepared.uniform_freqs = is_uniform_grid(chan_freqs)
@@ -578,40 +680,142 @@ def prepare_fits_sky(
                 "reprojecting onto a SIN grid tangent at the phase centre."
             )
             cell = min(abs(grid.delta_l), abs(grid.delta_m))
-            cube = np.moveaxis(cube, (1, 2), (-2, -1))  # (nstokes, nchan, l, m)
-            cube, grid = reproject_to_sin(cube, cel, ra0, dec0, cell, order=reproject_order)
-            cube = np.moveaxis(cube, (-2, -1), (1, 2))
-            npix_l, npix_m = cube.shape[1], cube.shape[2]
+            resampler = sin_resampler(cel, ra0, dec0, cell, npix_l, npix_m, order=reproject_order)
+            planes = np.moveaxis(planes, (1, 2), (-2, -1))  # (nstokes, nchan_model, l, m)
+            planes = np.moveaxis(resampler(planes, conserve_flux=True), (-2, -1), (1, 2))
+            if spectrum.kind is SpectralKind.POLY:
+                # Spectral coefficients are exponents, not densities: no Jacobian.
+                spectrum.coeffs = resampler(spectrum.coeffs, conserve_flux=False)
+            grid = resampler.grid
+            npix_l, npix_m = planes.shape[1], planes.shape[2]
             prepared.npix_l, prepared.npix_m = npix_l, npix_m
+
         log.info(f"Predicting from a {npix_l}x{npix_m} FITS image with the gridder.")
         keep = stokes_names if polarisation else ["I"]
         index = [stokes_names.index(name) for name in keep]
-        prepared.planes = np.ascontiguousarray(cube[index])
+        prepared.planes = np.ascontiguousarray(planes[index])
         prepared.stokes_names = keep
         prepared.grid = grid
 
     return prepared
 
 
+def _resolve_spectrum(
+    lazy_cube,
+    fits_freqs,
+    chan_freqs,
+    ref_freq,
+    stokes_i,
+    spectrum,
+    spi_maps,
+    order,
+    fit_tol,
+    tol,
+    interpolation,
+    shape,
+    log,
+):
+    """
+    Decide how the model varies with frequency, and return the planes it needs.
+
+    Returns ``(planes, spectrum, peak)``, where ``planes`` is
+    ``(nstokes, npix_l, npix_m, nchan_model)`` — one plane at ``ref_freq`` for FLAT
+    and POLY, the whole MS channel grid for CUBE — and ``peak`` is the peak absolute
+    brightness per pixel, used to select components.
+    """
+    nchan_fits = fits_freqs.size
+
+    if spi_maps:
+        # An intensity map plus supplied spectral-index maps: nothing to fit.
+        coeffs = read_spi_maps(spi_maps, shape)
+        if nchan_fits == 1:
+            planes = np.asarray(lazy_cube[..., 0], dtype=np.float64)
+        else:
+            planes = interpolate_planes_at(lazy_cube, fits_freqs, ref_freq)
+        log.info(f"Using {len(spi_maps)} supplied spectral coefficient map(s), reference {ref_freq / 1e9:.6f} GHz.")
+        model = FitsSpectrum(kind=SpectralKind.POLY, ref_freq=ref_freq, coeffs=coeffs)
+        return planes[..., np.newaxis], model, np.abs(planes).max(axis=0)
+
+    if nchan_fits == 1:
+        if spectrum == "poly":
+            raise FITSSkymodelError(
+                "A 'poly' spectrum needs either a multi-channel FITS cube to fit, or supplied "
+                "spectral-index maps. The image has a single frequency plane."
+            )
+        planes = np.asarray(lazy_cube[..., 0], dtype=np.float64)
+        log.info("FITS sky model has one frequency plane; treating the spectrum as flat.")
+        return planes[..., np.newaxis], FitsSpectrum(kind=SpectralKind.FLAT, ref_freq=ref_freq), np.abs(planes).max(0)
+
+    if spectrum == "flat":
+        raise FITSSkymodelError(
+            f"A 'flat' spectrum needs a single frequency plane, but the FITS cube has {nchan_fits}."
+        )
+
+    if spectrum in ("auto", "poly"):
+        # A polynomial of order k needs k + 1 channels. Under "auto" a short cube
+        # simply gets a lower order, or the cube itself.
+        fit_order = min(order, nchan_fits - 1)
+        if fit_order < 1 and spectrum == "poly":
+            raise FITSSkymodelError(
+                f"A 'poly' spectrum needs at least two FITS channels to fit, but the cube has {nchan_fits}."
+            )
+        if fit_order < order:
+            log.info(f"The cube has {nchan_fits} channels; fitting an order-{fit_order} spectrum instead of {order}.")
+
+        if fit_order >= 1:
+            ref_i, coeffs, residual, peak = fit_log_polynomial(
+                lazy_cube, fits_freqs, ref_freq, stokes_i, order=fit_order, tol=tol
+            )
+            if spectrum == "poly" or residual <= fit_tol:
+                planes = interpolate_planes_at(lazy_cube, fits_freqs, ref_freq)
+                planes[stokes_i] = ref_i  # Stokes I comes from the fit, which is more accurate
+                log.info(
+                    f"Fitted an order-{fit_order} log-polynomial spectrum, reference {ref_freq / 1e9:.6f} GHz, "
+                    f"worst fractional residual {residual:.2e}."
+                )
+                model = FitsSpectrum(kind=SpectralKind.POLY, ref_freq=ref_freq, coeffs=coeffs, residual=residual)
+                return planes[..., np.newaxis], model, peak
+            log.info(
+                f"An order-{fit_order} log-polynomial fits the spectrum to only {residual:.2e} "
+                f"(tolerance {fit_tol:.1e}); keeping the cube."
+            )
+
+    cube = np.asarray(lazy_cube, dtype=np.float64)
+    cube = _interpolate_spectrum(cube, fits_freqs, chan_freqs, interpolation)
+    return cube, FitsSpectrum(kind=SpectralKind.CUBE, ref_freq=ref_freq), np.abs(cube).max(axis=(0, 3))
+
+
 # --------------------------------------------------------------------------- prediction
 
 
-def _fft_stokes_visibilities(plane, grid, uvw, chan_freqs, flat_spectrum, npix_l, npix_m, epsilon, wgridding, nthreads):
-    """Visibilities of one real Stokes plane stack, shape ``(npix_l, npix_m, nchan_model)``."""
+def _fft_stokes_visibilities(plane, spectrum, grid, uvw, chan_freqs, npix_l, npix_m, epsilon, wgridding, nthreads):
+    """
+    Visibilities of one real Stokes plane stack.
+
+    ``plane`` is ``(npix_l, npix_m, nchan_model)``: a single reference-frequency plane
+    for FLAT and POLY, the whole channel grid for CUBE. A POLY image is synthesised
+    channel by channel from the reference plane and the coefficient maps, so the
+    cube is never held.
+    """
     nrow, nchan = uvw.shape[0], chan_freqs.size
     vis = np.zeros((nrow, nchan), dtype=np.complex128)
     kwargs = dict(
         uvw=uvw, epsilon=epsilon, do_wgridding=wgridding, nthreads=nthreads, **grid.ducc_kwargs(npix_l, npix_m)
     )
 
-    if flat_spectrum:
+    # One frequency-independent image: the gridder handles every channel in one pass.
+    if spectrum.kind is SpectralKind.FLAT:
         image = np.ascontiguousarray(plane[:, :, 0])
         if np.any(image):
             vis[:] = dirty2vis(freq=chan_freqs, dirty=image, **kwargs)
         return vis
 
     for chan in range(nchan):
-        image = np.ascontiguousarray(plane[:, :, chan])
+        if spectrum.kind is SpectralKind.POLY:
+            scale = evaluate_scale(spectrum.coeffs, chan_freqs[chan : chan + 1], spectrum.ref_freq)[0]
+            image = np.ascontiguousarray(plane[:, :, 0] * scale)
+        else:
+            image = np.ascontiguousarray(plane[:, :, chan])
         # A channel with no emission needs no gridding pass at all.
         if not np.any(image):
             continue
@@ -680,10 +884,10 @@ def predict_fits_block(
             [
                 _fft_stokes_visibilities(
                     plane,
+                    prepared.spectrum,
                     prepared.grid,
                     uvw,
                     prepared.chan_freqs,
-                    prepared.flat_spectrum,
                     prepared.npix_l,
                     prepared.npix_m,
                     epsilon,
