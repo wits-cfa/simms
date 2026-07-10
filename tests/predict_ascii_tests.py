@@ -265,3 +265,25 @@ def test_gaussian_emaj_is_the_fwhm(params, uvw):
     u_lambda = probe[:, :2] * freqs[0] / C
     expected = np.exp(-2 * np.pi**2 * sigma**2 * (u_lambda**2).sum(axis=1))
     np.testing.assert_allclose(np.abs(vis), expected, rtol=1e-6)
+
+
+def test_channel_chunking_matches_full_prediction(params, uvw):
+    """Predicting a subset of channels then concatenating equals the whole grid."""
+    sky = ASCIISkymodel(params.write_temp_file(GAUSSIANS), source_schema_file=SCHEMA)
+    freqs = 1.3e9 + np.arange(9) * 2e7
+    prepared = prepare_skymodel(sky, freqs, RA0, DEC0, ncorr=2)
+
+    whole = predict_block(prepared, uvw)
+    chunked = np.concatenate(
+        [predict_block(prepared.select_channels(np.arange(a, a + 3)), uvw) for a in range(0, 9, 3)],
+        axis=1,
+    )
+    np.testing.assert_array_equal(whole, chunked)
+
+
+def test_select_channels_preserves_uniform_flag(params):
+    sky = ASCIISkymodel(params.write_temp_file(POINTS), source_schema_file=SCHEMA)
+    prepared = prepare_skymodel(sky, UNIFORM_FREQS, RA0, DEC0, ncorr=2)
+    assert prepared.uniform_freqs
+    # a gappy channel selection is no longer uniform
+    assert not prepared.select_channels(np.array([0, 1, 3])).uniform_freqs

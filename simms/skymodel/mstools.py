@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table
 from scabha.basetypes import MS
@@ -70,22 +71,35 @@ def sim_noise(dshape: list | tuple, vis_noise: float, dtype: np.dtype = np.compl
     return noise.view(dtype).reshape(dshape)
 
 
-def sim_noise_block(
-    uvw: np.ndarray,
-    freqs: np.ndarray,
-    ncorr: int,
-    vis_noise: float,
-    out_dtype: np.dtype = np.complex128,
-):
+def noise_visibilities(shape, chunks, vis_noise: float, dtype: np.dtype, seed=None):
     """
-    Noise-only visibilities for one row block.
+    A lazy array of complex Gaussian visibility noise.
 
-    ``uvw`` and ``freqs`` are used only for their shapes; they give ``da.blockwise``
-    the row and channel extents it cannot otherwise infer. The output dtype is
-    named ``out_dtype`` because ``da.blockwise`` consumes any ``dtype`` kwarg
-    itself and would never forward it.
+    Reproducible for a given ``seed`` and independent of how ``shape`` is chunked,
+    because it draws through ``dask.array.random``. Each of the real and imaginary
+    parts has RMS ``vis_noise``.
+
+    Parameters
+    ----------
+    shape : tuple
+        Output shape, ``(nrow, nchan, ncorr)``.
+    chunks : tuple
+        Dask chunking for `shape`.
+    vis_noise : float
+        RMS per visibility (Jy).
+    dtype : numpy.dtype
+        Complex output dtype.
+    seed : int or None
+        Base seed. ``None`` draws fresh entropy (not reproducible).
+
+    Returns
+    -------
+    dask.array.Array
     """
-    return sim_noise((uvw.shape[0], freqs.size, ncorr), vis_noise, dtype=out_dtype)
+    rng = da.random.default_rng(seed)
+    real = rng.standard_normal(shape, chunks=chunks)
+    imag = rng.standard_normal(shape, chunks=chunks)
+    return ((real + 1j * imag) * vis_noise).astype(dtype)
 
 
 def add_noise(vis: np.ndarray, vis_noise: float):
@@ -162,6 +176,11 @@ class PreparedSky:
     def nspec(self) -> int:
         """Number of correlations actually carried through the kernel."""
         return self.bmat.shape[1]
+
+    def select_channels(self, chan_ids: np.ndarray) -> "PreparedSky":
+        """Restrict the model to a subset of channels, for channel-chunked prediction."""
+        freqs = self.freqs[chan_ids]
+        return replace(self, freqs=freqs, bmat=self.bmat[:, :, chan_ids], uniform_freqs=is_uniform_grid(freqs))
 
 
 def prepare_skymodel(
@@ -267,6 +286,17 @@ def prepare_skymodel(
         ncorr=ncorr,
         polarisation=polarisation,
     )
+
+
+def predict_channel_block(
+    prepared: PreparedSky,
+    uvw: np.ndarray,
+    chan_ids: np.ndarray,
+    times: np.ndarray = None,
+    out_dtype: np.dtype = None,
+) -> np.ndarray:
+    """Predict one (row, channel) block, restricting the model to ``chan_ids``."""
+    return predict_block(prepared.select_channels(chan_ids), uvw, times=times, out_dtype=out_dtype)
 
 
 def predict_block(

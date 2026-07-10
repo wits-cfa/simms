@@ -111,10 +111,15 @@ cabs:
         dtype: int
         default: 4
       row-chunks:
-        info: Chunking strategy for the simulation
+        info: Number of rows per chunk. Controls the row-wise task/memory granularity.
         dtype: int
         default: 10000
         abbreviation: rcs
+      chan-chunks:
+        info: Number of channels per chunk. Defaults to all channels in one chunk.
+        dtype: int
+        required: no
+        abbreviation: ccs
       field-id:
         info: Field ID
         dtype: int
@@ -127,6 +132,12 @@ cabs:
       sefd:
         info: Add noise using the this SEFD value
         dtype: float
+      seed:
+        info: >-
+          Random seed for the thermal noise, reproducible across runs at a fixed
+          chunking. Omit for a non-reproducible run.
+        dtype: int
+        required: no
       ascii-species:
         info: Non-simms sky model type. 
         dtype: str

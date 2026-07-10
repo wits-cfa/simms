@@ -26,7 +26,7 @@ component-like images are predicted without resampling.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional, Union
 
 import numpy as np
@@ -139,6 +139,21 @@ class PreparedFitsSky:
     def flat_spectrum(self) -> bool:
         """True when one image serves every channel, so the gridder runs once."""
         return self.spectrum.kind is SpectralKind.FLAT
+
+    def select_channels(self, chan_ids: np.ndarray) -> "PreparedFitsSky":
+        """Restrict the model to a subset of channels, for channel-chunked prediction.
+
+        The reference image and the spectral coefficients are channel-independent,
+        so only the channel grid moves for FLAT and POLY; a CUBE also slices its
+        per-channel planes, and the DFT brightness matrix its channel axis.
+        """
+        updates = {"chan_freqs": self.chan_freqs[chan_ids]}
+        if self.backend == "dft":
+            updates["bmat"] = self.bmat[:, :, chan_ids]
+            updates["uniform_freqs"] = is_uniform_grid(self.chan_freqs[chan_ids])
+        elif self.spectrum.kind is SpectralKind.CUBE:
+            updates["planes"] = self.planes[..., chan_ids]
+        return replace(self, **updates)
 
 
 # --------------------------------------------------------------------------- geometry
@@ -821,6 +836,26 @@ def _fft_stokes_visibilities(plane, spectrum, grid, uvw, chan_freqs, npix_l, npi
             continue
         vis[:, chan] = dirty2vis(freq=chan_freqs[chan : chan + 1], dirty=image, **kwargs)[:, 0]
     return vis
+
+
+def predict_fits_channel_block(
+    prepared: PreparedFitsSky,
+    uvw: np.ndarray,
+    chan_ids: np.ndarray,
+    out_dtype: np.dtype = None,
+    epsilon: float = 1e-7,
+    do_wgridding: bool = True,
+    nthreads: int = 1,
+) -> np.ndarray:
+    """Predict one (row, channel) block, restricting the model to ``chan_ids``."""
+    return predict_fits_block(
+        prepared.select_channels(chan_ids),
+        uvw,
+        out_dtype=out_dtype,
+        epsilon=epsilon,
+        do_wgridding=do_wgridding,
+        nthreads=nthreads,
+    )
 
 
 def predict_fits_block(
