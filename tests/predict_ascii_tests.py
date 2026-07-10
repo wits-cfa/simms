@@ -57,9 +57,14 @@ def brute_force_vis(sources, uvw, freqs, ncorr, polarisation, linear_basis):
         else:
             i_, v_, q_, u_ = stokes
 
+        # emaj, emin are FWHM angles; the visibility of an elliptical Gaussian is
+        # the Fourier transform of the image-plane Gaussian, evaluated from its
+        # sigma_maj, sigma_min directly (no kernel-specific parameterisation).
         emaj = src.value_or_default("emaj")
         emin = src.value_or_default("emin")
         pa = src.value_or_default("pa")
+        sigma_maj = emaj / (2 * np.sqrt(2 * np.log(2)))
+        sigma_min = emin / (2 * np.sqrt(2 * np.log(2)))
 
         if linear_basis:
             corrs = [i_ + q_, u_ + 1j * v_, u_ - 1j * v_, i_ - q_]
@@ -75,11 +80,11 @@ def brute_force_vis(sources, uvw, freqs, ncorr, polarisation, linear_basis):
                 scale = freqs[chan] / C
                 phasor = np.exp(2j * np.pi * (u * el + v * em + w * en) * scale)
                 if emaj or emin:
-                    ell, emm = emaj * np.sin(pa), emaj * np.cos(pa)
-                    ecc = emin / (1.0 if emaj == 0 else emaj)
-                    fu1 = (u * scale * emm - v * scale * ell) * ecc
-                    fv1 = u * scale * ell + v * scale * emm
-                    phasor *= np.exp(-(fu1 * fu1 + fv1 * fv1))
+                    u_lambda, v_lambda = u * scale, v * scale
+                    # rotate uv into the source frame (major axis along position angle pa)
+                    u_maj = u_lambda * np.sin(pa) + v_lambda * np.cos(pa)
+                    u_min = u_lambda * np.cos(pa) - v_lambda * np.sin(pa)
+                    phasor *= np.exp(-2 * np.pi**2 * (sigma_maj**2 * u_maj**2 + sigma_min**2 * u_min**2))
                 for corr, idx in enumerate(selection):
                     vis[row, chan, corr] += corrs[idx] * phasor
     return vis
@@ -240,3 +245,23 @@ def test_continuum_source_predicts_a_sloped_spectrum(params, uvw):
     vis = compute_vis(sky, np.zeros((1, 3)), UNIFORM_FREQS, ncorr=2, ra0=RA0, dec0=DEC0)
     expected = 1.0 * (UNIFORM_FREQS / 1.4e9) ** -0.7
     np.testing.assert_allclose(vis[0, :, 0].real, expected, rtol=1e-6)
+
+
+def test_gaussian_emaj_is_the_fwhm(params, uvw):
+    """A circular ASCII Gaussian's |vis| must be the analytic FT of its FWHM."""
+    fwhm_arcsec = 30.0
+    model = "\n".join(
+        [
+            "#format: name ra dec stokes_i emaj emin pa",
+            f"g0 15.0deg -31.0deg 1.0 {fwhm_arcsec}arcsec {fwhm_arcsec}arcsec 0deg",
+        ]
+    )
+    sky = ASCIISkymodel(params.write_temp_file(model), source_schema_file=SCHEMA)
+    freqs = np.array([1.4e9])
+    probe = np.array([[400.0, 0.0, 0.0], [0.0, 700.0, 0.0]])
+    vis = compute_vis(sky, probe, freqs, ncorr=2, ra0=RA0, dec0=DEC0)[:, 0, 0]
+
+    sigma = np.deg2rad(fwhm_arcsec / 3600) / (2 * np.sqrt(2 * np.log(2)))
+    u_lambda = probe[:, :2] * freqs[0] / C
+    expected = np.exp(-2 * np.pi**2 * sigma**2 * (u_lambda**2).sum(axis=1))
+    np.testing.assert_allclose(np.abs(vis), expected, rtol=1e-6)

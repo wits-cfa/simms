@@ -6,6 +6,7 @@ import numpy as np
 from daskms import xds_from_ms, xds_from_table
 from scabha.basetypes import MS
 
+from simms.constants import FWHM_TO_GAUSS_SCALE
 from simms.skymodel.ascii_skies import ASCIISkymodel
 from simms.skymodel.kernels import is_uniform_grid, predict_vis
 from simms.utilities import radec2lm
@@ -240,10 +241,13 @@ def prepare_skymodel(
         if emaj or emin:
             pa = source.value_or_default("pa")
             is_gauss[i] = True
+            # emaj, emin are FWHM angles (radians); scale to the kernel's shape.
+            axis_major = emaj * FWHM_TO_GAUSS_SCALE
+            axis_minor = emin * FWHM_TO_GAUSS_SCALE
             gauss_shape[i] = (
-                emaj * np.sin(pa),
-                emaj * np.cos(pa),
-                emin / (1.0 if emaj == 0.0 else emaj),
+                axis_major * np.sin(pa),
+                axis_major * np.cos(pa),
+                axis_minor / (1.0 if axis_major == 0.0 else axis_major),
             )
 
         bmat[i] = source.get_brightness_matrix(freqs, ncorr, linear_basis=linear_basis)[:nspec]

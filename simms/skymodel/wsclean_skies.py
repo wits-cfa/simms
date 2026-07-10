@@ -22,19 +22,13 @@ import numpy as np
 from africanus.model.wsclean import load, spectra
 
 from simms import BIN
+from simms.constants import FWHM_TO_GAUSS_SCALE
 from simms.exceptions import ASCIISkymodelError
 from simms.skymodel.kernels import is_uniform_grid
 from simms.skymodel.mstools import PreparedSky
 from simms.utilities import radec2lm
 
 log = logging.getLogger(__name__)
-
-# WSClean major/minor axes are FWHM angles. The kernel's Gaussian envelope is
-# exp(-(fu1**2 + fv1**2) * (nu/c)**2) with the axes entering fu1, fv1 directly,
-# which is the Fourier transform of an image-plane Gaussian of sigma = axis/K.
-# Equivalently emaj_kernel = fwhm * pi / (2 * sqrt(ln 2)); this is the factor that
-# makes the prediction match africanus.rime.wsclean_predict exactly.
-FWHM_TO_KERNEL_AXIS = np.pi / (2.0 * np.sqrt(np.log(2.0)))
 
 SUPPORTED_TYPES = ("POINT", "GAUSSIAN")
 
@@ -144,8 +138,8 @@ def prepare_wsclean_sky(
     # Gaussian shape, converting the FWHM axes into the kernel's parameterisation.
     is_gauss = source_type == "GAUSSIAN"
     gauss_shape = np.zeros((nsrc, 3), dtype=np.float64)
-    axis_major = major * FWHM_TO_KERNEL_AXIS
-    axis_minor = minor * FWHM_TO_KERNEL_AXIS
+    axis_major = major * FWHM_TO_GAUSS_SCALE
+    axis_minor = minor * FWHM_TO_GAUSS_SCALE
     safe_major = np.where(axis_major == 0.0, 1.0, axis_major)
     gauss_shape[:, 0] = axis_major * np.sin(orientation)
     gauss_shape[:, 1] = axis_major * np.cos(orientation)

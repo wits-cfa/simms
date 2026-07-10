@@ -73,12 +73,12 @@ parameters:
     units: Jy
     ptype: flux
   emaj:
-    info: Major axis; default units
+    info: Gaussian major-axis FWHM; default units [deg]
     alias: null
     units: deg
     ptype: angle
   emin:
-    info: Minor axis; default units [deg]
+    info: Gaussian minor-axis FWHM; default units [deg]
     alias: null
     units: deg
     ptype: angle
