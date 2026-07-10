@@ -23,7 +23,7 @@ dependencies = [
     "click>=8.1.3,<9.0",
     "dask-ms[xarray]>=0.2.18,<1.0",
     "ephem>=4.1,<5.0",
-    "scabha>=2.2.0rc2 ; python_version >= '3.11'",
+    "scabha>=2.2.0rc2",
     "codex-africanus[complete]>=0.3.7,<1.0",
     "ducc0",
     "fitstoolz>=0.1.0b3",
