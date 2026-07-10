@@ -26,15 +26,12 @@ dependencies = [
     "scabha>=2.2.0rc2 ; python_version >= '3.11'",
     "codex-africanus[complete]>=0.3.7,<1.0",
     "ducc0",
-    "fitstoolz @ git+https://github.com/caracal-pipeline/fitstoolz@1e62e9e2f2d6aa3342e6dd9e83b6dd8316db0c3b"
+    "fitstoolz>=0.1.0b3",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.sdist]
 include = ["simms"]
