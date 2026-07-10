@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, List, Optional
 
 import numpy as np
-import xarray as xr
 from scabha.basetypes import EmptyListDefault
 
 from simms.constants import FWHM_scale_fact
@@ -264,69 +263,6 @@ class StokesData:
     @property
     def is_polarised(self):
         return any([self.Q, self.U, self.V])
-
-
-class StokesDataFits(StokesData):
-    _STOKES_IDX = {"I": 0, "Q": 1, "U": 2, "V": 3}
-
-    def __init__(self, coord: xr.DataArray, dim_idx: int, data: np.ndarray, linear_basis: bool = True):
-        """
-        Wrap FITS Stokes data with axis mapping.
-
-        Parameters
-        ----------
-        coord : xarray.DataArray
-            Coordinate array describing the Stokes axis.
-        dim_idx : int
-            Index of the Stokes dimension in `data`.
-        data : numpy.ndarray
-            FITS image/cube data containing Stokes planes.
-        linear_basis : bool, optional
-            If True, interpret data in the linear basis. Default is True.
-        """
-        self.data = data
-        self.nstokes = coord.size
-        self.idx = dim_idx
-        ndim = len(data.shape)
-        self.__dslice__ = [slice(None)] * ndim
-        self.linear_basis = linear_basis
-
-    def __stokes_x__(self, x: str):
-        """
-        Get intensity data for a Stokes parameter.
-
-        Parameters
-        ----------
-        x : {'I', 'Q', 'U', 'V'}
-            Stokes parameter to extract.
-
-        Returns
-        -------
-        numpy.ndarray or int
-            Data array for the requested Stokes parameter, or 0 if not present.
-
-        Raises
-        ------
-        RuntimeError
-            If an unknown Stokes parameter is requested.
-        """
-
-        if x not in self._STOKES_IDX:
-            raise RuntimeError(f"Uknown Stokes paramter '{x}'")
-
-        dslice = list(self.__dslice__)
-        dslice[self.idx] = self._STOKES_IDX[x]
-
-        try:
-            xdata = self.data[tuple(dslice)]
-        except IndexError:
-            xdata = 0
-
-        return xdata
-
-    @property
-    def is_polarised(self):
-        return self.nstokes > 1
 
 
 def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | List, nu_ref: float):

@@ -46,6 +46,15 @@ cabs:
         required: no
         default: 1e-7
         abbreviation: pt
+      predict-backend:
+        info: >-
+          Backend for FITS sky model prediction. 'dft' is exact for any projection;
+          'fft' grids the image and needs a regular (l,m) grid, reprojecting to SIN
+          when necessary. 'auto' picks the cheaper of the two.
+        dtype: str
+        default: auto
+        choices: ['auto', 'dft', 'fft']
+        abbreviation: pb
       fft-precision:
         info: Precision of the FFT calculation. The default is double precision.
         dtype: str

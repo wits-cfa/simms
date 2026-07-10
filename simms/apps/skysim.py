@@ -10,9 +10,8 @@ from tqdm.dask import TqdmCallback
 
 from simms import BIN, SCHEMADIR, set_logger
 from simms.skymodel.ascii_skies import ASCIISkymodel
-from simms.skymodel.fits_skies import skymodel_from_fits
+from simms.skymodel.fits_skies import predict_fits_block, prepare_fits_sky
 from simms.skymodel.mstools import (
-    augmented_im_to_vis,
     predict_block,
     prepare_skymodel,
     sim_noise_block,
@@ -131,47 +130,37 @@ def runit(opts):
         else:
             raise FileNotFoundError("FITS file/directory does not exist")
 
-        # process FITS sky model
-        predict = skymodel_from_fits(
+        # Prepared once and shared by every row block.
+        prepared = prepare_fits_sky(
             fs,
             ra0,
             dec0,
             freqs,
             dfreq,
             ncorr,
+            nrow=msds.UVW.data.shape[0],
             linear_basis=linear_basis,
+            polarisation=opts.polarisation,
             tol=opts.pixel_tol,
+            backend=opts.predict_backend,
             interpolation=opts.fits_sky_interp,
         )
 
-        fs_dtype = np.finfo(predict.image.dtype).dtype
-        if fs_dtype == np.float32:
-            epsilon = 1e-6
-        else:
-            epsilon = 1e-7 if opts.fft_precision == "double" else 1e-6
+        epsilon = 1e-7 if opts.fft_precision == "double" else 1e-6
 
         simvis = da.blockwise(
-            augmented_im_to_vis,
+            predict_fits_block,
             ("row", "chan", "corr"),
-            predict.image,
-            ("npix", "chan", "corr") if predict.use_dft else ("l", "m", "chan", "corr"),
+            prepared,
+            None,
             msds.UVW.data,
             ("row", "uvw"),
-            predict.lm,
-            ("npix", "lm") if predict.use_dft else None,
-            freqs,
-            ("chan",),
-            polarisation=predict.is_polarised,
-            expand_freq_dim=predict.expand_freq_dim,
-            use_dft=predict.use_dft,
-            ncorr=ncorr,
-            dtype=msds.DATA.data.dtype,
-            ref_freq=predict.ref_freq,
-            delta_ra=predict.ra_pixel_size,
-            delta_dec=predict.dec_pixel_size,
+            noise_vis=vis_noise,
+            out_dtype=vis_dtype,
             epsilon=epsilon,
-            do_wstacking=opts.do_wstacking,
-            noise=vis_noise,
+            do_wgridding=opts.do_wstacking,
+            new_axes={"chan": freqs.size, "corr": ncorr},
+            dtype=vis_dtype,
             concatenate=True,
         )
 
