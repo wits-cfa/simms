@@ -43,12 +43,22 @@ def _array_lonlat(positions):
     return loc.lon.to_value(u.rad), loc.lat.to_value(u.rad)
 
 
-class _BeamContext:
-    """Everything needed to attach a primary beam to a prepared component sky."""
+def _corr_basis(codes):
+    """'linear' or 'circular' from POLARIZATION.CORR_TYPE codes; raise on anything else."""
+    codes = list(codes)
+    if codes in ([9, 12], [9, 10, 11, 12]):  # XX(9) XY(10) YX(11) YY(12)
+        return "linear"
+    if codes in ([5, 8], [5, 6, 7, 8]):  # RR(5) RL(6) LR(7) LL(8)
+        return "circular"
+    raise RuntimeError(
+        f"Primary beam needs standard linear (XX..YY) or circular (RR..LL) correlations; got CORR_TYPE codes {codes}."
+    )
 
-    def __init__(self, opts, ms, msds, ra0, dec0, ncorr, linear_basis):
-        if not linear_basis:
-            raise RuntimeError("Primary beam requires a linear polarisation basis (--pol-basis linear).")
+
+class _BeamContext:
+    """Everything needed to attach a primary beam to a prepared sky."""
+
+    def __init__(self, opts, ms, msds, ra0, dec0, ncorr):
         beam_config = load_beam_config(opts.primary_beam)
         ant_ds = xds_from_table(f"{ms}::ANTENNA")[0]
         pol_ds = xds_from_table(f"{ms}::POLARIZATION")[0]
@@ -61,15 +71,8 @@ class _BeamContext:
             msds.INTERVAL.data[0],
             pol_ds.CORR_TYPE.data[0],
         )
-        # The beam's per-correlation feed mapping (corr_feed_maps) assumes the canonical
-        # linear correlation order; validate the MS actually uses it (XX=9 .. YY=12).
-        expected = {2: [9, 12], 4: [9, 10, 11, 12]}.get(ncorr)
-        actual = list(np.asarray(corr_type).ravel())
-        if expected is None or actual != expected:
-            raise RuntimeError(
-                f"Primary beam requires linear correlations {expected} (POLARIZATION.CORR_TYPE "
-                f"codes), but the MS has {actual}. Regenerate with linear correlations."
-            )
+        self.basis = _corr_basis(list(np.asarray(corr_type).ravel()))
+        self.full_jones = opts.beam_jones == "full"
         self.ant_type, self.providers, self.type_is_altaz = resolve_antenna_beams(
             tnames, mount, beam_config, opts.beam_band
         )
@@ -79,8 +82,18 @@ class _BeamContext:
         self.duration = float(t1 - t0) + float(interval)
         self.pa_step = opts.beam_pa_step
 
+    @property
+    def brightness_linear_basis(self):
+        """Brightness is built in the linear feed basis when beams are on.
+
+        Diagonal beams require linear correlations anyway; full Jones needs the
+        feed-basis coherency (the basis transform to the MS frame is folded into the
+        beam Jones).
+        """
+        return True
+
     def attach_image(self, prepared, freqs):
-        """Apply an approximate PA-averaged power beam to a FITS-image sky model."""
+        """Apply an approximate PA-averaged power beam to a FITS-image sky model (any basis)."""
         from simms.skymodel.fits_skies import attach_image_beam
 
         if len(self.providers) > 1:
@@ -105,7 +118,20 @@ class _BeamContext:
         )
 
     def attach(self, prepared):
-        """Force full-correlation brightness and attach the beam voltage grid."""
+        """Force full-correlation brightness and attach the beam grid (diagonal or full Jones)."""
+        from simms.skymodel.beams import corr_basis_transform
+
+        if self.full_jones:
+            if self.ncorr != 4:
+                raise RuntimeError("--beam-jones full requires 4 correlations (XX,XY,YX,YY or RR,RL,LR,LL).")
+            basis_transform = corr_basis_transform(self.basis == "circular")
+        elif self.basis != "linear":
+            raise RuntimeError(
+                "The diagonal primary beam requires linear correlations; use --beam-jones full "
+                "for a circular-correlation MS."
+            )
+        else:
+            basis_transform = None
         prepared = to_full_corr(prepared)
         return attach_beam(
             prepared,
@@ -120,6 +146,8 @@ class _BeamContext:
             self.duration,
             self.pa_step,
             self.ncorr,
+            full_jones=self.full_jones,
+            basis_transform=basis_transform,
         )
 
 
@@ -166,7 +194,9 @@ def runit(opts):
     has_sky = bool(ascii_sky or wsclean_sky or fs)
     if opts.primary_beam and not has_sky:
         log.warning("--primary-beam is set but no sky model was given; the primary beam is ignored.")
-    beam_ctx = _BeamContext(opts, ms, msds, ra0, dec0, ncorr, linear_basis) if opts.primary_beam and has_sky else None
+    beam_ctx = _BeamContext(opts, ms, msds, ra0, dec0, ncorr) if opts.primary_beam and has_sky else None
+    if beam_ctx and fs and opts.beam_jones == "full":
+        log.warning("--beam-jones full is ignored on the FITS-image path (an approximate power beam is used).")
 
     # Channel chunking. A channel-index array carries the chan dimension into
     # da.blockwise; each predict task restricts the model to its own channels.
@@ -202,7 +232,9 @@ def runit(opts):
             dec0,
             ncorr=ncorr,
             polarisation=opts.polarisation or bool(beam_ctx),
-            linear_basis=linear_basis,
+            # Beams build the coherency in the linear feed basis (the MS-basis transform is
+            # folded into the beam Jones); otherwise honour the requested pol basis.
+            linear_basis=beam_ctx.brightness_linear_basis if beam_ctx else linear_basis,
             unique_times=unique_times,
         )
         if beam_ctx:

@@ -220,7 +220,18 @@ def _lmn(ell, emm):
     return np.array([[ell, emm, np.sqrt(1 - ell * ell - emm * emm) - 1]])
 
 
-def _attach(prepared, telescope_names, mount, config, ncorr, ra0=0.0, dec0=MKAT_LAT, duration=1.0):
+def _attach(
+    prepared,
+    telescope_names,
+    mount,
+    config,
+    ncorr,
+    ra0=0.0,
+    dec0=MKAT_LAT,
+    duration=1.0,
+    full_jones=False,
+    basis_transform=None,
+):
     ant_type, providers, is_altaz = resolve_antenna_beams(telescope_names, mount, config)
     return attach_beam(
         prepared,
@@ -235,6 +246,8 @@ def _attach(prepared, telescope_names, mount, config, ncorr, ra0=0.0, dec0=MKAT_
         duration,
         1.0,
         ncorr,
+        full_jones=full_jones,
+        basis_transform=basis_transform,
     )
 
 
@@ -561,3 +574,145 @@ def test_fits_provider_from_fits_negative_cdelt(tmp_path):
         jim.voltage(ell, emm, freqs, np.array([0.0])),
         atol=2e-3,
     )
+
+
+# --- Full 2x2 Jones (components) + circular basis --------------------------------
+
+from simms.constants import C  # noqa: E402
+from simms.skymodel.beams import corr_basis_transform  # noqa: E402
+
+
+def _coherency_bmat(stokes, freqs):
+    """Linear-feed 2x2 coherency for one source: bmat (1, 4, nchan) = [XX,XY,YX,YY]."""
+    si, sq, su, sv = stokes
+    nchan = freqs.size
+    b = np.array([si + sq, su + 1j * sv, su - 1j * sv, si - sq], dtype=np.complex128)
+    return np.tile(b[None, :, None], (1, 1, nchan))
+
+
+def test_basis_transform_matches_brightness_convention():
+    # S . B_linear . S^H must equal the circular coherency for random Stokes.
+    S = corr_basis_transform(True)
+    rng = np.random.default_rng(1)
+    for _ in range(200):
+        si, sq, su, sv = rng.normal(size=4)
+        b_lin = np.array([[si + sq, su + 1j * sv], [su - 1j * sv, si - sq]])
+        b_circ = np.array([[si + sv, sq + 1j * su], [sq - 1j * su, si - sv]])
+        np.testing.assert_allclose(S @ b_lin @ S.conj().T, b_circ, atol=1e-12)
+
+
+def test_full_jones_equals_diagonal_for_jimbeam():
+    # JimBeam has no cross-pol, so full 2x2 Jones must reproduce the diagonal kernel.
+    freqs = np.array([1.35e9, 1.45e9])
+    config = {"MK": {"jimbeam": "L"}}
+    uvw = np.array([[120.0, 60.0, 5.0]])
+    times = np.array([BASE_TIME])
+    a1, a2 = np.array([0]), np.array([1])
+    lmn = np.concatenate([_lmn(0.0, 0.0), _lmn(0.05, -0.03)])
+    flux = np.array([2.0, 1.5])
+
+    diag = _attach(_make_prepared(lmn, flux, freqs, 4), ["MK", "MK"], ["ALT-AZ", "ALT-AZ"], config, 4)
+    full = _attach(
+        _make_prepared(lmn, flux, freqs, 4),
+        ["MK", "MK"],
+        ["ALT-AZ", "ALT-AZ"],
+        config,
+        4,
+        full_jones=True,
+        basis_transform=corr_basis_transform(False),
+    )
+    vd = predict_block(diag, uvw, times=times, antenna1=a1, antenna2=a2)
+    vf = predict_block(full, uvw, times=times, antenna1=a1, antenna2=a2)
+    assert full.beam_full_jones and full.beam_grid.shape[-2:] == (2, 2)
+    np.testing.assert_allclose(vd, vf, atol=1e-6)
+
+
+def test_full_jones_leakage_matches_einsum_reference():
+    # A cube with non-zero HV/VH produces cross-hands, matching V = E B E^H per source.
+    beam = CosineTaperBeam.from_builtin("MKAT-AA-L-JIM-2020")
+    l_grid = np.linspace(-0.08, 0.08, 81)
+    m_grid = np.linspace(-0.08, 0.08, 81)
+    freqs = np.array([1.4e9])
+    diag = _jimbeam_cube(beam, l_grid, m_grid, freqs)  # (nl,nm,nfreq,2) = HH,VV (real)
+    cube4 = np.zeros(diag.shape[:3] + (4,), dtype=np.complex128)  # HH,HV,VH,VV
+    cube4[..., 0] = diag[..., 0]
+    cube4[..., 3] = diag[..., 1]
+    cube4[..., 1] = 0.05 + 0.02j  # HV leakage
+    cube4[..., 2] = 0.05 + 0.02j  # VH leakage
+    prov = FitsBeamProvider.from_arrays(l_grid, m_grid, freqs, cube4)
+    assert prov.has_leakage
+
+    ant_type = np.array([0, 0])
+    S = corr_basis_transform(False)
+    ell, emm = 0.04, -0.02
+    prepared = _make_prepared(_lmn(ell, emm), np.array([2.0]), freqs, 4)
+    from simms.skymodel.mstools import attach_beam
+
+    full = attach_beam(
+        prepared,
+        ant_type,
+        [prov],
+        np.array([True]),
+        0.0,
+        MKAT_LAT,
+        MKAT_LON,
+        MKAT_LAT,
+        BASE_TIME,
+        1.0,
+        1.0,
+        4,
+        full_jones=True,
+        basis_transform=S,
+    )
+    uvw = np.array([[150.0, 70.0, 8.0]])
+    times = np.array([BASE_TIME])
+    vf = predict_block(full, uvw, times=times, antenna1=np.array([0]), antenna2=np.array([1]))
+
+    # einsum reference at the single PA sample used (duration -> pa_wt = 0).
+    chi = parallactic_angle(times, 0.0, MKAT_LAT, MKAT_LON, MKAT_LAT)
+    E = prov.jones(np.array([ell]), np.array([emm]), freqs, chi)[0, 0, 0]  # (2,2)
+    B = np.array([[2.0, 0.0], [0.0, 2.0]])
+    n = np.sqrt(1 - ell**2 - emm**2)
+    base = (uvw[0, 0] * ell + uvw[0, 1] * emm + uvw[0, 2] * (n - 1)) * 2 * np.pi / C
+    phasor = np.exp(1j * base * freqs[0])
+    ref = (E @ B @ E.conj().T) * phasor
+    np.testing.assert_allclose(vf[0, 0].reshape(2, 2), ref, atol=1e-4)
+    assert np.abs(vf[0, 0, 1]) > 0  # cross-hands non-zero (leakage)
+
+
+def test_full_jones_circular_equals_S_Vlin_SH():
+    # A polarised source: circular visibilities equal S . V_linear . S^H.
+    freqs = np.array([1.4e9])
+    config = {"MK": {"jimbeam": "L"}}
+    uvw = np.array([[130.0, 55.0, 6.0]])
+    times = np.array([BASE_TIME])
+    a1, a2 = np.array([0]), np.array([1])
+    lmn = _lmn(0.05, -0.02)
+
+    def prep():
+        p = _make_prepared(lmn, np.array([1.0]), freqs, 4)
+        p.bmat[:] = _coherency_bmat((2.0, 0.4, 0.3, 0.5), freqs)  # I,Q,U,V
+        return p
+
+    lin = _attach(
+        prep(),
+        ["MK", "MK"],
+        ["ALT-AZ", "ALT-AZ"],
+        config,
+        4,
+        full_jones=True,
+        basis_transform=corr_basis_transform(False),
+    )
+    circ = _attach(
+        prep(),
+        ["MK", "MK"],
+        ["ALT-AZ", "ALT-AZ"],
+        config,
+        4,
+        full_jones=True,
+        basis_transform=corr_basis_transform(True),
+    )
+    vl = predict_block(lin, uvw, times=times, antenna1=a1, antenna2=a2)[0, 0].reshape(2, 2)
+    vc = predict_block(circ, uvw, times=times, antenna1=a1, antenna2=a2)[0, 0].reshape(2, 2)
+    S = corr_basis_transform(True)
+    np.testing.assert_allclose(vc, S @ vl @ S.conj().T, atol=1e-5)

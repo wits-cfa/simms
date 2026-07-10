@@ -9,7 +9,7 @@ from scabha.basetypes import MS
 
 from simms.constants import FWHM_TO_GAUSS_SCALE
 from simms.skymodel.ascii_skies import ASCIISkymodel
-from simms.skymodel.kernels import is_uniform_grid, predict_vis, predict_vis_beam
+from simms.skymodel.kernels import is_uniform_grid, predict_vis, predict_vis_beam, predict_vis_jones
 from simms.utilities import radec2lm
 
 
@@ -173,8 +173,9 @@ class PreparedSky:
     polarisation: bool
     # Primary-beam fields, all None/False unless a beam is attached (see attach_beam).
     beam_enabled: bool = False
+    beam_full_jones: bool = False  # True -> beam_grid is (...,2,2) and predict_vis_jones is used
     ant_type: np.ndarray | None = None
-    beam_grid: np.ndarray | None = None  # (ntype, n_pa, nsrc, nchan, 2) complex
+    beam_grid: np.ndarray | None = None  # (ntype, n_pa, nsrc, nchan, 2[, 2]) complex
     tgrid: np.ndarray | None = None  # (n_pa,) PA-grid sample times (MS seconds)
     corr_feed_p: np.ndarray | None = None
     corr_feed_q: np.ndarray | None = None
@@ -187,7 +188,9 @@ class PreparedSky:
     def select_channels(self, chan_ids: np.ndarray) -> "PreparedSky":
         """Restrict the model to a subset of channels, for channel-chunked prediction."""
         freqs = self.freqs[chan_ids]
-        beam_grid = self.beam_grid[:, :, :, chan_ids, :] if self.beam_enabled else self.beam_grid
+        # Advanced-index the chan axis (3); trailing feed/Jones axes are kept as-is, so this
+        # works for both the diagonal (...,2) and full-Jones (...,2,2) grids.
+        beam_grid = self.beam_grid[:, :, :, chan_ids] if self.beam_enabled else self.beam_grid
         return replace(
             self,
             freqs=freqs,
@@ -334,23 +337,31 @@ def attach_beam(
     duration: float,
     pa_step: float,
     ncorr: int,
+    full_jones: bool = False,
+    basis_transform: np.ndarray | None = None,
 ) -> PreparedSky:
-    """Return a copy of ``prepared`` with a primary-beam voltage grid attached.
+    """Return a copy of ``prepared`` with a primary-beam grid attached.
 
     Samples each type's beam on a parallactic-angle grid spanning the observation
     (built once, sliced per channel-chunk by :meth:`PreparedSky.select_channels`).
-    ``prepared`` must carry the full-width brightness (``nspec == ncorr``).
+    ``prepared`` must carry the full-width brightness (``nspec == ncorr``). With
+    ``full_jones`` the grid holds 2x2 Jones (folding ``basis_transform``) and the
+    ``predict_vis_jones`` kernel is used; otherwise the diagonal per-feed grid.
     """
-    from simms.skymodel.beams import build_beam_grid, corr_feed_maps, pa_sample_grid
+    from simms.skymodel.beams import build_beam_grid, build_beam_grid_jones, corr_feed_maps, pa_sample_grid
 
     tgrid, chi_grid = pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step)
-    beam_grid = build_beam_grid(
-        providers, type_is_altaz, prepared.lmn[:, 0], prepared.lmn[:, 1], prepared.freqs, chi_grid
-    )
-    corr_feed_p, corr_feed_q = corr_feed_maps(ncorr)
+    ell, emm = prepared.lmn[:, 0], prepared.lmn[:, 1]
+    if full_jones:
+        beam_grid = build_beam_grid_jones(providers, type_is_altaz, ell, emm, prepared.freqs, chi_grid, basis_transform)
+        corr_feed_p = corr_feed_q = None
+    else:
+        beam_grid = build_beam_grid(providers, type_is_altaz, ell, emm, prepared.freqs, chi_grid)
+        corr_feed_p, corr_feed_q = corr_feed_maps(ncorr)
     return replace(
         prepared,
         beam_enabled=True,
+        beam_full_jones=full_jones,
         ant_type=np.ascontiguousarray(ant_type, dtype=np.int64),
         beam_grid=beam_grid,
         tgrid=tgrid,
@@ -438,7 +449,9 @@ def predict_block(
             gpos = np.zeros(nrow, dtype=np.float64)  # degenerate (zero-span) grid
         pa_lo = np.clip(np.floor(gpos).astype(np.int64), 0, tgrid.size - 2)
         pa_wt = np.clip(gpos - pa_lo, 0.0, 1.0)
-        predict_vis_beam(
+        a1 = np.ascontiguousarray(antenna1)
+        a2 = np.ascontiguousarray(antenna2)
+        common = (
             uvw,
             prepared.freqs,
             prepared.uniform_freqs,
@@ -449,15 +462,17 @@ def predict_block(
             prepared.lightcurve,
             time_index,
             vis,
-            np.ascontiguousarray(antenna1),
-            np.ascontiguousarray(antenna2),
+            a1,
+            a2,
             prepared.ant_type,
             prepared.beam_grid,
             pa_lo,
             pa_wt,
-            prepared.corr_feed_p,
-            prepared.corr_feed_q,
         )
+        if prepared.beam_full_jones:
+            predict_vis_jones(*common)
+        else:
+            predict_vis_beam(*common, prepared.corr_feed_p, prepared.corr_feed_q)
     else:
         predict_vis(
             uvw,

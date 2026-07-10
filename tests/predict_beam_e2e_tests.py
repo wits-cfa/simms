@@ -33,11 +33,22 @@ def _opts(ms, ascii_sky, primary_beam=None, column="DATA"):
             "primary_beam": primary_beam,
             "beam_band": "L",
             "beam_pa_step": 1.0,
+            "beam_jones": "diagonal",
             "input_column": None,
             "mode": "sim",
             "column": column,
             "seed": None,
             "log_level": "CRITICAL",
+            # FITS-image path defaults (used only when fits_sky is set).
+            "pixel_tol": 1e-7,
+            "predict_backend": "auto",
+            "fits_spectrum": "flat",
+            "fits_spi": None,
+            "fits_ref_freq": None,
+            "fits_spectrum_order": 2,
+            "fits_sky_interp": "linear",
+            "fft_precision": "double",
+            "do_wstacking": True,
         }
     )
 
@@ -96,13 +107,6 @@ def test_beam_attenuates_and_differs_from_nobeam(e2e):
     assert np.abs(beam).max() > 0
 
 
-def test_beam_requires_linear_basis(e2e):
-    opts = _opts(e2e.ms, e2e.sky, primary_beam=e2e.beams)
-    opts.pol_basis = "circular"
-    with pytest.raises(RuntimeError, match="linear polarisation basis"):
-        skysim.runit(opts)
-
-
 def test_beam_rejects_nonlinear_correlations(e2e):
     # A circular-correlation MS must be refused: the beam's feed mapping is linear-only.
     ms = e2e.random_named_directory(suffix=".ms")
@@ -135,3 +139,94 @@ def test_primary_beam_ignored_without_sky_model(e2e):
     skysim.runit(opts)  # must not raise (beam ignored, noise written)
     ds = xds_from_ms(e2e.ms)[0]
     assert np.any(ds.NOISEONLY.data.compute() != 0)
+
+
+def test_full_jones_requires_four_correlations(e2e):
+    # The fixture MS is 2-corr (XX, YY); full Jones needs all four.
+    opts = _opts(e2e.ms, e2e.sky, primary_beam=e2e.beams)
+    opts.beam_jones = "full"
+    with pytest.raises(RuntimeError, match="4 correlations"):
+        skysim.runit(opts)
+
+
+def test_full_jones_circular_ms(e2e):
+    # Full 2x2 Jones on a circular-correlation (RR,RL,LR,LL) MS: runs and attenuates.
+    ms = e2e.random_named_directory(suffix=".ms")
+    create_ms(
+        ms,
+        telescope_name="skamid",
+        pointing_direction=["J2000", "0h0m20s", "-30deg"],
+        dtime=600,
+        ntimes=3,
+        start_freq="1420MHz",
+        dfreq="4MHz",
+        nchan=2,
+        correlations=["RR", "RL", "LR", "LL"],
+        row_chunks=100000,
+        sefd=None,
+        column="DATA",
+        start_time="2025-03-06T20:00:00",
+        smooth=None,
+        fit_order=None,
+        subarray_range=[60, 68],
+    )
+    nb = _opts(ms, e2e.sky, primary_beam=None, column="NOBEAM")
+    nb.pol_basis = "circular"
+    skysim.runit(nb)
+    bm = _opts(ms, e2e.sky, primary_beam=e2e.beams, column="BEAM")
+    bm.beam_jones = "full"
+    skysim.runit(bm)
+
+    ds = xds_from_ms(ms)[0]
+    nobeam = ds.NOBEAM.data.compute()
+    beam = ds.BEAM.data.compute()
+    assert np.all(np.isfinite(beam))
+    assert not np.allclose(beam, nobeam)
+    assert np.abs(beam).mean() < np.abs(nobeam).mean()
+
+
+def test_fits_image_beam_accepts_circular_ms(e2e):
+    # The FITS-image scalar power beam is basis-independent, so an RR/LL MS is accepted.
+    from astropy.io import fits
+
+    from .predict_fits_tests import make_header
+
+    ms = e2e.random_named_directory(suffix=".ms")
+    create_ms(
+        ms,
+        telescope_name="skamid",
+        pointing_direction=["J2000", "1h0m0s", "-31deg"],  # matches make_header RA0/DEC0
+        dtime=600,
+        ntimes=3,
+        start_freq="1420MHz",
+        dfreq="4MHz",
+        nchan=2,
+        correlations=["RR", "LL"],
+        row_chunks=100000,
+        sefd=None,
+        column="DATA",
+        start_time="2025-03-06T20:00:00",
+        smooth=None,
+        fit_order=None,
+        subarray_range=[60, 68],
+    )
+    npix = 256
+    data = np.zeros((npix, npix), dtype=np.float32)
+    data[npix // 2 - 90, npix // 2] = 1.0  # ~0.5 deg south of centre (near half power)
+    img = e2e.random_named_file(suffix=".fits")
+    fits.PrimaryHDU(data=data, header=make_header(npix, nstokes=1, nchan=1)).writeto(img)
+
+    def run(column, primary_beam):
+        opts = _opts(ms, ascii_sky=None, primary_beam=primary_beam, column=column)
+        opts.fits_sky = img
+        opts.pol_basis = "circular"
+        skysim.runit(opts)
+
+    run("NOBEAM", None)
+    run("BEAM", e2e.beams)  # must not raise on a circular MS
+    ds = xds_from_ms(ms)[0]
+    nobeam = ds.NOBEAM.data.compute()
+    beam = ds.BEAM.data.compute()
+    assert np.all(np.isfinite(beam))
+    assert not np.allclose(beam, nobeam)
+    assert np.abs(beam).mean() <= np.abs(nobeam).mean()

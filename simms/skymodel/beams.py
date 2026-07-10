@@ -215,6 +215,41 @@ class BeamProvider:
         """Feed-frame voltages ``(nsrc, nchan, 2)`` (feed 0 = H/X, 1 = V/Y)."""
         raise NotImplementedError
 
+    def _eval_jones(self, l_feed: np.ndarray, m_feed: np.ndarray, freqs: np.ndarray) -> np.ndarray:
+        """Feed-frame 2x2 voltage Jones ``(nsrc, nchan, 2, 2)``.
+
+        Default is the leakage-free diagonal ``diag(g^H, g^V)`` from :meth:`_eval`;
+        providers with cross-polarisation (measured FITS cubes) override this.
+        """
+        g = self._eval(l_feed, m_feed, freqs)  # (nsrc, nchan, 2)
+        jones = np.zeros(g.shape[:2] + (2, 2), dtype=np.complex128)
+        jones[..., 0, 0] = g[..., 0]
+        jones[..., 1, 1] = g[..., 1]
+        return jones
+
+    @staticmethod
+    def _rotate_to_feed(ell, emm, angle):
+        """Rotate sky cosines ``(l, m)`` into the feed frame by ``-angle`` (identity at 0)."""
+        if angle:
+            c, s = np.cos(angle), np.sin(angle)
+            return ell * c + emm * s, -ell * s + emm * c
+        return ell, emm
+
+    def jones(self, ell, emm, freqs, chi) -> np.ndarray:
+        """2x2 voltage Jones per parallactic-angle sample.
+
+        Same inputs as :meth:`voltage`; returns ``(ntime, nsrc, nchan, 2, 2)`` complex.
+        """
+        ell = np.asarray(ell, dtype=np.float64)
+        emm = np.asarray(emm, dtype=np.float64)
+        freqs = np.atleast_1d(np.asarray(freqs, dtype=np.float64))
+        chi = np.atleast_1d(np.asarray(chi, dtype=np.float64))
+        out = np.empty((chi.size, ell.size, freqs.size, 2, 2), dtype=np.complex128)
+        for ti, angle in enumerate(chi):
+            l_feed, m_feed = self._rotate_to_feed(ell, emm, angle)
+            out[ti] = self._eval_jones(l_feed, m_feed, freqs)
+        return out
+
     def voltage(self, ell, emm, freqs, chi) -> np.ndarray:
         """Voltage beam for each parallactic angle.
 
@@ -239,13 +274,7 @@ class BeamProvider:
         chi = np.atleast_1d(np.asarray(chi, dtype=np.float64))
         out = np.empty((chi.size, ell.size, freqs.size, 2), dtype=np.complex128)
         for ti, angle in enumerate(chi):
-            if angle:
-                c, s = np.cos(angle), np.sin(angle)
-                # Rotate the sky (l, m) into the feed frame by -chi.
-                l_feed = ell * c + emm * s
-                m_feed = -ell * s + emm * c
-            else:
-                l_feed, m_feed = ell, emm
+            l_feed, m_feed = self._rotate_to_feed(ell, emm, angle)
             out[ti] = self._eval(l_feed, m_feed, freqs)
         return out
 
@@ -291,74 +320,96 @@ class FitsBeamProvider(BeamProvider):
     directly (e.g. in tests).
     """
 
-    def __init__(self, l_grid, m_grid, freqs_hz, voltages, name: str = ""):
+    def __init__(self, l_grid, m_grid, freqs_hz, values, name: str = ""):
         from scipy.interpolate import RegularGridInterpolator
 
         l_grid = np.ascontiguousarray(l_grid, dtype=np.float64)
         m_grid = np.ascontiguousarray(m_grid, dtype=np.float64)
         freqs_hz = np.ascontiguousarray(freqs_hz, dtype=np.float64)
-        voltages = np.asarray(voltages, dtype=np.complex128)  # (nl, nm, nfreq, 2)
-        if voltages.shape != (l_grid.size, m_grid.size, freqs_hz.size, 2):
-            raise ValueError("voltages must have shape (nl, nm, nfreq, 2)")
+        values = np.asarray(values, dtype=np.complex128)  # (nl, nm, nfreq, K); K=2 [HH,VV] or 4 [HH,HV,VH,VV]
+        nk = values.shape[-1]
+        if nk not in (2, 4) or values.shape != (l_grid.size, m_grid.size, freqs_hz.size, nk):
+            raise ValueError("values must have shape (nl, nm, nfreq, 2) or (nl, nm, nfreq, 4)")
         # RegularGridInterpolator requires strictly ascending axes; FITS L/M axes often
         # descend (negative CDELT), so flip any descending axis and its data together.
-        l_grid, voltages = _ascending(l_grid, voltages, 0)
-        m_grid, voltages = _ascending(m_grid, voltages, 1)
-        freqs_hz, voltages = _ascending(freqs_hz, voltages, 2)
+        l_grid, values = _ascending(l_grid, values, 0)
+        m_grid, values = _ascending(m_grid, values, 1)
+        freqs_hz, values = _ascending(freqs_hz, values, 2)
         self.name = name
+        self.has_leakage = nk == 4
         self.l_grid, self.m_grid, self.freqs_hz = l_grid, m_grid, freqs_hz
-        # One interpolator per feed; a single-channel cube can't interpolate in frequency,
-        # so drop that axis and interpolate in (l, m) only.
+        # One interpolator per stored entry; a single-channel cube can't interpolate in
+        # frequency, so drop that axis and interpolate in (l, m) only.
         self._single_freq = freqs_hz.size == 1
         grid = (l_grid, m_grid) if self._single_freq else (l_grid, m_grid, freqs_hz)
         self._interp = [
             RegularGridInterpolator(
                 grid,
-                voltages[:, :, 0, f] if self._single_freq else voltages[..., f],
+                values[:, :, 0, k] if self._single_freq else values[..., k],
                 bounds_error=False,
                 fill_value=0.0,
             )
-            for f in range(2)
+            for k in range(nk)
         ]
 
-    def _eval(self, l_feed, m_feed, freqs):
-        nsrc, nchan = l_feed.size, freqs.size
-        out = np.empty((nsrc, nchan, 2), dtype=np.complex128)
+    def _interp_entries(self, l_feed, m_feed, freqs):
+        """Interpolate every stored entry -> ``(nsrc, nchan, nk)``."""
+        nsrc, nchan, nk = l_feed.size, freqs.size, len(self._interp)
+        out = np.empty((nsrc, nchan, nk), dtype=np.complex128)
         if self._single_freq:
             pts = np.stack([l_feed, m_feed], axis=-1)  # (nsrc, 2)
-            for f in range(2):
-                out[:, :, f] = self._interp[f](pts)[:, None]
+            for k in range(nk):
+                out[:, :, k] = self._interp[k](pts)[:, None]
         else:
             ll = np.repeat(l_feed, nchan)
             mm = np.repeat(m_feed, nchan)
             ff = np.tile(np.asarray(freqs, dtype=np.float64), nsrc)
             pts = np.stack([ll, mm, ff], axis=-1)
-            for f in range(2):
-                out[:, :, f] = self._interp[f](pts).reshape(nsrc, nchan)
+            for k in range(nk):
+                out[:, :, k] = self._interp[k](pts).reshape(nsrc, nchan)
         return out
 
+    def _eval(self, l_feed, m_feed, freqs):
+        # Diagonal feed voltages (H, V): the co-pol entries HH, VV.
+        entries = self._interp_entries(l_feed, m_feed, freqs)
+        return np.stack([entries[..., 0], entries[..., -1]], axis=-1)  # [HH, VV]
+
+    def _eval_jones(self, l_feed, m_feed, freqs):
+        entries = self._interp_entries(l_feed, m_feed, freqs)
+        jones = np.zeros(entries.shape[:2] + (2, 2), dtype=np.complex128)
+        if self.has_leakage:  # [HH, HV, VH, VV]
+            jones[..., 0, 0] = entries[..., 0]
+            jones[..., 0, 1] = entries[..., 1]
+            jones[..., 1, 0] = entries[..., 2]
+            jones[..., 1, 1] = entries[..., 3]
+        else:  # [HH, VV] diagonal
+            jones[..., 0, 0] = entries[..., 0]
+            jones[..., 1, 1] = entries[..., 1]
+        return jones
+
     @classmethod
-    def from_arrays(cls, l_grid, m_grid, freqs_hz, voltages, name: str = "") -> "FitsBeamProvider":
-        """Build from explicit grids and a ``(nl, nm, nfreq, 2)`` complex voltage cube."""
-        return cls(l_grid, m_grid, freqs_hz, voltages, name=name)
+    def from_arrays(cls, l_grid, m_grid, freqs_hz, values, name: str = "") -> "FitsBeamProvider":
+        """Build from explicit grids and a ``(nl, nm, nfreq, K)`` cube (K=2 [HH,VV] or 4 [HH,HV,VH,VV])."""
+        return cls(l_grid, m_grid, freqs_hz, values, name=name)
 
     @classmethod
     def from_fits(cls, path, name: str = "") -> "FitsBeamProvider":
         """Load a per-feed voltage beam cube.
 
-        Expected layout: a primary HDU of shape ``(4, nfreq, nm, nl)`` whose leading axis
-        is ``[HH_real, HH_imag, VV_real, VV_imag]``, with a linear WCS giving the ``L``/``M``
-        axes in degrees (SIN direction cosines scaled to degrees, ``l_deg = 180/pi * l``)
-        and the ``FREQ`` axis in Hz.
+        The primary HDU leading axis holds the feed voltages as real/imag pairs:
+        **4 planes** ``[HH, VV]×(real, imag)`` for a diagonal beam, or **8 planes**
+        ``[HH, HV, VH, VV]×(real, imag)`` for a full 2x2 Jones (leakage). A linear WCS
+        gives the ``L``/``M`` axes in degrees (SIN direction cosines scaled to degrees,
+        ``l_deg = 180/pi * l``) and the ``FREQ`` axis in Hz.
         """
         from astropy.io import fits
 
         with fits.open(path) as hdul:
             hdr = hdul[0].header
-            data = np.asarray(hdul[0].data, dtype=np.float64)  # (4, nfreq, nm, nl)
-        if data.ndim != 4 or data.shape[0] != 4:
-            raise ValueError("FITS beam cube must have shape (4, nfreq, nm, nl): HH/VV real/imag.")
-        _, nfreq, nm, nl = data.shape
+            data = np.asarray(hdul[0].data, dtype=np.float64)  # (4 or 8, nfreq, nm, nl)
+        if data.ndim != 4 or data.shape[0] not in (4, 8):
+            raise ValueError("FITS beam cube must have shape (4 or 8, nfreq, nm, nl): feed voltages real/imag.")
+        nplane, nfreq, nm, nl = data.shape
 
         def _axis(fits_axis, n):
             crpix = hdr[f"CRPIX{fits_axis}"]
@@ -371,12 +422,10 @@ class FitsBeamProvider(BeamProvider):
         m_grid = np.radians(_axis(2, nm))
         freqs_hz = _axis(3, nfreq)
 
-        hh = data[0] + 1j * data[1]  # (nfreq, nm, nl)
-        vv = data[2] + 1j * data[3]
-        voltages = np.empty((nl, nm, nfreq, 2), dtype=np.complex128)
-        voltages[..., 0] = hh.transpose(2, 1, 0)  # -> (nl, nm, nfreq)
-        voltages[..., 1] = vv.transpose(2, 1, 0)
-        return cls(l_grid, m_grid, freqs_hz, voltages, name=name or str(path))
+        # Even planes are real parts, odd planes imaginary: (nk, nfreq, nm, nl), nk in {2, 4}.
+        complex_planes = data[0::2] + 1j * data[1::2]
+        values = np.ascontiguousarray(complex_planes.transpose(3, 2, 1, 0))  # (nl, nm, nfreq, nk)
+        return cls(l_grid, m_grid, freqs_hz, values, name=name or str(path))
 
 
 def _build_jimbeam(spec, beam_band: str) -> JimBeamProvider:
@@ -509,6 +558,38 @@ def build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid):
     for ti, prov in enumerate(providers):
         use_chi = chi_grid if type_is_altaz[ti] else zeros
         grid[ti] = prov.voltage(ell, emm, freqs, use_chi)  # complex128 -> complex64 on assign
+    return grid
+
+
+# Linear -> circular feed transform, consistent with simms' circular brightness
+# (R=(X+iY)/sqrt2, L=(X-iY)/sqrt2): verified S @ B_linear @ S^H == B_circular.
+_S_LIN2CIRC = (1.0 / np.sqrt(2.0)) * np.array([[1.0, 1.0j], [1.0, -1.0j]], dtype=np.complex128)
+
+
+def corr_basis_transform(is_circular: bool) -> np.ndarray:
+    """2x2 transform folded into the beam Jones so ``V`` lands in the MS correlation basis.
+
+    Identity for a linear-correlation MS; the constant linear->circular feed matrix for a
+    circular one (the feeds are physically linear, so circular correlations are a fixed
+    rotation of the linear ones).
+    """
+    return _S_LIN2CIRC.copy() if is_circular else np.eye(2, dtype=np.complex128)
+
+
+def build_beam_grid_jones(providers, type_is_altaz, ell, emm, freqs, chi_grid, basis_transform):
+    """Sample every type's 2x2 voltage Jones on the PA grid, folding the basis transform.
+
+    Returns ``(ntype, n_pa, nsrc, nchan, 2, 2)`` complex64 holding ``E' = S . E``, so the
+    kernel's ``V = E'_p B_feed E'_q^H = S (E_p B E_q^H) S^H`` lands in the MS correlation
+    basis (``B_feed`` is the linear-feed coherency). Alt-az types use ``chi_grid``.
+    """
+    ntype = len(providers)
+    grid = np.empty((ntype, chi_grid.size, ell.size, freqs.size, 2, 2), dtype=np.complex64)
+    zeros = np.zeros_like(chi_grid)
+    for ti, prov in enumerate(providers):
+        use_chi = chi_grid if type_is_altaz[ti] else zeros
+        jones = prov.jones(ell, emm, freqs, use_chi)  # (n_pa, nsrc, nchan, 2, 2)
+        grid[ti] = np.einsum("ij,tsfjk->tsfik", basis_transform, jones)
     return grid
 
 
