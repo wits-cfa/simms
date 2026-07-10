@@ -1,4 +1,5 @@
 import glob
+import logging
 import os.path
 
 import dask
@@ -10,14 +11,105 @@ from tqdm.dask import TqdmCallback
 
 from simms import BIN, SCHEMADIR, set_logger
 from simms.skymodel.ascii_skies import ASCIISkymodel
+from simms.skymodel.beams import load_beam_config, resolve_antenna_beams
 from simms.skymodel.fits_skies import predict_fits_channel_block, prepare_fits_sky
 from simms.skymodel.mstools import (
+    attach_beam,
     noise_visibilities,
     predict_channel_block,
     prepare_skymodel,
+    to_full_corr,
     vis_noise_from_sefd_and_ms,
 )
 from simms.skymodel.wsclean_skies import prepare_wsclean_sky
+
+log = logging.getLogger(BIN.skysim)
+
+
+def _beam_row_args(msds, beam_ctx):
+    """The ``(ANTENNA1, idx, ANTENNA2, idx)`` blockwise args, or ``None`` slots when off."""
+    if beam_ctx:
+        return (msds.ANTENNA1.data, ("row",), msds.ANTENNA2.data, ("row",))
+    return (None, None, None, None)
+
+
+def _array_lonlat(positions):
+    """Geodetic (lon, lat) in radians from the mean of ITRF/ECEF antenna positions."""
+    from astropy import units as u
+    from astropy.coordinates import EarthLocation
+
+    x, y, z = np.asarray(positions, dtype=np.float64).mean(axis=0)
+    loc = EarthLocation.from_geocentric(x * u.m, y * u.m, z * u.m)
+    return loc.lon.to_value(u.rad), loc.lat.to_value(u.rad)
+
+
+class _BeamContext:
+    """Everything needed to attach a primary beam to a prepared component sky."""
+
+    def __init__(self, opts, ms, msds, ra0, dec0, ncorr, linear_basis):
+        if not linear_basis:
+            raise RuntimeError("Primary beam requires a linear polarisation basis (--pol-basis linear).")
+        beam_config = load_beam_config(opts.primary_beam)
+        ant_ds = xds_from_table(f"{ms}::ANTENNA")[0]
+        tnames, mount, pos, t0, t1, interval = dask.compute(
+            ant_ds.TELESCOPE_NAME.data,
+            ant_ds.MOUNT.data,
+            ant_ds.POSITION.data,
+            msds.TIME.data.min(),
+            msds.TIME.data.max(),
+            msds.INTERVAL.data[0],
+        )
+        self.ant_type, self.providers, self.type_is_altaz = resolve_antenna_beams(
+            tnames, mount, beam_config, opts.beam_band
+        )
+        self.lon, self.lat = _array_lonlat(pos)
+        self.ra0, self.dec0, self.ncorr = ra0, dec0, ncorr
+        self.t_start = float(t0)
+        self.duration = float(t1 - t0) + float(interval)
+        self.pa_step = opts.beam_pa_step
+
+    def attach_image(self, prepared, freqs):
+        """Apply an approximate PA-averaged power beam to a FITS-image sky model."""
+        from simms.skymodel.fits_skies import attach_image_beam
+
+        if len(self.providers) > 1:
+            log.warning(
+                "Primary beam on the FITS-image path uses a single representative antenna "
+                "type, but %d types are present; heterogeneity is ignored.",
+                len(self.providers),
+            )
+        mid_freq = 0.5 * (float(freqs[0]) + float(freqs[-1]))
+        return attach_image_beam(
+            prepared,
+            self.providers[0],
+            bool(self.type_is_altaz[0]),
+            self.ra0,
+            self.dec0,
+            self.lon,
+            self.lat,
+            self.t_start,
+            self.duration,
+            self.pa_step,
+            mid_freq,
+        )
+
+    def attach(self, prepared):
+        """Force full-correlation brightness and attach the beam voltage grid."""
+        prepared = to_full_corr(prepared)
+        return attach_beam(
+            prepared,
+            self.ant_type,
+            self.providers,
+            self.type_is_altaz,
+            self.ra0,
+            self.dec0,
+            self.lon,
+            self.lat,
+            self.t_start,
+            self.duration,
+            self.pa_step,
+            self.ncorr,
+        )
 
 
 def runit(opts):
@@ -58,6 +150,10 @@ def runit(opts):
     vis_dtype = msds.DATA.data.dtype
     linear_basis = opts.pol_basis == "linear"
 
+    # Primary beam (component skies only). When enabled, the model must carry every
+    # correlation so the per-feed voltage can be applied (nspec == ncorr).
+    beam_ctx = _BeamContext(opts, ms, msds, ra0, dec0, ncorr, linear_basis) if opts.primary_beam else None
+
     # Channel chunking. A channel-index array carries the chan dimension into
     # da.blockwise; each predict task restricts the model to its own channels.
     nchan = freqs.size
@@ -91,15 +187,19 @@ def runit(opts):
             ra0,
             dec0,
             ncorr=ncorr,
-            polarisation=opts.polarisation,
+            polarisation=opts.polarisation or bool(beam_ctx),
             linear_basis=linear_basis,
             unique_times=unique_times,
         )
+        if beam_ctx:
+            prepared = beam_ctx.attach(prepared)
 
         # A blockwise index of None passes the argument through untouched, so a
-        # model without transients must be handed a literal None, not the
-        # (unblocked) TIME dask array.
-        time_args = (msds.TIME.data, ("row",)) if skymodel.has_transient else (None, None)
+        # model without transients (and no beam) must be handed a literal None, not
+        # the (unblocked) TIME dask array.
+        need_time = skymodel.has_transient or bool(beam_ctx)
+        time_args = (msds.TIME.data, ("row",)) if need_time else (None, None)
+        ant_args = _beam_row_args(msds, beam_ctx)
 
         simvis = da.blockwise(
             predict_channel_block,
@@ -111,6 +211,7 @@ def runit(opts):
             chan_ids,
             ("chan",),
             *time_args,
+            *ant_args,
             out_dtype=vis_dtype,
             new_axes={"corr": ncorr},
             dtype=vis_dtype,
@@ -121,6 +222,11 @@ def runit(opts):
         # A WSClean component list shares the ASCII prediction path: it is flattened
         # into a PreparedSky and handed to the same kernel.
         prepared = prepare_wsclean_sky(wsclean_sky, freqs, ra0, dec0, ncorr=ncorr)
+        if beam_ctx:
+            prepared = beam_ctx.attach(prepared)
+
+        time_args = (msds.TIME.data, ("row",)) if beam_ctx else (None, None)
+        ant_args = _beam_row_args(msds, beam_ctx)
 
         simvis = da.blockwise(
             predict_channel_block,
@@ -131,6 +237,8 @@ def runit(opts):
             ("row", "uvw"),
             chan_ids,
             ("chan",),
+            *time_args,
+            *ant_args,
             out_dtype=vis_dtype,
             new_axes={"corr": ncorr},
             dtype=vis_dtype,
@@ -180,6 +288,9 @@ def runit(opts):
             spectrum_order=opts.fits_spectrum_order,
             interpolation=opts.fits_sky_interp,
         )
+        if beam_ctx:
+            # Approximate: one PA-averaged power beam on the apparent sky (see attach_image).
+            prepared = beam_ctx.attach_image(prepared, freqs)
 
         epsilon = 1e-7 if opts.fft_precision == "double" else 1e-6
 

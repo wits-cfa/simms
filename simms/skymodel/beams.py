@@ -1,0 +1,537 @@
+"""Primary-beam models for skysim.
+
+The cosine-taper ("JimBeam") voltage model in this module is re-implemented from
+katbeam (https://github.com/ska-sa/katbeam), Copyright (c) 2020, National Research
+Foundation (SARAO), released under the BSD 3-Clause License, originally authored by
+Mattieu de Villiers. We vendor the maths and the bundled L/UHF coefficient tables
+(``simms/skymodel/beam_data/``) rather than depend on the package so that we can
+(a) drop an unmaintained dependency and (b) load arbitrary coefficient CSVs -- e.g.
+the MeerKAT-Extension ``MKAT-EA-*`` tables -- which upstream katbeam cannot.
+
+A cosine aperture taper (Essential Radio Astronomy, Condon & Ransom, 2016) models
+the co-polarised primary beam. It is parameterised, per frequency and per feed
+(H/V), by a pointing offset ("squint", ``l0``/``m0``) and a full-width-half-maximum
+in each of the two feed axes. ``HH``/``VV`` are *voltage* patterns: they peak at 1
+on axis and equal ``sqrt(0.5)`` at the half-power point, so ``|HH|**2`` is the power
+beam and Stokes I is ``0.5*(|HH|**2 + |VV|**2)``.
+"""
+
+from __future__ import annotations
+
+import csv
+import logging
+from importlib import resources
+from pathlib import Path
+
+import numpy as np
+
+from simms import BIN
+
+log = logging.getLogger(BIN.skysim)
+
+# Seconds per day; MS TIME is in seconds (MJD * 86400), casacore convention.
+SECONDS_PER_DAY = 86400.0
+
+
+def local_sidereal_time(times: np.ndarray, lon: float) -> np.ndarray:
+    """Mean local sidereal time (radians) for MS ``TIME`` seconds at longitude ``lon`` (rad).
+
+    Used to form the *local* hour angle ``LST - RA`` that sets the sky orientation
+    (parallactic angle, elevation) at the site. This is a distinct quantity from the
+    Greenwich hour angle that :func:`simms.telescope.array_utilities.Array.uvgen` uses
+    for the UVW rotation of its ECEF baselines -- the two differ by the array longitude
+    and both are correct in their own frame.
+    """
+    from astropy import units as u
+    from astropy.time import Time
+
+    t = Time(np.atleast_1d(np.asarray(times, dtype=np.float64)) / SECONDS_PER_DAY, format="mjd", scale="utc")
+    return t.sidereal_time("mean", longitude=lon * u.rad).to_value("rad")
+
+
+def parallactic_angle(times: np.ndarray, ra0: float, dec0: float, lon: float, lat: float) -> np.ndarray:
+    """Parallactic angle (radians) at the field centre for each timestamp.
+
+    Parameters
+    ----------
+    times : numpy.ndarray
+        MS ``TIME`` values in seconds, shape ``(ntime,)``.
+    ra0, dec0 : float
+        Field-centre right ascension and declination (radians).
+    lon, lat : float
+        Array-reference geodetic longitude and latitude (radians).
+
+    Returns
+    -------
+    numpy.ndarray
+        Parallactic angle per timestamp, shape ``(ntime,)``. This is the position
+        angle of the zenith at the field centre; alt-az feeds rotate the beam on the
+        sky by this angle.
+    """
+    hour_angle = local_sidereal_time(times, lon) - ra0
+    return np.arctan2(
+        np.sin(hour_angle),
+        np.tan(lat) * np.cos(dec0) - np.sin(dec0) * np.cos(hour_angle),
+    )
+
+
+# r_FWHM: normalises the taper so the half-power point falls at r = 0.5, i.e.
+# |taper(0.5)|**2 = 0.5. katbeam truncates this to 1.18896478.
+R_FWHM = 1.1889647809329453
+
+# Bundled coefficient tables (vendored from katbeam, BSD-3-Clause, (c) 2020 SARAO).
+BUILTIN_BEAMS = {
+    "MKAT-AA-L-JIM-2020": "MKAT-AA-L-JIM-2020.csv",
+    "MKAT-AA-UHF-JIM-2020": "MKAT-AA-UHF-JIM-2020.csv",
+}
+
+
+def cosine_taper(r: np.ndarray) -> np.ndarray:
+    """Cosine-taper voltage pattern ``cos(pi*rr)/(1 - 4*rr**2)`` with ``rr = r*R_FWHM``.
+
+    ``r`` is normalised so the half-power point is at ``r = 0.5``. The ``rr = 0.5``
+    singularity of ``1 - 4*rr**2`` is removable (limit ``pi/4``) and handled here.
+    """
+    rr = np.asarray(r, dtype=np.float64) * R_FWHM
+    denom = 1.0 - 4.0 * rr * rr
+    near = np.abs(denom) < 1e-12
+    safe = np.where(near, 1.0, denom)
+    out = np.cos(np.pi * rr) / safe
+    return np.where(near, np.pi / 4.0, out)
+
+
+class CosineTaperBeam:
+    """Frequency-interpolated cosine-taper voltage beam for the H and V feeds.
+
+    Parameters
+    ----------
+    freqs_mhz : numpy.ndarray
+        Tabulated frequencies (MHz), shape ``(nfreq,)``.
+    squint_deg : numpy.ndarray
+        Per-feed pointing offsets in degrees, shape ``(4, nfreq)`` ordered
+        ``Hx, Hy, Vx, Vy``.
+    fwhm_deg : numpy.ndarray
+        Per-feed FWHMs in degrees, same shape/ordering as ``squint_deg``.
+    name : str, optional
+        Label for diagnostics.
+    """
+
+    def __init__(self, freqs_mhz, squint_deg, fwhm_deg, name: str = ""):
+        self.freqs_mhz = np.ascontiguousarray(freqs_mhz, dtype=np.float64)
+        self.squint_deg = np.ascontiguousarray(squint_deg, dtype=np.float64)
+        self.fwhm_deg = np.ascontiguousarray(fwhm_deg, dtype=np.float64)
+        if self.squint_deg.shape != (4, self.freqs_mhz.size):
+            raise ValueError("squint_deg must have shape (4, nfreq)")
+        if self.fwhm_deg.shape != (4, self.freqs_mhz.size):
+            raise ValueError("fwhm_deg must have shape (4, nfreq)")
+        self.name = name
+
+    # -- constructors -------------------------------------------------------
+
+    @classmethod
+    def from_csv(cls, path, name: str = "") -> "CosineTaperBeam":
+        """Load a katbeam-format coefficient CSV.
+
+        The file has two header rows (column names, then units) followed by rows of
+        ``freq[MHz], Hx, Hy, Vx, Vy squint[arcmin], Hx, Hy, Vx, Vy fwhm[arcmin]``.
+        """
+        path = Path(path)
+        with open(path, newline="") as fh:
+            rows = [row for row in csv.reader(fh) if row and row[0].strip()]
+        # Drop the two header rows (name row, units row).
+        table = np.array([[float(c) for c in row] for row in rows[2:]], dtype=np.float64)
+        freqs_mhz = table[:, 0]
+        squint_deg = table[:, 1:5].T / 60.0  # arcmin -> degrees
+        fwhm_deg = table[:, 5:9].T / 60.0
+        return cls(freqs_mhz, squint_deg, fwhm_deg, name=name or path.stem)
+
+    @classmethod
+    def from_builtin(cls, name: str) -> "CosineTaperBeam":
+        """Load one of the bundled models in :data:`BUILTIN_BEAMS`."""
+        if name not in BUILTIN_BEAMS:
+            raise ValueError(f"Unknown built-in beam {name!r}; available: {list(BUILTIN_BEAMS)}")
+        with resources.as_file(resources.files("simms.skymodel.beam_data") / BUILTIN_BEAMS[name]) as p:
+            return cls.from_csv(p, name=name)
+
+    @classmethod
+    def load(cls, spec: str) -> "CosineTaperBeam":
+        """Load by built-in name if known, otherwise treat ``spec`` as a CSV path."""
+        if spec in BUILTIN_BEAMS:
+            return cls.from_builtin(spec)
+        return cls.from_csv(spec)
+
+    # -- evaluation ---------------------------------------------------------
+
+    def _interp(self, freqs_mhz: np.ndarray):
+        """Linearly interpolate squint/FWHM to ``freqs_mhz`` -> two ``(4, nchan)`` arrays."""
+        freqs_mhz = np.atleast_1d(np.asarray(freqs_mhz, dtype=np.float64))
+        squint = np.stack([np.interp(freqs_mhz, self.freqs_mhz, s) for s in self.squint_deg])
+        fwhm = np.stack([np.interp(freqs_mhz, self.freqs_mhz, f) for f in self.fwhm_deg])
+        return squint, fwhm
+
+    def voltages(self, x_deg: np.ndarray, y_deg: np.ndarray, freqs_mhz: np.ndarray) -> np.ndarray:
+        """Voltage patterns for both feeds.
+
+        Parameters
+        ----------
+        x_deg, y_deg : numpy.ndarray
+            Feed-frame coordinates in degrees (``x`` toward +AZ, ``y`` toward +EL),
+            shape ``(nsrc,)``.
+        freqs_mhz : numpy.ndarray
+            Frequencies in MHz, shape ``(nchan,)``.
+
+        Returns
+        -------
+        numpy.ndarray
+            Real voltage patterns of shape ``(nsrc, nchan, 2)``; the last axis is
+            feed 0 = H/X, 1 = V/Y.
+        """
+        x = np.asarray(x_deg, dtype=np.float64)[:, None]
+        y = np.asarray(y_deg, dtype=np.float64)[:, None]
+        squint, fwhm = self._interp(freqs_mhz)  # (4, nchan)
+        sq = squint[:, None, :]  # (4, 1, nchan)
+        fw = fwhm[:, None, :]
+        rh = np.sqrt(((x - sq[0]) / fw[0]) ** 2 + ((y - sq[1]) / fw[1]) ** 2)
+        rv = np.sqrt(((x - sq[2]) / fw[2]) ** 2 + ((y - sq[3]) / fw[3]) ** 2)
+        return np.stack([cosine_taper(rh), cosine_taper(rv)], axis=-1)
+
+
+# Built-in analytic models selectable by band shorthand in a beam-config entry.
+BAND_BUILTINS = {
+    "L": "MKAT-AA-L-JIM-2020",
+    "UHF": "MKAT-AA-UHF-JIM-2020",
+}
+
+
+class BeamProvider:
+    """Evaluate a per-feed voltage beam, de-rotating the sky into the feed frame.
+
+    Subclasses implement :meth:`_eval` in the feed frame. The base handles the
+    parallactic-angle rotation so a source at sky direction cosines ``(l, m)`` is
+    evaluated at the feed-frame coordinates ``R(-chi) . (l, m)``.
+    """
+
+    def _eval(self, l_feed: np.ndarray, m_feed: np.ndarray, freqs: np.ndarray) -> np.ndarray:
+        """Feed-frame voltages ``(nsrc, nchan, 2)`` (feed 0 = H/X, 1 = V/Y)."""
+        raise NotImplementedError
+
+    def voltage(self, ell, emm, freqs, chi) -> np.ndarray:
+        """Voltage beam for each parallactic angle.
+
+        Parameters
+        ----------
+        ell, emm : numpy.ndarray
+            Sky-frame direction cosines ``(l, m)``, shape ``(nsrc,)``.
+        freqs : numpy.ndarray
+            Frequencies in Hz, shape ``(nchan,)``.
+        chi : numpy.ndarray
+            Parallactic angle per sample (radians), shape ``(ntime,)``. Pass zeros
+            for a non-rotating (e.g. equatorial-mount) beam.
+
+        Returns
+        -------
+        numpy.ndarray
+            Complex voltages of shape ``(ntime, nsrc, nchan, 2)``.
+        """
+        ell = np.asarray(ell, dtype=np.float64)
+        emm = np.asarray(emm, dtype=np.float64)
+        freqs = np.atleast_1d(np.asarray(freqs, dtype=np.float64))
+        chi = np.atleast_1d(np.asarray(chi, dtype=np.float64))
+        out = np.empty((chi.size, ell.size, freqs.size, 2), dtype=np.complex128)
+        for ti, angle in enumerate(chi):
+            if angle:
+                c, s = np.cos(angle), np.sin(angle)
+                # Rotate the sky (l, m) into the feed frame by -chi.
+                l_feed = ell * c + emm * s
+                m_feed = -ell * s + emm * c
+            else:
+                l_feed, m_feed = ell, emm
+            out[ti] = self._eval(l_feed, m_feed, freqs)
+        return out
+
+
+class UnityBeamProvider(BeamProvider):
+    """A flat, unity beam (no attenuation). Used for antennas with no configured beam."""
+
+    def _eval(self, l_feed, m_feed, freqs):
+        return np.ones((l_feed.size, freqs.size, 2), dtype=np.float64)
+
+
+class JimBeamProvider(BeamProvider):
+    """Analytic cosine-taper ("JimBeam") voltage provider wrapping :class:`CosineTaperBeam`."""
+
+    def __init__(self, beam: CosineTaperBeam):
+        self.beam = beam
+
+    def _eval(self, l_feed, m_feed, freqs):
+        # The report grids the beam in SIN direction cosines scaled to degrees
+        # (l_deg = 180/pi * l), and katbeam consumes MHz.
+        x_deg = np.degrees(l_feed)
+        y_deg = np.degrees(m_feed)
+        return self.beam.voltages(x_deg, y_deg, freqs / 1e6)
+
+
+class FitsBeamProvider(BeamProvider):
+    """Per-feed voltage beam interpolated from a gridded FITS cube (measured/eidos beams).
+
+    The cube is a regular grid of complex per-feed voltages over ``(l, m)`` direction
+    cosines and frequency; it is defined in the *feed frame* (as holography/eidos beams
+    are), so the :class:`BeamProvider` base rotates the sky ``(l, m)`` into that frame by
+    ``-chi`` before this interpolates. Bilinear in ``(l, m)``, linear in frequency, zero
+    outside the grid.
+
+    Use :meth:`from_fits` for the on-disk layout, or :meth:`from_arrays` to build one
+    directly (e.g. in tests).
+    """
+
+    def __init__(self, l_grid, m_grid, freqs_hz, voltages, name: str = ""):
+        from scipy.interpolate import RegularGridInterpolator
+
+        l_grid = np.ascontiguousarray(l_grid, dtype=np.float64)
+        m_grid = np.ascontiguousarray(m_grid, dtype=np.float64)
+        freqs_hz = np.ascontiguousarray(freqs_hz, dtype=np.float64)
+        voltages = np.asarray(voltages, dtype=np.complex128)  # (nl, nm, nfreq, 2)
+        if voltages.shape != (l_grid.size, m_grid.size, freqs_hz.size, 2):
+            raise ValueError("voltages must have shape (nl, nm, nfreq, 2)")
+        self.name = name
+        self.l_grid, self.m_grid, self.freqs_hz = l_grid, m_grid, freqs_hz
+        # One interpolator per feed; a single-channel cube can't interpolate in frequency,
+        # so drop that axis and interpolate in (l, m) only.
+        self._single_freq = freqs_hz.size == 1
+        grid = (l_grid, m_grid) if self._single_freq else (l_grid, m_grid, freqs_hz)
+        self._interp = [
+            RegularGridInterpolator(
+                grid,
+                voltages[:, :, 0, f] if self._single_freq else voltages[..., f],
+                bounds_error=False,
+                fill_value=0.0,
+            )
+            for f in range(2)
+        ]
+
+    def _eval(self, l_feed, m_feed, freqs):
+        nsrc, nchan = l_feed.size, freqs.size
+        out = np.empty((nsrc, nchan, 2), dtype=np.complex128)
+        if self._single_freq:
+            pts = np.stack([l_feed, m_feed], axis=-1)  # (nsrc, 2)
+            for f in range(2):
+                out[:, :, f] = self._interp[f](pts)[:, None]
+        else:
+            ll = np.repeat(l_feed, nchan)
+            mm = np.repeat(m_feed, nchan)
+            ff = np.tile(np.asarray(freqs, dtype=np.float64), nsrc)
+            pts = np.stack([ll, mm, ff], axis=-1)
+            for f in range(2):
+                out[:, :, f] = self._interp[f](pts).reshape(nsrc, nchan)
+        return out
+
+    @classmethod
+    def from_arrays(cls, l_grid, m_grid, freqs_hz, voltages, name: str = "") -> "FitsBeamProvider":
+        """Build from explicit grids and a ``(nl, nm, nfreq, 2)`` complex voltage cube."""
+        return cls(l_grid, m_grid, freqs_hz, voltages, name=name)
+
+    @classmethod
+    def from_fits(cls, path, name: str = "") -> "FitsBeamProvider":
+        """Load a per-feed voltage beam cube.
+
+        Expected layout: a primary HDU of shape ``(4, nfreq, nm, nl)`` whose leading axis
+        is ``[HH_real, HH_imag, VV_real, VV_imag]``, with a linear WCS giving the ``L``/``M``
+        axes in degrees (SIN direction cosines scaled to degrees, ``l_deg = 180/pi * l``)
+        and the ``FREQ`` axis in Hz.
+        """
+        from astropy.io import fits
+
+        with fits.open(path) as hdul:
+            hdr = hdul[0].header
+            data = np.asarray(hdul[0].data, dtype=np.float64)  # (4, nfreq, nm, nl)
+        if data.ndim != 4 or data.shape[0] != 4:
+            raise ValueError("FITS beam cube must have shape (4, nfreq, nm, nl): HH/VV real/imag.")
+        _, nfreq, nm, nl = data.shape
+
+        def _axis(fits_axis, n):
+            crpix = hdr[f"CRPIX{fits_axis}"]
+            crval = hdr[f"CRVAL{fits_axis}"]
+            cdelt = hdr[f"CDELT{fits_axis}"]
+            return (np.arange(n) - (crpix - 1)) * cdelt + crval
+
+        # FITS axis 1 <-> last numpy axis (nl), axis 2 <-> nm, axis 3 <-> nfreq.
+        l_grid = np.radians(_axis(1, nl))  # degrees -> direction cosine (small-angle)
+        m_grid = np.radians(_axis(2, nm))
+        freqs_hz = _axis(3, nfreq)
+
+        hh = data[0] + 1j * data[1]  # (nfreq, nm, nl)
+        vv = data[2] + 1j * data[3]
+        voltages = np.empty((nl, nm, nfreq, 2), dtype=np.complex128)
+        voltages[..., 0] = hh.transpose(2, 1, 0)  # -> (nl, nm, nfreq)
+        voltages[..., 1] = vv.transpose(2, 1, 0)
+        return cls(l_grid, m_grid, freqs_hz, voltages, name=name or str(path))
+
+
+def _build_jimbeam(spec, beam_band: str) -> JimBeamProvider:
+    """Build a JimBeam provider from a beam-config spec (band shorthand, built-in name, or CSV path)."""
+    if spec in (True, None, ""):
+        spec = beam_band
+    spec = str(spec)
+    if spec in BUILTIN_BEAMS:
+        beam = CosineTaperBeam.from_builtin(spec)
+    elif spec in BAND_BUILTINS:
+        beam = CosineTaperBeam.from_builtin(BAND_BUILTINS[spec])
+    else:
+        beam = CosineTaperBeam.from_csv(spec)
+    return JimBeamProvider(beam)
+
+
+def _build_provider(label: str, beam_config, beam_band: str) -> BeamProvider:
+    entry = beam_config.get(label) if beam_config else None
+    if not entry:
+        log.warning("No beam configured for telescope_name %r; using a unity (flat) beam.", label)
+        return UnityBeamProvider()
+    if "jimbeam" in entry:
+        return _build_jimbeam(entry["jimbeam"], beam_band)
+    if "fits" in entry:
+        return FitsBeamProvider.from_fits(entry["fits"])
+    log.warning("Beam entry for %r has no 'jimbeam' or 'fits' key; using a unity beam.", label)
+    return UnityBeamProvider()
+
+
+def load_beam_config(path) -> dict:
+    """Load a beam-config YAML mapping each ``TELESCOPE_NAME`` to a provider spec."""
+    from omegaconf import OmegaConf
+
+    return OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+
+
+def resolve_antenna_beams(telescope_names, mount, beam_config, beam_band: str = "L"):
+    """Map antennas to beam types and build one provider per type.
+
+    Parameters
+    ----------
+    telescope_names : sequence of str
+        Per-antenna ``ANTENNA.TELESCOPE_NAME`` values, length ``nant``.
+    mount : sequence of str
+        Per-antenna ``ANTENNA.MOUNT`` values, length ``nant``.
+    beam_config : dict or None
+        Mapping of telescope_name -> provider spec (see :func:`load_beam_config`).
+    beam_band : str
+        Default band for JimBeam entries that omit an explicit model.
+
+    Returns
+    -------
+    ant_type : numpy.ndarray
+        Per-antenna type index, shape ``(nant,)``.
+    providers : list of BeamProvider
+        One provider per type, indexed by ``ant_type``.
+    type_is_altaz : numpy.ndarray
+        Whether each type's mount rotates the beam (ALT-AZ), shape ``(ntype,)``.
+    """
+    telescope_names = [str(t) for t in np.asarray(telescope_names).astype(str)]
+    mount = [str(m) for m in np.asarray(mount).astype(str)]
+    labels = list(dict.fromkeys(telescope_names))  # unique, insertion-ordered
+
+    providers = []
+    type_is_altaz = []
+    for label in labels:
+        providers.append(_build_provider(label, beam_config, beam_band))
+        first = telescope_names.index(label)
+        type_is_altaz.append("ALT-AZ" in mount[first].upper())
+
+    index = {label: i for i, label in enumerate(labels)}
+    ant_type = np.array([index[t] for t in telescope_names], dtype=np.int64)
+    return ant_type, providers, np.array(type_is_altaz, dtype=bool)
+
+
+def pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step_deg):
+    """A parallactic-angle sample grid spanning the observation, uniform in time.
+
+    The grid is uniform in *time* (so a row is indexed by its timestamp, monotonically
+    and without ``arctan2`` wrap issues) and sized by the *maximum* PA rate over the span
+    so a fast (near-zenith) transit is still resolved to ``pa_step_deg``.
+
+    Returns
+    -------
+    tgrid : numpy.ndarray
+        Sample times (MS seconds), shape ``(n_pa,)``.
+    chi_grid : numpy.ndarray
+        Unwrapped parallactic angle at each sample (radians), shape ``(n_pa,)``.
+    """
+    if duration <= 0:
+        n_pa = 2
+    else:
+        fine_t = t_start + np.linspace(0.0, duration, 512)
+        chi_fine = np.unwrap(parallactic_angle(fine_t, ra0, dec0, lon, lat))
+        rate = np.abs(np.gradient(chi_fine, fine_t)).max()  # rad/s
+        span_deg = np.degrees(rate * duration)
+        n_pa = max(2, int(np.ceil(span_deg / max(pa_step_deg, 1e-6))) + 1)
+    tgrid = t_start + np.linspace(0.0, duration, n_pa)
+    chi_grid = np.unwrap(parallactic_angle(tgrid, ra0, dec0, lon, lat))
+    return tgrid, chi_grid
+
+
+def build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid):
+    """Sample every type's voltage beam on the PA grid.
+
+    Returns an array of shape ``(ntype, n_pa, nsrc, nchan, 2)`` (complex). Alt-az types
+    use ``chi_grid``; others are evaluated at zero parallactic angle (no rotation).
+    """
+    ntype = len(providers)
+    grid = np.empty((ntype, chi_grid.size, ell.size, freqs.size, 2), dtype=np.complex128)
+    zeros = np.zeros_like(chi_grid)
+    for ti, prov in enumerate(providers):
+        use_chi = chi_grid if type_is_altaz[ti] else zeros
+        grid[ti] = prov.voltage(ell, emm, freqs, use_chi)
+    return grid
+
+
+def image_power_beam(provider, is_altaz, ell, emm, freqs, chi_grid):
+    """Parallactic-angle-averaged power beam ``<0.5(|g^X|^2 + |g^V|^2)>`` at each point.
+
+    For the FITS-*image* path, which grids one apparent sky for all baselines and times:
+    there is no per-baseline beam, so the beam is averaged over the observation's
+    parallactic-angle range (a single sample when ``is_altaz`` is False). Loops over
+    frequency and PA to keep the working set at ``O(npts)`` for large images.
+
+    Parameters
+    ----------
+    provider : BeamProvider
+        A single representative antenna beam.
+    is_altaz : bool
+        Whether to average over ``chi_grid`` (True) or evaluate once at chi = 0.
+    ell, emm : numpy.ndarray
+        Direction cosines of the points (pixels/components), shape ``(npts,)``.
+    freqs : numpy.ndarray
+        Frequencies (Hz), shape ``(nchan,)``.
+    chi_grid : numpy.ndarray
+        Parallactic-angle samples (radians).
+
+    Returns
+    -------
+    numpy.ndarray
+        Real power beam of shape ``(npts, nchan)`` in ``[0, ~1]``.
+    """
+    ell = np.asarray(ell, dtype=np.float64)
+    emm = np.asarray(emm, dtype=np.float64)
+    freqs = np.atleast_1d(np.asarray(freqs, dtype=np.float64))
+    chis = chi_grid if is_altaz else np.zeros(1)
+    power = np.empty((ell.size, freqs.size))
+    for k in range(freqs.size):
+        fk = freqs[k : k + 1]
+        acc = np.zeros(ell.size)
+        for chi in chis:
+            g = provider.voltage(ell, emm, fk, np.array([chi]))  # (1, npts, 1, 2)
+            acc += 0.5 * (np.abs(g[0, :, 0, 0]) ** 2 + np.abs(g[0, :, 0, 1]) ** 2)
+        power[:, k] = acc / chis.size
+    return power
+
+
+def corr_feed_maps(ncorr):
+    """Feed indices for each correlation in the linear basis.
+
+    Returns ``(corr_feed_p, corr_feed_q)`` giving, per correlation, the feed (0=H/X,
+    1=V/Y) of the first and second antenna. 4-corr is ``[XX, XY, YX, YY]``; 2-corr is
+    ``[XX, YY]``. Circular basis is unsupported by the diagonal per-feed model.
+    """
+    if ncorr == 4:
+        return np.array([0, 0, 1, 1], dtype=np.int64), np.array([0, 1, 0, 1], dtype=np.int64)
+    if ncorr == 2:
+        return np.array([0, 1], dtype=np.int64), np.array([0, 1], dtype=np.int64)
+    raise ValueError(f"Primary beam supports 2 or 4 correlations, got {ncorr}.")

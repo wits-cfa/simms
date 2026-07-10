@@ -8,6 +8,18 @@ from scabha.basetypes import File
 thisdir = os.path.dirname(__file__)
 
 
+def _per_antenna_telescope_names(arrayinfo, nant: int):
+    """Per-antenna ``telescope_name`` list, defaulting to the array name.
+
+    Accepts a scalar (broadcast to all antennas) or a per-antenna list, mirroring how
+    ``size`` is handled so subarray selection can index it.
+    """
+    names = arrayinfo.get("telescope_name", "") or arrayinfo.get("name", "")
+    if isinstance(names, str):
+        return [names] * nant
+    return list(names)
+
+
 def simms_telescopes() -> Dict:
     """
     Returns a dictionary of known array layouts
@@ -28,22 +40,27 @@ def simms_telescopes() -> Dict:
         else:
             allsizes = list(allsizes)
 
+        alltelnames = _per_antenna_telescope_names(arrayinfo, anant)
+
         subarrays = arrayinfo.get("subarray", [])
         # add sub-arrays to database
         for subarray in subarrays:
             antnames = arrayinfo.subarray[subarray]
             antlocations = []
             antsizes = []
+            anttelnames = []
             for ant in antnames:
                 idx = ant_to_idx[ant]
                 antlocations.append(all_locations[idx])
                 antsizes.append(allsizes[idx])
+                anttelnames.append(alltelnames[idx])
 
             laysdict[subarray] = dict(
                 centre=arrayinfo.centre,
                 antlocations=antlocations,
                 antnames=antnames,
                 size=antsizes,
+                telescope_name=anttelnames,
                 coord_sys=arrayinfo.coord_sys,
                 mount=arrayinfo.mount,
                 issubarray=True,
@@ -78,15 +95,19 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
     else:
         allsizes = list(allsizes)
 
+    alltelnames = _per_antenna_telescope_names(arrayinfo, anant)
+
     if subarray_list:
         ant_to_idx = {name: i for i, name in enumerate(allants)}
         antnames = subarray_list
         antlocations = []
         antsizes = []
+        anttelnames = []
         for ant in antnames:
             idx = ant_to_idx[ant]
             antlocations.append(all_locations[idx])
             antsizes.append(allsizes[idx])
+            anttelnames.append(alltelnames[idx])
 
     elif subarray_range:
         if len(subarray_range) == 2:
@@ -99,6 +120,7 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
         antnames = [allants[i] for i in user_idx]
         antlocations = [all_locations[i] for i in user_idx]
         antsizes = [allsizes[i] for i in user_idx]
+        anttelnames = [alltelnames[i] for i in user_idx]
 
     elif subarray_file:
         subarray_data = OmegaConf.load(subarray_file)
@@ -108,16 +130,19 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
             antnames = subarray_data["antnames"]
             antlocations = []
             antsizes = []
+            anttelnames = []
             for ant in antnames:
                 idx = ant_to_idx[ant]
                 antlocations.append(all_locations[idx])
                 antsizes.append(allsizes[idx])
+                anttelnames.append(alltelnames[idx])
 
     laysdict = dict(
         centre=arrayinfo.centre,
         antlocations=antlocations,
         antnames=antnames,
         size=antsizes,
+        telescope_name=anttelnames,
         coord_sys=arrayinfo.coord_sys,
         mount=arrayinfo.mount,
         issubarray=True,

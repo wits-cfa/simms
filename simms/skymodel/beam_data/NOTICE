@@ -1,0 +1,20 @@
+Cosine-taper ("JimBeam") primary-beam coefficient tables and model
+==================================================================
+
+The coefficient tables in this directory and the cosine-taper voltage model in
+`simms/skymodel/beams.py` are re-implemented / vendored from katbeam:
+
+    https://github.com/ska-sa/katbeam
+    Copyright (c) 2020, National Research Foundation (SARAO)
+    Licensed under the BSD 3-Clause License
+    Original author: Mattieu de Villiers <mattieu@ska.ac.za>
+
+BSD 3-Clause License text: https://opensource.org/licenses/BSD-3-Clause
+
+Files:
+  MKAT-AA-L-JIM-2020.csv     MeerKAT L-band  (array-average, 60 deg elevation)
+  MKAT-AA-UHF-JIM-2020.csv   MeerKAT UHF-band
+
+Additional coefficient CSVs in the same (two-header-row, arcmin) format -- for
+example the MeerKAT-Extension MKAT-EA-* tables -- can be loaded directly via
+`CosineTaperBeam.from_csv(path)` without modifying this package.

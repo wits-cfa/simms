@@ -122,6 +122,25 @@ cabs:
         dtype: int
         required: no
         abbreviation: ccs
+      primary-beam:
+        info: >-
+          Path to a beam-config YAML mapping each ANTENNA TELESCOPE_NAME to a beam model
+          (e.g. "MK: {jimbeam: L}"). Applies a per-antenna, parallactic-rotating primary
+          beam to component skies (ASCII/WSClean). Requires a linear pol basis.
+        dtype: File
+        required: no
+        abbreviation: pb
+      beam-band:
+        info: Default band for JimBeam entries that omit an explicit model/CSV.
+        dtype: str
+        default: L
+        choices: ['UHF', 'L']
+      beam-pa-step:
+        info: >-
+          Spacing (degrees) of the parallactic-angle grid the beam is sampled on and
+          interpolated from. Smaller is more accurate but uses more memory/compute.
+        dtype: float
+        default: 1.0
       field-id:
         info: Field ID
         dtype: int

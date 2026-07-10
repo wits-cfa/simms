@@ -9,7 +9,7 @@ from scabha.basetypes import MS
 
 from simms.constants import FWHM_TO_GAUSS_SCALE
 from simms.skymodel.ascii_skies import ASCIISkymodel
-from simms.skymodel.kernels import is_uniform_grid, predict_vis
+from simms.skymodel.kernels import is_uniform_grid, predict_vis, predict_vis_beam
 from simms.utilities import radec2lm
 
 
@@ -171,6 +171,13 @@ class PreparedSky:
     uniform_freqs: bool
     ncorr: int
     polarisation: bool
+    # Primary-beam fields, all None/False unless a beam is attached (see attach_beam).
+    beam_enabled: bool = False
+    ant_type: np.ndarray | None = None
+    beam_grid: np.ndarray | None = None  # (ntype, n_pa, nsrc, nchan, 2) complex
+    tgrid: np.ndarray | None = None  # (n_pa,) PA-grid sample times (MS seconds)
+    corr_feed_p: np.ndarray | None = None
+    corr_feed_q: np.ndarray | None = None
 
     @property
     def nspec(self) -> int:
@@ -180,7 +187,14 @@ class PreparedSky:
     def select_channels(self, chan_ids: np.ndarray) -> "PreparedSky":
         """Restrict the model to a subset of channels, for channel-chunked prediction."""
         freqs = self.freqs[chan_ids]
-        return replace(self, freqs=freqs, bmat=self.bmat[:, :, chan_ids], uniform_freqs=is_uniform_grid(freqs))
+        beam_grid = self.beam_grid[:, :, :, chan_ids, :] if self.beam_enabled else self.beam_grid
+        return replace(
+            self,
+            freqs=freqs,
+            bmat=self.bmat[:, :, chan_ids],
+            uniform_freqs=is_uniform_grid(freqs),
+            beam_grid=beam_grid,
+        )
 
 
 def prepare_skymodel(
@@ -288,21 +302,89 @@ def prepare_skymodel(
     )
 
 
+def to_full_corr(prepared: PreparedSky) -> PreparedSky:
+    """Expand a Stokes-I-only model (``nspec == 1``) to the full ``ncorr`` width.
+
+    The primary-beam kernel applies a per-feed voltage to every correlation, so it needs
+    the parallel hands carried explicitly (cross-hands zero for an unpolarised source).
+    No-op when the model already carries all correlations.
+    """
+    if prepared.nspec == prepared.ncorr:
+        return prepared
+    ncorr = prepared.ncorr
+    nsrc, _, nchan = prepared.bmat.shape
+    full = np.zeros((nsrc, ncorr, nchan), dtype=prepared.bmat.dtype)
+    stokes_i = prepared.bmat[:, 0, :]
+    # Parallel hands = Stokes I; cross-hands stay zero. (Linear basis; beams refuse circular.)
+    full[:, 0, :] = stokes_i
+    full[:, -1, :] = stokes_i
+    return replace(prepared, bmat=full)
+
+
+def attach_beam(
+    prepared: PreparedSky,
+    ant_type: np.ndarray,
+    providers: list,
+    type_is_altaz: np.ndarray,
+    ra0: float,
+    dec0: float,
+    lon: float,
+    lat: float,
+    t_start: float,
+    duration: float,
+    pa_step: float,
+    ncorr: int,
+) -> PreparedSky:
+    """Return a copy of ``prepared`` with a primary-beam voltage grid attached.
+
+    Samples each type's beam on a parallactic-angle grid spanning the observation
+    (built once, sliced per channel-chunk by :meth:`PreparedSky.select_channels`).
+    ``prepared`` must carry the full-width brightness (``nspec == ncorr``).
+    """
+    from simms.skymodel.beams import build_beam_grid, corr_feed_maps, pa_sample_grid
+
+    tgrid, chi_grid = pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step)
+    beam_grid = build_beam_grid(
+        providers, type_is_altaz, prepared.lmn[:, 0], prepared.lmn[:, 1], prepared.freqs, chi_grid
+    )
+    corr_feed_p, corr_feed_q = corr_feed_maps(ncorr)
+    return replace(
+        prepared,
+        beam_enabled=True,
+        ant_type=np.ascontiguousarray(ant_type, dtype=np.int64),
+        beam_grid=beam_grid,
+        tgrid=tgrid,
+        corr_feed_p=corr_feed_p,
+        corr_feed_q=corr_feed_q,
+    )
+
+
 def predict_channel_block(
     prepared: PreparedSky,
     uvw: np.ndarray,
     chan_ids: np.ndarray,
     times: np.ndarray = None,
+    antenna1: np.ndarray = None,
+    antenna2: np.ndarray = None,
     out_dtype: np.dtype = None,
 ) -> np.ndarray:
     """Predict one (row, channel) block, restricting the model to ``chan_ids``."""
-    return predict_block(prepared.select_channels(chan_ids), uvw, times=times, out_dtype=out_dtype)
+    return predict_block(
+        prepared.select_channels(chan_ids),
+        uvw,
+        times=times,
+        antenna1=antenna1,
+        antenna2=antenna2,
+        out_dtype=out_dtype,
+    )
 
 
 def predict_block(
     prepared: PreparedSky,
     uvw: np.ndarray,
     times: np.ndarray = None,
+    antenna1: np.ndarray = None,
+    antenna2: np.ndarray = None,
     noise_vis: float | None = None,
     out_dtype: np.dtype = None,
 ) -> np.ndarray:
@@ -343,18 +425,52 @@ def predict_block(
         time_index = np.searchsorted(prepared.unique_times, times).astype(np.int64)
 
     vis = np.zeros((nrow, prepared.freqs.size, nspec), dtype=prepared.bmat.dtype)
-    predict_vis(
-        uvw,
-        prepared.freqs,
-        prepared.uniform_freqs,
-        prepared.lmn,
-        prepared.gauss_shape,
-        prepared.is_gauss,
-        prepared.bmat,
-        prepared.lightcurve,
-        time_index,
-        vis,
-    )
+    if prepared.beam_enabled:
+        if times is None or antenna1 is None or antenna2 is None:
+            raise ValueError("primary beam prediction requires 'times', 'antenna1' and 'antenna2'")
+        # Map each row's timestamp to its position on the (time-uniform) PA grid and
+        # interpolate between the two bracketing samples.
+        tgrid = prepared.tgrid
+        dt = tgrid[1] - tgrid[0]
+        if dt > 0:
+            gpos = np.clip((np.asarray(times, dtype=np.float64) - tgrid[0]) / dt, 0.0, tgrid.size - 1)
+        else:
+            gpos = np.zeros(nrow, dtype=np.float64)  # degenerate (zero-span) grid
+        pa_lo = np.clip(np.floor(gpos).astype(np.int64), 0, tgrid.size - 2)
+        pa_wt = np.clip(gpos - pa_lo, 0.0, 1.0)
+        predict_vis_beam(
+            uvw,
+            prepared.freqs,
+            prepared.uniform_freqs,
+            prepared.lmn,
+            prepared.gauss_shape,
+            prepared.is_gauss,
+            prepared.bmat,
+            prepared.lightcurve,
+            time_index,
+            vis,
+            np.ascontiguousarray(antenna1),
+            np.ascontiguousarray(antenna2),
+            prepared.ant_type,
+            prepared.beam_grid,
+            pa_lo,
+            pa_wt,
+            prepared.corr_feed_p,
+            prepared.corr_feed_q,
+        )
+    else:
+        predict_vis(
+            uvw,
+            prepared.freqs,
+            prepared.uniform_freqs,
+            prepared.lmn,
+            prepared.gauss_shape,
+            prepared.is_gauss,
+            prepared.bmat,
+            prepared.lightcurve,
+            time_index,
+            vis,
+        )
 
     if nspec != ncorr:
         # Unpolarised: XX == YY == Stokes I, cross-hands vanish.
