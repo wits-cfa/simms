@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, List, Optional
 
 import numpy as np
-import xarray as xr
 from scabha.basetypes import EmptyListDefault
 
 from simms.constants import FWHM_scale_fact
@@ -159,33 +158,6 @@ class StokesData:
 
         self.data = spectrum
 
-    def set_lightcurve(self, lightcurve_func: Callable, **kwargs):
-        """
-        Add a time axis using a lightcurve.
-
-        Parameters
-        ----------
-        lightcurve_func : Callable
-            Callable returning a 1D time-series array (shape (ntimes,)).
-        **kwargs
-            Additional keyword arguments forwarded to `lightcurve_func`.
-
-        Returns
-        -------
-        None
-        """
-        light_curve = lightcurve_func(**kwargs)
-
-        self.idx = 0
-
-        ndim = self.data.ndim + 1
-        slc = [np.newaxis] * ndim
-        slc[1] = slice(None)
-        dslice = [slice(None)] * ndim
-        dslice[1] = np.newaxis
-
-        self.data = self.data[tuple(dslice)] * light_curve[tuple(slc)]
-
     def __stokes_x__(self, x: str):
         """
         Get intensity data for a Stokes parameter.
@@ -293,69 +265,6 @@ class StokesData:
         return any([self.Q, self.U, self.V])
 
 
-class StokesDataFits(StokesData):
-    _STOKES_IDX = {"I": 0, "Q": 1, "U": 2, "V": 3}
-
-    def __init__(self, coord: xr.DataArray, dim_idx: int, data: np.ndarray, linear_basis: bool = True):
-        """
-        Wrap FITS Stokes data with axis mapping.
-
-        Parameters
-        ----------
-        coord : xarray.DataArray
-            Coordinate array describing the Stokes axis.
-        dim_idx : int
-            Index of the Stokes dimension in `data`.
-        data : numpy.ndarray
-            FITS image/cube data containing Stokes planes.
-        linear_basis : bool, optional
-            If True, interpret data in the linear basis. Default is True.
-        """
-        self.data = data
-        self.nstokes = coord.size
-        self.idx = dim_idx
-        ndim = len(data.shape)
-        self.__dslice__ = [slice(None)] * ndim
-        self.linear_basis = linear_basis
-
-    def __stokes_x__(self, x: str):
-        """
-        Get intensity data for a Stokes parameter.
-
-        Parameters
-        ----------
-        x : {'I', 'Q', 'U', 'V'}
-            Stokes parameter to extract.
-
-        Returns
-        -------
-        numpy.ndarray or int
-            Data array for the requested Stokes parameter, or 0 if not present.
-
-        Raises
-        ------
-        RuntimeError
-            If an unknown Stokes parameter is requested.
-        """
-
-        if x not in self._STOKES_IDX:
-            raise RuntimeError(f"Uknown Stokes paramter '{x}'")
-
-        dslice = list(self.__dslice__)
-        dslice[self.idx] = self._STOKES_IDX[x]
-
-        try:
-            xdata = self.data[tuple(dslice)]
-        except IndexError:
-            xdata = 0
-
-        return xdata
-
-    @property
-    def is_polarised(self):
-        return self.nstokes > 1
-
-
 def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | List, nu_ref: float):
     """
     Continuum (power-law) spectral profile.
@@ -368,8 +277,10 @@ def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | List, n
         Reference flux density at `nu_ref`.
     coeff : float or array-like
         Power-law coefficient(s). If array-like with length > 1, treated as
-        polynomial coefficients of log-log curvature (via numpy.polynomial).
-        If length == 1 or float, treated as spectral index.
+        polynomial coefficients of log-log curvature (via numpy.polynomial),
+        so that the exponent varies with frequency as
+        ``c1 + c2*ln(nu/nu_ref) + c3*ln(nu/nu_ref)**2 + ...``.
+        If length == 1 or float, treated as a constant spectral index.
     nu_ref : float
         Reference frequency.
 
@@ -378,15 +289,15 @@ def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | List, n
     numpy.ndarray
         Spectral profile evaluated at `freqs`.
     """
-    if nu_ref and coeff:
-        if isinstance(coeff, (list, np.ndarray)):
-            if len(coeff) == 1:
-                poly_pow = coeff[0]
-            else:
-                poly_pow = np.polynomial.Polynomial(coeff)
+    if nu_ref and coeff is not None and np.size(coeff) > 0:
+        nu_ratio = freqs / nu_ref
+        if np.size(coeff) > 1:
+            # Exponent is a polynomial in ln(nu/nu_ref); evaluating the
+            # Polynomial at the array gives the exponent per channel.
+            poly_pow = np.polynomial.Polynomial(np.asarray(coeff))(np.log(nu_ratio))
         else:
-            poly_pow = coeff
-        return flux * (freqs / nu_ref) ** (poly_pow)
+            poly_pow = np.ravel(coeff)[0] if isinstance(coeff, (list, np.ndarray)) else coeff
+        return flux * nu_ratio**poly_pow
     else:
         return flux * np.ones_like(freqs)
 
@@ -416,9 +327,7 @@ def gauss_1d(xaxis: np.ndarray, peak: float, width: float, x0: float):
 
 
 def exoplanet_transient_logistic(
-    start_time: int,
-    end_time: int,
-    ntimes: int,
+    times: np.ndarray,
     transient_start: int,
     transient_absorb: float,
     transient_ingress: int,
@@ -429,12 +338,9 @@ def exoplanet_transient_logistic(
 
     Parameters
     ----------
-    start_time : int
-        Start time of the observation (seconds).
-    end_time : int
-        End time of the observation (seconds).
-    ntimes : int
-        Number of time samples between start and end.
+    times : numpy.ndarray
+        Time samples at which to evaluate the lightcurve, in seconds relative to
+        the start of the observation.
     transient_start : int
         Time at which the transit begins (seconds).
     transient_absorb : float
@@ -447,7 +353,7 @@ def exoplanet_transient_logistic(
     Returns
     -------
     numpy.ndarray
-        Normalized intensity time series of shape (ntimes,).
+        Normalized intensity time series of shape ``times.shape``.
     """
 
     # helper function to calculate ingress/egress using logistic function
@@ -461,7 +367,7 @@ def exoplanet_transient_logistic(
         normalized = (raw - f0) / (f1 - f0)
         return normalized
 
-    times = np.linspace(start_time, end_time, ntimes)
+    times = np.asarray(times, dtype=np.float64)
     baseline = 1.0
 
     intensity = np.full_like(times, baseline, dtype=np.float64)

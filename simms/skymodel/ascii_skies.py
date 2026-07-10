@@ -88,21 +88,23 @@ class ASCIISourceSchema:
     info: str
     parameters: Dict[str, SkymodelParameter]
 
+    def __post_init__(self):
+        # Filling in the dataclass defaults via OmegaConf.merge deep-copies the
+        # whole config, so it is done once for the schema and the resulting
+        # parameters are shared by every source. They are only used as scratch
+        # converters: set_source_param copies the converted value onto the source.
+        param_struct = OmegaConf.structured(SkymodelParameter)
+        self.parameters = ObjDict(
+            {key: SkymodelParameter(**OmegaConf.merge(param_struct, val)) for key, val in self.parameters.items()}
+        )
+
 
 @dataclass
 class ASCIISource:
     schema: ASCIISourceSchema
 
     def __post_init__(self):
-        parameters = {}
-
-        # use this struct to set dataclass defaults defaults
-        param_struct = OmegaConf.structured(SkymodelParameter)
-        for key, val in self.schema.parameters.items():
-            _val = OmegaConf.merge(param_struct, val)
-            parameters[key] = SkymodelParameter(**_val)
-        self.parameters = ObjDict(parameters)
-
+        self.parameters = self.schema.parameters
         self.existing_fields = []
         self.is_finalised = False
 
@@ -236,8 +238,8 @@ class ASCIISource:
         Returns
         -------
         numpy.ndarray
-            Brightness matrix with shape ``(nfreq, ntime, ncorr)`` for transient
-            sources or ``(nfreq, ncorr)`` for non-transient sources.
+            Brightness matrix with shape ``(ncorr, ntime, nfreq)`` for transient
+            sources or ``(ncorr, nfreq)`` for non-transient sources.
 
         Raises
         ------
@@ -248,7 +250,8 @@ class ASCIISource:
         -----
         - Spectrum is modeled as a Gaussian line or a polynomial continuum,
           depending on which fields are present.
-        - For transient sources, a logistic lightcurve is applied.
+        - For transient sources, a logistic lightcurve is applied. The lightcurve
+          only scales the spectrum, so it is applied as a separable factor here.
         """
         self.stokes = StokesData([getattr(self, f"stokes_{x}", 0) for x in "iquv"], linear_basis=linear_basis)
         if self.is_line:
@@ -260,32 +263,60 @@ class ASCIISource:
         elif self.is_continuum:
             specfunc = contspec
             kwargs = {
-                "coeff": [
-                    self.value_or_default("cont_coeff_1"),
-                    self.value_or_default("cont_coeff_2"),
-                    self.value_or_default("cont_coeff_3"),
-                ],
+                "coeff": self.continuum_coefficients(),
                 "nu_ref": self.value_or_default("cont_reffreq"),
             }
 
         self.stokes.set_spectrum(chan_freqs, specfunc, full_pol=full_stokes, **kwargs)
-        if self.is_transient:
-            lightcurve_func = exoplanet_transient_logistic
-            t0 = unique_times.min()
-            unique_times_rel = unique_times - t0
-            kwargs = {
-                "start_time": unique_times_rel.min(),
-                "end_time": unique_times_rel.max(),
-                "ntimes": unique_times_rel.shape[0],
-                "transient_start": self.value_or_default("transient_start"),
-                "transient_period": self.value_or_default("transient_period"),
-                "transient_ingress": self.value_or_default("transient_ingress"),
-                "transient_absorb": self.value_or_default("transient_absorb"),
-            }
-            self.stokes.set_lightcurve(lightcurve_func, **kwargs)
-            return self.stokes.get_brightness_matrix(ncorr)[:, time_index_mapper, ...]
-        else:
-            return self.stokes.get_brightness_matrix(ncorr)
+        bmatrix = self.stokes.get_brightness_matrix(ncorr)
+
+        if self.is_transient and unique_times is not None:
+            light_curve = self.get_lightcurve(unique_times)
+            bmatrix = bmatrix[:, np.newaxis, :] * light_curve[np.newaxis, :, np.newaxis]
+            if time_index_mapper is not None:
+                bmatrix = bmatrix[:, time_index_mapper, ...]
+
+        return bmatrix
+
+    def continuum_coefficients(self) -> List[float]:
+        """
+        Continuum polynomial coefficients, highest unset orders dropped.
+
+        Returns
+        -------
+        list of float
+            ``[cont_coeff_1, cont_coeff_2, cont_coeff_3]`` truncated after the
+            last coefficient the source actually sets. An empty list means the
+            source has no continuum spectrum.
+        """
+        coeffs = [self.value_or_default(f"cont_coeff_{order}") for order in (1, 2, 3)]
+        while coeffs and coeffs[-1] is None:
+            coeffs.pop()
+        return [0.0 if coeff is None else coeff for coeff in coeffs]
+
+    def get_lightcurve(self, unique_times: np.ndarray) -> np.ndarray:
+        """
+        Evaluate the transient lightcurve on a time axis.
+
+        Parameters
+        ----------
+        unique_times : numpy.ndarray
+            Sorted unique time stamps spanning the whole observation. Transient
+            parameters are defined relative to ``unique_times[0]``, so this must
+            not be a per-block subset of the observation's times.
+
+        Returns
+        -------
+        numpy.ndarray
+            Fractional intensity of shape ``(unique_times.size,)``.
+        """
+        return exoplanet_transient_logistic(
+            times=unique_times - unique_times[0],
+            transient_start=self.value_or_default("transient_start"),
+            transient_period=self.value_or_default("transient_period"),
+            transient_ingress=self.value_or_default("transient_ingress"),
+            transient_absorb=self.value_or_default("transient_absorb"),
+        )
 
 
 @dataclass

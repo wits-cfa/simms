@@ -1,6 +1,7 @@
 import glob
 import os.path
 
+import dask
 import dask.array as da
 import numpy as np
 from dask import config as dask_config
@@ -9,13 +10,14 @@ from tqdm.dask import TqdmCallback
 
 from simms import BIN, SCHEMADIR, set_logger
 from simms.skymodel.ascii_skies import ASCIISkymodel
-from simms.skymodel.fits_skies import skymodel_from_fits
+from simms.skymodel.fits_skies import predict_fits_channel_block, prepare_fits_sky
 from simms.skymodel.mstools import (
-    augmented_im_to_vis,
-    compute_vis,
-    sim_noise,
+    noise_visibilities,
+    predict_channel_block,
+    prepare_skymodel,
     vis_noise_from_sefd_and_ms,
 )
+from simms.skymodel.wsclean_skies import prepare_wsclean_sky
 
 
 def runit(opts):
@@ -24,11 +26,12 @@ def runit(opts):
     ms = opts.ms
     ascii_sky = opts.ascii_sky
     fs = opts.fits_sky
+    wsclean_sky = opts.wsclean_sky
 
     dask_config.set(scheduler="threads", num_workers=opts.nworkers)
 
-    if ascii_sky and fs:
-        raise RuntimeError("Cannot use an ASCII and FITS sky model simultaneously")
+    if sum(bool(x) for x in (ascii_sky, fs, wsclean_sky)) > 1:
+        raise RuntimeError("Choose a single sky model: one of --ascii-sky, --fits-sky, or --wsclean-sky.")
 
     msds = xds_from_ms(
         ms,
@@ -45,12 +48,23 @@ def runit(opts):
     spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
     field_ds = xds_from_table(f"{ms}::FIELD")[0]
 
-    radec0 = field_ds.PHASE_DIR.data[opts.field_id].compute()
+    radec0, freqs, dfreq = dask.compute(
+        field_ds.PHASE_DIR.data[opts.field_id],
+        spw_ds.CHAN_FREQ.data[opts.spw_id],
+        spw_ds.CHAN_WIDTH.data[opts.spw_id][0],
+    )
     ra0, dec0 = radec0[0][0], radec0[0][1]
-    freqs = spw_ds.CHAN_FREQ.data[opts.spw_id].compute()
-    dfreq = spw_ds.CHAN_WIDTH.data[opts.spw_id][0].compute()
     ncorr = msds.DATA.data.shape[-1]
+    vis_dtype = msds.DATA.data.dtype
     linear_basis = opts.pol_basis == "linear"
+
+    # Channel chunking. A channel-index array carries the chan dimension into
+    # da.blockwise; each predict task restricts the model to its own channels.
+    nchan = freqs.size
+    chan_chunks = opts.chan_chunks if opts.chan_chunks and opts.chan_chunks > 0 else nchan
+    chan_ids = da.arange(nchan, chunks=chan_chunks)
+
+    simvis = None
 
     if ascii_sky:
         if opts.source_schema and opts.ascii_species:
@@ -63,28 +77,63 @@ def runit(opts):
             source_schema = f"{SCHEMADIR}/source_schema.yaml"
 
         skymodel = ASCIISkymodel(ascii_sky, delimiter=opts.ascii_delimiter, source_schema_file=source_schema)
-        times_var = msds.TIME.data, ("row",) if skymodel.has_transient else None, (None,)
 
-        def compute_vis_sky(*args, **kwargs):
-            return compute_vis(skymodel, *args, **kwargs)
+        # Transient lightcurves are defined relative to the start of the
+        # observation, so the time axis has to be resolved globally rather than
+        # per row block.
+        unique_times = np.unique(msds.TIME.data.compute()) if skymodel.has_transient else None
 
-        simvis = da.blockwise(
-            compute_vis_sky,
-            ("row", "chan", "corr"),
-            msds.UVW.data,
-            ("row", "uvw"),
+        # Prepared once and shared by every block, rather than rebuilt per block.
+        # Sources are summed in double precision regardless of the column dtype.
+        prepared = prepare_skymodel(
+            skymodel,
             freqs,
-            ("chan",),
-            times_var[0],
-            times_var[1],
+            ra0,
+            dec0,
             ncorr=ncorr,
             polarisation=opts.polarisation,
             linear_basis=linear_basis,
-            noise_vis=vis_noise,
-            ra0=ra0,
-            dec0=dec0,
+            unique_times=unique_times,
+        )
+
+        # A blockwise index of None passes the argument through untouched, so a
+        # model without transients must be handed a literal None, not the
+        # (unblocked) TIME dask array.
+        time_args = (msds.TIME.data, ("row",)) if skymodel.has_transient else (None, None)
+
+        simvis = da.blockwise(
+            predict_channel_block,
+            ("row", "chan", "corr"),
+            prepared,
+            None,
+            msds.UVW.data,
+            ("row", "uvw"),
+            chan_ids,
+            ("chan",),
+            *time_args,
+            out_dtype=vis_dtype,
             new_axes={"corr": ncorr},
-            dtype=msds.DATA.data.dtype,
+            dtype=vis_dtype,
+            concatenate=True,
+        )
+
+    elif wsclean_sky:
+        # A WSClean component list shares the ASCII prediction path: it is flattened
+        # into a PreparedSky and handed to the same kernel.
+        prepared = prepare_wsclean_sky(wsclean_sky, freqs, ra0, dec0, ncorr=ncorr)
+
+        simvis = da.blockwise(
+            predict_channel_block,
+            ("row", "chan", "corr"),
+            prepared,
+            None,
+            msds.UVW.data,
+            ("row", "uvw"),
+            chan_ids,
+            ("chan",),
+            out_dtype=vis_dtype,
+            new_axes={"corr": ncorr},
+            dtype=vis_dtype,
             concatenate=True,
         )
 
@@ -112,60 +161,60 @@ def runit(opts):
         else:
             raise FileNotFoundError("FITS file/directory does not exist")
 
-        # process FITS sky model
-        predict = skymodel_from_fits(
+        # Prepared once and shared by every row block.
+        prepared = prepare_fits_sky(
             fs,
             ra0,
             dec0,
             freqs,
             dfreq,
             ncorr,
+            nrow=msds.UVW.data.shape[0],
             linear_basis=linear_basis,
+            polarisation=opts.polarisation,
             tol=opts.pixel_tol,
+            backend=opts.predict_backend,
+            spectrum=opts.fits_spectrum,
+            spi_maps=opts.fits_spi,
+            ref_freq=opts.fits_ref_freq,
+            spectrum_order=opts.fits_spectrum_order,
             interpolation=opts.fits_sky_interp,
         )
 
-        fs_dtype = np.finfo(predict.image.dtype).dtype
-        if fs_dtype == np.float32:
-            epsilon = 1e-6
-        else:
-            epsilon = 1e-7 if opts.fft_precision == "double" else 1e-6
+        epsilon = 1e-7 if opts.fft_precision == "double" else 1e-6
 
         simvis = da.blockwise(
-            augmented_im_to_vis,
+            predict_fits_channel_block,
             ("row", "chan", "corr"),
-            predict.image,
-            ("npix", "chan", "corr") if predict.use_dft else ("l", "m", "chan", "corr"),
+            prepared,
+            None,
             msds.UVW.data,
             ("row", "uvw"),
-            predict.lm,
-            ("npix", "lm") if predict.use_dft else None,
-            freqs,
+            chan_ids,
             ("chan",),
-            polarisation=predict.is_polarised,
-            expand_freq_dim=predict.expand_freq_dim,
-            use_dft=predict.use_dft,
-            ncorr=ncorr,
-            dtype=msds.DATA.data.dtype,
-            ref_freq=predict.ref_freq,
-            delta_ra=predict.ra_pixel_size,
-            delta_dec=predict.dec_pixel_size,
+            out_dtype=vis_dtype,
             epsilon=epsilon,
-            do_wstacking=opts.do_wstacking,
-            noise=vis_noise,
+            do_wgridding=opts.do_wstacking,
+            new_axes={"corr": ncorr},
+            dtype=vis_dtype,
             concatenate=True,
         )
 
-    elif opts.sefd:
-        # Simulate noise if no skymodel is given
-        simvis = da.blockwise(
-            sim_noise,
-            ("nrow", "nchan", "ncorr"),
-            dshape=msds.DATA.data.shape,
-            noise=vis_noise,
-            dtype=msds.DATA.data.dtype,
-            concatenate=True,
+    # Thermal noise, added once for every path. With --seed the draw is
+    # reproducible across runs at a given chunking; changing the chunking changes
+    # the realisation, as dask keys each block's stream to its position in the grid.
+    if vis_noise:
+        noise = noise_visibilities(
+            msds.DATA.data.shape,
+            (msds.UVW.data.chunks[0], chan_chunks, ncorr),
+            vis_noise,
+            vis_dtype,
+            seed=opts.seed,
         )
+        simvis = noise if simvis is None else simvis + noise
+
+    if simvis is None:
+        raise RuntimeError("Nothing to simulate: provide a sky model (--ascii-sky/--fits-sky/--wsclean-sky) or --sefd.")
 
     if opts.input_column:
         if not hasattr(msds, opts.input_column):

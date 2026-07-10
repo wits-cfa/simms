@@ -4,7 +4,7 @@ from typing import Callable, List, Union
 
 import numpy as np
 from astropy import units
-from numba import njit, prange
+from numba import njit
 
 from simms.exceptions import SkymodelSchemaError
 
@@ -52,23 +52,6 @@ def radec2lm(ra0: float, dec0: float, ra: float | np.ndarray, dec: float | np.nd
     m_coord = np.sin(dec) * np.cos(dec0) - np.cos(dec) * np.sin(dec0) * np.cos(dra)
 
     return l_coord, m_coord
-
-
-@njit(parallel=True)
-def pix_radec2lm(ra0: float, dec0: float, ra_coords: np.ndarray, dec_coords: np.ndarray):
-    """
-    Calculates pixel (l, m) coordinates. Returns sth akin to a 2D meshgrid
-    """
-    n_pix_l = len(ra_coords)
-    n_pix_m = len(dec_coords)
-    lm = np.zeros((n_pix_l, n_pix_m, 2), dtype=np.float64)
-    for i in prange(n_pix_l):
-        for j in range(n_pix_m):
-            l_coords, m_coords = radec2lm(ra0, dec0, ra_coords[i], dec_coords[j])
-            lm[i, j, 0] = l_coords
-            lm[i, j, 1] = m_coords
-
-    return lm
 
 
 def get_noise(sefds: Union[List, float], dtime: int, dfreq: float):

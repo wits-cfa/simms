@@ -21,10 +21,18 @@ cabs:
         dtype: Union[File, List[File]]
         required: no
         abbreviation: fs
+      wsclean-sky:
+        info: WSClean component list (point and Gaussian components, Stokes I).
+        dtype: File
+        required: no
+        abbreviation: ws
       fits-sky-interp:
-        info: Interpolation method when MS and FITS image grids do not match. Interpolation is only done within the overlap region. 
+        info: >-
+          Interpolation method when the MS and FITS frequency grids do not match and the
+          cube is kept. 'nearest' costs about 1e-3 in flux; prefer an analytic spectrum
+          (--fits-spectrum poly) where the spectrum allows it.
         dtype: str
-        default: nearest
+        default: linear
         choices:
         - nearest
         - linear
@@ -46,6 +54,42 @@ cabs:
         required: no
         default: 1e-7
         abbreviation: pt
+      fits-spectrum:
+        info: >-
+          How the FITS sky model varies with frequency. 'flat' is one frequency-independent
+          plane; 'poly' is a flux at a reference frequency times a per-pixel log-polynomial;
+          'cube' keeps the explicit planes. 'auto' fits a log-polynomial to a cube and falls
+          back to the cube when the fit is poor.
+        dtype: str
+        default: auto
+        choices: ['auto', 'flat', 'poly', 'cube']
+        abbreviation: fsp
+      fits-spi:
+        info: >-
+          Spectral-index (and higher-order) coefficient maps, ordered c1, c2, ... Given these,
+          the spectrum is analytic and nothing is fitted. Requires --fits-ref-freq.
+        dtype: List[File]
+        required: no
+      fits-ref-freq:
+        info: Reference frequency (Hz) of an analytic FITS spectrum. Defaults to the MS band centre.
+        dtype: float
+        required: no
+        abbreviation: frf
+      fits-spectrum-order:
+        info: Order of the fitted log-polynomial spectrum. 1 is a plain spectral index.
+        dtype: int
+        default: 2
+      predict-backend:
+        info: >-
+          Backend for FITS sky model prediction. 'dft' is exact for any projection;
+          'fft' grids the image, reprojecting to SIN when necessary; 'perchan' predicts
+          a cube one channel at a time, skipping empty channels and choosing dft or fft
+          per channel. 'auto' uses 'perchan' for a cube and the cheaper of dft/fft for a
+          single-plane model.
+        dtype: str
+        default: auto
+        choices: ['auto', 'dft', 'fft', 'perchan']
+        abbreviation: pb
       fft-precision:
         info: Precision of the FFT calculation. The default is double precision.
         dtype: str
@@ -69,10 +113,15 @@ cabs:
         dtype: int
         default: 4
       row-chunks:
-        info: Chunking strategy for the simulation
+        info: Number of rows per chunk. Controls the row-wise task/memory granularity.
         dtype: int
         default: 10000
         abbreviation: rcs
+      chan-chunks:
+        info: Number of channels per chunk. Defaults to all channels in one chunk.
+        dtype: int
+        required: no
+        abbreviation: ccs
       field-id:
         info: Field ID
         dtype: int
@@ -85,6 +134,12 @@ cabs:
       sefd:
         info: Add noise using the this SEFD value
         dtype: float
+      seed:
+        info: >-
+          Random seed for the thermal noise, reproducible across runs at a fixed
+          chunking. Omit for a non-reproducible run.
+        dtype: int
+        required: no
       ascii-species:
         info: Non-simms sky model type. 
         dtype: str

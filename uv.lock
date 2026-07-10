@@ -700,14 +700,18 @@ wheels = [
 
 [[package]]
 name = "fitstoolz"
-version = "0.0.1b2"
-source = { git = "https://github.com/caracal-pipeline/fitstoolz?rev=383f74dac54c58a531f905c9ce7e200b5b450114#383f74dac54c58a531f905c9ce7e200b5b450114" }
+version = "0.1.0b3"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "astropy" },
     { name = "dask", extra = ["array"] },
     { name = "numpy" },
     { name = "scabha" },
     { name = "xarray" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5c/3e/5c568b5a7d80108b504275bf8a00a81da50ec9704d6731e5f0a3f83bd2e4/fitstoolz-0.1.0b3.tar.gz", hash = "sha256:ab6b959dae85846d205b13d94d4b7d9c0bc3763f59a1785ceb16dce2a7205706", size = 25389, upload-time = "2026-07-10T16:02:34.71Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/ed/11071858cf63126154449de0008b5da5388d7ca00dc0b6702014e7faa2a5/fitstoolz-0.1.0b3-py3-none-any.whl", hash = "sha256:c53a91c9c041ebd576c25ecf04d5ebd429cd26b67c6c63ff1540ede321ebad3b", size = 20196, upload-time = "2026-07-10T16:02:33.545Z" },
 ]
 
 [[package]]
@@ -2538,7 +2542,7 @@ wheels = [
 [[package]]
 name = "scabha"
 version = "2.2.0rc2"
-source = { git = "https://github.com/caracal-pipeline/scabha#a093d3c76ff8d6a685da093dbf5bd4ff63ae7456" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "dill" },
@@ -2549,6 +2553,10 @@ dependencies = [
     { name = "rich" },
     { name = "typeguard" },
     { name = "uritools" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c6/b1/19252979204bb73d66ba03978d496d0175b9bc4e58f93d3cab51d044be5f/scabha-2.2.0rc2.tar.gz", hash = "sha256:641aef68b0d075371d67948dce4564a3432e12e440cbcededce8eecc7992316b", size = 60299, upload-time = "2026-06-25T11:25:00.631Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/56/26/373c7ba1b4b622031e87c9d7da0f0566e7378d12beeb9e784c9698326494/scabha-2.2.0rc2-py3-none-any.whl", hash = "sha256:a83ac810ee19c3c1612ff849ae76d2892a0398837e8dd38e36743542dcc22f4d", size = 66743, upload-time = "2026-06-25T11:24:59.377Z" },
 ]
 
 [[package]]
@@ -2660,13 +2668,17 @@ name = "simms"
 version = "3.0b3"
 source = { editable = "." }
 dependencies = [
+    { name = "astropy" },
     { name = "click" },
     { name = "codex-africanus", extra = ["complete"] },
     { name = "dask-ms", extra = ["xarray"] },
+    { name = "ducc0" },
     { name = "ephem" },
     { name = "fitstoolz" },
     { name = "numpy" },
     { name = "scabha" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "tqdm" },
 ]
 
@@ -2698,13 +2710,16 @@ tests = [
 
 [package.metadata]
 requires-dist = [
+    { name = "astropy" },
     { name = "click", specifier = ">=8.1.3,<9.0" },
     { name = "codex-africanus", extras = ["complete"], specifier = ">=0.3.7,<1.0" },
     { name = "dask-ms", extras = ["xarray"], specifier = ">=0.2.18,<1.0" },
+    { name = "ducc0" },
     { name = "ephem", specifier = ">=4.1,<5.0" },
-    { name = "fitstoolz", git = "https://github.com/caracal-pipeline/fitstoolz?rev=383f74dac54c58a531f905c9ce7e200b5b450114" },
+    { name = "fitstoolz", specifier = ">=0.1.0b3" },
     { name = "numpy" },
     { name = "scabha", marker = "python_full_version >= '3.11'", specifier = ">=2.2.0rc2" },
+    { name = "scipy" },
     { name = "tqdm" },
 ]
 

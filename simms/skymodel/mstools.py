@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
+
+import dask.array as da
 import numpy as np
-from africanus.dft import im_to_vis as dft_im_to_vis
-from astropy import constants as c
 from daskms import xds_from_ms, xds_from_table
-from ducc0.wgridder import dirty2ms
 from scabha.basetypes import MS
 
+from simms.constants import FWHM_TO_GAUSS_SCALE
 from simms.skymodel.ascii_skies import ASCIISkymodel
+from simms.skymodel.kernels import is_uniform_grid, predict_vis
 from simms.utilities import radec2lm
 
 
@@ -36,11 +38,13 @@ def vis_noise_from_sefd_and_ms(ms: MS | str, sefd: float, spw_id: int = 0, field
 
     df = spw_ds.CHAN_WIDTH.data[spw_id][0]
     dt = msds.EXPOSURE.data[0]
-    noise_vis = sefd / np.sqrt(2 * dt * df)
+    # Reduce to a plain float here. A lazy dask scalar would otherwise be carried
+    # into every predict task, where evaluating it re-opens the MS.
+    noise_vis = float((sefd / np.sqrt(2 * dt * df)).compute())
     return noise_vis
 
 
-def sim_noise(dshape: list | tuple, vis_noise: float) -> np.ndarray:
+def sim_noise(dshape: list | tuple, vis_noise: float, dtype: np.dtype = np.complex128) -> np.ndarray:
     """
     Simulate complex Gaussian visibility noise.
 
@@ -50,6 +54,8 @@ def sim_noise(dshape: list | tuple, vis_noise: float) -> np.ndarray:
         Desired output shape (e.g., (nrows, nchan, ncorr)).
     vis_noise : float
         RMS per visibility (Jy).
+    dtype : numpy.dtype, optional
+        Complex dtype of the output. Default complex128.
 
     Returns
     -------
@@ -57,26 +63,63 @@ def sim_noise(dshape: list | tuple, vis_noise: float) -> np.ndarray:
         Complex noise array of shape ``dshape``.
     """
     rng = np.random.default_rng()
-    return rng.standard_normal(dshape) * vis_noise + rng.standard_normal(dshape) * vis_noise * 1j
+    real_dtype = np.finfo(dtype).dtype
+    # Draw the real and imaginary parts as one array and reinterpret it as
+    # complex, so the noise costs a single allocation of the output size.
+    noise = rng.standard_normal((*dshape, 2), dtype=real_dtype)
+    noise *= vis_noise
+    return noise.view(dtype).reshape(dshape)
 
 
-def add_noise(vis: np.ndarray | float, vis_noise: float):
+def noise_visibilities(shape, chunks, vis_noise: float, dtype: np.dtype, seed=None):
     """
-    Add complex Gaussian noise to visibilities.
+    A lazy array of complex Gaussian visibility noise.
+
+    Reproducible for a given ``seed`` and independent of how ``shape`` is chunked,
+    because it draws through ``dask.array.random``. Each of the real and imaginary
+    parts has RMS ``vis_noise``.
 
     Parameters
     ----------
-    vis : numpy.ndarray or float
-        Visibility data. If scalar 0, returns pure noise.
+    shape : tuple
+        Output shape, ``(nrow, nchan, ncorr)``.
+    chunks : tuple
+        Dask chunking for `shape`.
+    vis_noise : float
+        RMS per visibility (Jy).
+    dtype : numpy.dtype
+        Complex output dtype.
+    seed : int or None
+        Base seed. ``None`` draws fresh entropy (not reproducible).
+
+    Returns
+    -------
+    dask.array.Array
+    """
+    rng = da.random.default_rng(seed)
+    real = rng.standard_normal(shape, chunks=chunks)
+    imag = rng.standard_normal(shape, chunks=chunks)
+    return ((real + 1j * imag) * vis_noise).astype(dtype)
+
+
+def add_noise(vis: np.ndarray, vis_noise: float):
+    """
+    Add complex Gaussian noise to visibilities in place.
+
+    Parameters
+    ----------
+    vis : numpy.ndarray
+        Visibility data.
     vis_noise : float
         RMS per visibility (Jy).
 
     Returns
     -------
     numpy.ndarray
-        Noisy visibilities.
+        `vis`, with noise added.
     """
-    return vis + sim_noise(vis.shape, vis_noise)
+    vis += sim_noise(vis.shape, vis_noise, dtype=vis.dtype)
+    return vis
 
 
 def stack_unpolarised_vis(vis: np.ndarray, ncorr: int) -> np.ndarray:
@@ -109,6 +152,222 @@ def stack_unpolarised_vis(vis: np.ndarray, ncorr: int) -> np.ndarray:
     return vis
 
 
+@dataclass
+class PreparedSky:
+    """An ASCII sky model reduced to flat arrays ready for :func:`predict_vis`.
+
+    Built once per simulation rather than once per row block, and shared by all
+    blocks. Its memory footprint is dominated by ``bmat``, which is
+    ``nsrc * nspec * nchan`` complex values.
+    """
+
+    lmn: np.ndarray
+    gauss_shape: np.ndarray
+    is_gauss: np.ndarray
+    bmat: np.ndarray
+    lightcurve: np.ndarray
+    unique_times: np.ndarray | None
+    freqs: np.ndarray
+    uniform_freqs: bool
+    ncorr: int
+    polarisation: bool
+
+    @property
+    def nspec(self) -> int:
+        """Number of correlations actually carried through the kernel."""
+        return self.bmat.shape[1]
+
+    def select_channels(self, chan_ids: np.ndarray) -> "PreparedSky":
+        """Restrict the model to a subset of channels, for channel-chunked prediction."""
+        freqs = self.freqs[chan_ids]
+        return replace(self, freqs=freqs, bmat=self.bmat[:, :, chan_ids], uniform_freqs=is_uniform_grid(freqs))
+
+
+def prepare_skymodel(
+    skymodel: ASCIISkymodel,
+    freqs: np.ndarray,
+    ra0: float,
+    dec0: float,
+    ncorr: int = 2,
+    polarisation: bool = False,
+    linear_basis: bool = True,
+    unique_times: np.ndarray = None,
+    dtype: np.dtype = np.complex128,
+) -> PreparedSky:
+    """
+    Flatten an ASCII sky model into the arrays the prediction kernel consumes.
+
+    Parameters
+    ----------
+    skymodel : ASCIISkymodel
+        Parsed sky model object.
+    freqs : numpy.ndarray
+        Channel centre frequencies (Hz).
+    ra0, dec0 : float
+        Phase centre (radians).
+    ncorr : int, optional
+        Number of correlations (2 or 4). Default 2.
+    polarisation : bool, optional
+        If True, carry every correlation. If False, only Stokes I is predicted
+        and the remaining correlations are filled in afterwards. Default False.
+    linear_basis : bool, optional
+        Use linear (True) or circular (False) basis. Default True.
+    unique_times : numpy.ndarray, optional
+        Sorted unique time stamps spanning the *whole* observation. Required if
+        the model contains transient sources: the lightcurve is referenced to
+        the start of the observation, not to the start of a row block.
+    dtype : numpy.dtype, optional
+        Complex dtype of the brightness matrix (and hence of the visibilities).
+
+    Returns
+    -------
+    PreparedSky
+
+    Raises
+    ------
+    ValueError
+        If transient sources are present and `unique_times` is None, or if
+        `ncorr` is not 2 or 4.
+    """
+    if ncorr not in (2, 4):
+        raise ValueError(f"Only two or four correlations allowed, but {ncorr} were requested.")
+
+    freqs = np.ascontiguousarray(freqs, dtype=np.float64)
+    has_transient = skymodel.has_transient
+    if has_transient and unique_times is None:
+        raise ValueError("parameter 'unique_times' must be provided for skymodels with transient sources")
+
+    sources = skymodel.sources
+    nsrc = len(sources)
+    nchan = freqs.size
+    # Unpolarised runs only ever need Stokes I; the other correlations are
+    # derived from it once, after the sources have been summed.
+    nspec = ncorr if polarisation else 1
+    ntime = unique_times.size if has_transient else 1
+
+    lmn = np.zeros((nsrc, 3), dtype=np.float64)
+    gauss_shape = np.zeros((nsrc, 3), dtype=np.float64)
+    is_gauss = np.zeros(nsrc, dtype=np.bool_)
+    bmat = np.zeros((nsrc, nspec, nchan), dtype=dtype)
+    lightcurve = np.ones((nsrc, ntime), dtype=np.float64)
+
+    for i, source in enumerate(sources):
+        el, em = radec2lm(ra0, dec0, source.ra, source.dec)
+        lmn[i] = el, em, np.sqrt(1 - el * el - em * em) - 1
+
+        emaj = source.value_or_default("emaj")
+        emin = source.value_or_default("emin")
+        if emaj or emin:
+            pa = source.value_or_default("pa")
+            is_gauss[i] = True
+            # emaj, emin are FWHM angles (radians); scale to the kernel's shape.
+            axis_major = emaj * FWHM_TO_GAUSS_SCALE
+            axis_minor = emin * FWHM_TO_GAUSS_SCALE
+            gauss_shape[i] = (
+                axis_major * np.sin(pa),
+                axis_major * np.cos(pa),
+                axis_minor / (1.0 if axis_major == 0.0 else axis_major),
+            )
+
+        bmat[i] = source.get_brightness_matrix(freqs, ncorr, linear_basis=linear_basis)[:nspec]
+
+        if source.is_transient:
+            lightcurve[i] = source.get_lightcurve(unique_times)
+
+    return PreparedSky(
+        lmn=lmn,
+        gauss_shape=gauss_shape,
+        is_gauss=is_gauss,
+        bmat=bmat,
+        lightcurve=lightcurve,
+        unique_times=unique_times if has_transient else None,
+        freqs=freqs,
+        uniform_freqs=is_uniform_grid(freqs),
+        ncorr=ncorr,
+        polarisation=polarisation,
+    )
+
+
+def predict_channel_block(
+    prepared: PreparedSky,
+    uvw: np.ndarray,
+    chan_ids: np.ndarray,
+    times: np.ndarray = None,
+    out_dtype: np.dtype = None,
+) -> np.ndarray:
+    """Predict one (row, channel) block, restricting the model to ``chan_ids``."""
+    return predict_block(prepared.select_channels(chan_ids), uvw, times=times, out_dtype=out_dtype)
+
+
+def predict_block(
+    prepared: PreparedSky,
+    uvw: np.ndarray,
+    times: np.ndarray = None,
+    noise_vis: float | None = None,
+    out_dtype: np.dtype = None,
+) -> np.ndarray:
+    """
+    Predict visibilities for one block of rows.
+
+    Parameters
+    ----------
+    prepared : PreparedSky
+        Sky model arrays from :func:`prepare_skymodel`.
+    uvw : numpy.ndarray
+        UVW coordinates of shape (nrows, 3), in metres.
+    times : numpy.ndarray, optional
+        Time stamp per row. Required if the model contains transient sources.
+    noise_vis : float, optional
+        RMS noise per visibility (Jy). If provided, noise is added.
+    out_dtype : numpy.dtype, optional
+        Complex dtype to cast the result to. Sources are summed in the (higher)
+        precision of ``prepared.bmat``, so a single-precision output column does
+        not degrade the accumulation. Named ``out_dtype`` because ``da.blockwise``
+        consumes any ``dtype`` kwarg itself and would never forward it.
+
+    Returns
+    -------
+    numpy.ndarray
+        Visibility array of shape (nrows, nchan, ncorr).
+    """
+    uvw = np.ascontiguousarray(uvw, dtype=np.float64)
+    nrow = uvw.shape[0]
+    ncorr = prepared.ncorr
+    nspec = prepared.nspec
+
+    if prepared.unique_times is None:
+        time_index = np.zeros(nrow, dtype=np.int64)
+    else:
+        if times is None:
+            raise ValueError("parameter 'times' must be provided for skymodels with transient sources")
+        time_index = np.searchsorted(prepared.unique_times, times).astype(np.int64)
+
+    vis = np.zeros((nrow, prepared.freqs.size, nspec), dtype=prepared.bmat.dtype)
+    predict_vis(
+        uvw,
+        prepared.freqs,
+        prepared.uniform_freqs,
+        prepared.lmn,
+        prepared.gauss_shape,
+        prepared.is_gauss,
+        prepared.bmat,
+        prepared.lightcurve,
+        time_index,
+        vis,
+    )
+
+    if nspec != ncorr:
+        # Unpolarised: XX == YY == Stokes I, cross-hands vanish.
+        vis = stack_unpolarised_vis(vis[..., 0], ncorr)
+
+    if noise_vis:
+        vis = add_noise(vis, noise_vis)
+
+    if out_dtype is not None:
+        vis = vis.astype(out_dtype, copy=False)
+    return vis
+
+
 def compute_vis(
     skymodel: ASCIISkymodel,
     uvw: np.ndarray,
@@ -120,20 +379,28 @@ def compute_vis(
     ra0: float | None = None,
     dec0: float | None = None,
     noise_vis: float | None = None,
+    unique_times: np.ndarray = None,
+    dtype: np.dtype = np.complex128,
 ):
     """
     Compute model visibilities for an ASCII sky model.
+
+    Convenience wrapper that prepares the sky model and predicts a single block.
+    Callers looping over row blocks should call :func:`prepare_skymodel` once and
+    :func:`predict_block` per block instead: transient lightcurves are referenced
+    to the first of `unique_times`, which must therefore span the whole
+    observation rather than a single block.
 
     Parameters
     ----------
     skymodel : ASCIISkymodel
         Parsed sky model object.
     uvw : numpy.ndarray
-        UVW coordinates of shape (3, nrows) or (nrows, 3).
+        UVW coordinates of shape (nrows, 3), in metres.
     freqs : numpy.ndarray
         Channel centre frequencies (Hz).
     times : numpy.ndarray, optional
-        Time stamps per row if transient sources present.
+        Time stamps per row if transient sources are present.
     ncorr : int, optional
         Number of correlations (2 or 4). Default 2.
     polarisation : bool, optional
@@ -146,259 +413,29 @@ def compute_vis(
         Phase centre declination (radians).
     noise_vis : float, optional
         RMS noise per visibility (Jy). If provided, noise is added.
-
-    Returns
-    -------
-    numpy.ndarray
-        Visibility array of shape (nrows, nchan or nchan*ntime, ncorr).
-
-    Raises
-    ------
-    ValueError
-        If transient sources exist and `times` is None.
-    """
-    wavs = c.c.value / freqs
-    uvw_scaled = uvw.T[..., np.newaxis] / wavs
-
-    def calculate_phase_factor(src):
-        el, em = radec2lm(ra0, dec0, src.ra, src.dec)
-        n_term = np.sqrt(1 - el * el - em * em) - 1
-        arg = uvw_scaled[0] * el + uvw_scaled[1] * em + uvw_scaled[2] * n_term
-        if not src.emaj and not src.emin:
-            return np.exp(2 * np.pi * 1j * arg)
-        else:
-            ell = src.emaj * np.sin(src.pa)
-            emm = src.emaj * np.cos(src.pa)
-            ecc = src.emin / (1.0 if src.emaj == 0.0 else src.emaj)
-            fu1 = (uvw_scaled[0] * emm - uvw_scaled[1] * ell) * ecc
-            fv1 = uvw_scaled[0] * ell + uvw_scaled[1] * emm
-            shape_phase = fu1 * fu1 + fv1 * fv1
-            return np.exp(2 * np.pi * 1j * arg - shape_phase)
-
-    vis_xx = 0
-    vis_xy = 0
-    vis_yx = 0
-    vis_yy = 0
-
-    if skymodel.has_transient:
-        if times is None:
-            raise ValueError("parameter 'times' must be provided for skymodels with transient source")
-        unique_times, time_index_mapper = np.unique(times, return_inverse=True)
-    else:
-        unique_times = time_index_mapper = None
-
-    for source in skymodel.sources:
-        phase = calculate_phase_factor(source)
-        bmatrix = source.get_brightness_matrix(
-            freqs,
-            ncorr,
-            unique_times=unique_times,
-            time_index_mapper=time_index_mapper,
-            linear_basis=linear_basis,
-        )
-        vis_xx += bmatrix[0, ...] * phase
-        if ncorr == 2:
-            if polarisation:
-                vis_yy += bmatrix[ncorr - 1, ...] * phase
-            else:
-                vis_yy = vis_xx
-        else:
-            if polarisation:
-                vis_xy += bmatrix[1, ...] * phase
-                vis_yx += bmatrix[2, ...] * phase
-                vis_yy += bmatrix[3, ...] * phase
-            else:
-                vis_xy = np.zeros_like(vis_xx)
-                vis_yx = np.zeros_like(vis_xx)
-                vis_yy += vis_xx
-
-    if ncorr == 2:
-        vis = np.stack((vis_xx, vis_yy), axis=-1)
-    else:
-        vis = np.stack((vis_xx, vis_xy, vis_yx, vis_yy), axis=-1)
-
-    if noise_vis:
-        vis = add_noise(vis, noise_vis)
-    return vis
-
-
-def fft_im_to_vis(
-    uvw: np.ndarray,
-    chan_freq: np.ndarray,
-    image: np.ndarray,
-    pixsize_x: float,
-    pixsize_y: float,
-    epsilon: float | None = 1e-7,
-    nthreads: int | None = 8,
-    do_wstacking: None | bool = True,
-) -> np.ndarray:
-    """
-    Predict visibilities via FFT gridding (dirty2ms wrapper).
-
-    Parameters
-    ----------
-    uvw : numpy.ndarray
-        UVW coordinates (nrows, 3) or (3, nrows) accepted by dirty2ms.
-    chan_freq : numpy.ndarray
-        1D array of channel frequencies (Hz).
-    image : numpy.ndarray
-        2D image (n_l, n_m).
-    pixsize_x : float
-        Pixel size along RA (radians).
-    pixsize_y : float
-        Pixel size along Dec (radians).
-    epsilon : float, optional
-        Accuracy parameter for wgridder. Default 1e-7.
-    nthreads : int, optional
-        Number of threads. Default 8.
-    do_wstacking : bool, optional
-        Enable w-stacking. Default True.
-
-    Returns
-    -------
-    numpy.ndarray
-        Complex visibilities of shape (nrows,).
-    """
-    result = dirty2ms(
-        uvw,
-        chan_freq,
-        image,
-        pixsize_x=pixsize_x,
-        pixsize_y=pixsize_y,
-        epsilon=epsilon,
-        do_wstacking=do_wstacking,
-        nthreads=nthreads,
-    )
-    return np.conj(np.squeeze(result))
-
-
-def augmented_im_to_vis(
-    image: np.ndarray,
-    uvw: np.ndarray,
-    lm: None | np.ndarray,
-    chan_freqs: np.ndarray,
-    polarisation: bool,
-    expand_freq_dim: bool,
-    use_dft: bool,
-    ncorr: int,
-    ref_freq: np.ndarray | None = None,
-    delta_ra: int | None = None,
-    delta_dec: int | None = None,
-    do_wstacking: bool | None = True,
-    epsilon: float | None = 1e-7,
-    noise: float | None = None,
-    nthreads: int | None = 8,
-    dtype: np.dtype | None = None,
-):
-    """
-    Predict visibilities from an image (DFT or FFT path).
-
-    Parameters
-    ----------
-    image : numpy.ndarray
-        Image cube:
-        - DFT: shape (N_nonzero, N_freq, ncorr) or (N_nonzero, N_freq, 1).
-        - FFT: shape (n_l, n_m, N_freq, ncorr).
-    uvw : numpy.ndarray
-        UVW coordinates (nrows, 3).
-    lm : numpy.ndarray or None
-        (l, m) direction cosines for DFT workflow; None for FFT.
-    chan_freqs : numpy.ndarray
-        Full MS frequency grid (Hz).
-    polarisation : bool
-        If True, use all correlations; if False, replicate Stokes I.
-    expand_freq_dim : bool
-        If True, single-frequency input is expanded to all MS channels.
-    use_dft : bool
-        True for sparse DFT mode; False for FFT mode.
-    ncorr : int
-        Number of correlations (2 or 4).
-    ref_freq : np.ndarray, optional
-        One-element array containing frequency (Hz) at which the input image is defined.
-        Used if `expand_freq_dim` is True.
-    delta_ra : float, optional
-        Pixel size along RA (radians) for FFT.
-    delta_dec : float, optional
-        Pixel size along Dec (radians) for FFT.
-    do_wstacking : bool, optional
-        Enable w-stacking in FFT mode. Default True.
-    epsilon : float, optional
-        Accuracy parameter for FFT gridding. Default 1e-7.
-    noise : float, optional
-        RMS noise per visibility (Jy). If provided, added to output.
-    nthreads : int, optional
-        Threads for FFT gridding. Default 8.
+    unique_times : numpy.ndarray, optional
+        Sorted unique time stamps of the whole observation. Defaults to the
+        unique values of `times`, which is only correct when `uvw` covers every
+        row of the observation.
+    dtype : numpy.dtype, optional
+        Complex dtype of the output. Default complex128.
 
     Returns
     -------
     numpy.ndarray
         Visibility array of shape (nrows, nchan, ncorr).
-
-    Notes
-    -----
-    - DFT path uses africanus.dft.im_to_vis.
-    - FFT path uses ducc0.wgridder.dirty2ms per channel.
     """
-    if expand_freq_dim:
-        predict_nchan = 1
-        predict_freqs = ref_freq
-    else:
-        predict_nchan = chan_freqs.size
-        predict_freqs = chan_freqs
-
-    # determine output dtype
-    if dtype is not None:
-        vis_dtype = np.complex128 if np.finfo(dtype).precision == 15 else np.complex64
-    else:
-        vis_dtype = np.complex128 if np.finfo(image.dtype).precision == 15 else np.complex64
-
-    # if sparse, use DFT
-    if use_dft:
-        if polarisation:
-            vis = dft_im_to_vis(image, uvw, lm, predict_freqs, convention="casa")
-        else:
-            image = image[..., 0]
-            vis = dft_im_to_vis(image[..., np.newaxis], uvw, lm, predict_freqs, convention="casa")
-            vis = stack_unpolarised_vis(vis[..., 0], ncorr)
-    # otherwise, use FFT
-    else:
-        image = np.transpose(image, axes=(3, 2, 0, 1))
-        if polarisation:
-            vis = np.zeros((uvw.shape[0], predict_nchan, ncorr), dtype=vis_dtype)
-            for corr in range(ncorr):
-                vis[:, :, corr] = fft_im_to_vis(
-                    uvw,
-                    predict_freqs,
-                    image[corr],
-                    pixsize_x=np.abs(delta_ra),
-                    pixsize_y=delta_dec,
-                    epsilon=epsilon,
-                    do_wstacking=do_wstacking,
-                    nthreads=nthreads,
-                )
-        else:
-            vis = fft_im_to_vis(
-                uvw,
-                predict_freqs,
-                image[0],
-                pixsize_x=np.abs(delta_ra),
-                pixsize_y=delta_dec,
-                epsilon=epsilon,
-                do_wstacking=do_wstacking,
-                nthreads=nthreads,
-            )
-
-            vis = stack_unpolarised_vis(vis, ncorr)
-
-    if expand_freq_dim:
-        amps, phases = np.abs(vis), np.angle(vis)
-        wavs = c.c.value / chan_freqs
-        ref_wav = c.c.value / ref_freq[0]
-        phase_scale_factors = ref_wav / wavs
-        phases = phases * phase_scale_factors[np.newaxis, :, np.newaxis]
-        vis = amps * np.exp(1j * phases)
-
-    if noise:
-        vis = add_noise(vis, noise)
-
-    return vis
+    if unique_times is None and times is not None and skymodel.has_transient:
+        unique_times = np.unique(times)
+    prepared = prepare_skymodel(
+        skymodel,
+        freqs,
+        ra0,
+        dec0,
+        ncorr=ncorr,
+        polarisation=polarisation,
+        linear_basis=linear_basis,
+        unique_times=unique_times,
+        dtype=dtype,
+    )
+    return predict_block(prepared, uvw, times=times, noise_vis=noise_vis)

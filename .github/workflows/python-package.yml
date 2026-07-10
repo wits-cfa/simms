@@ -43,25 +43,3 @@ jobs:
       run: |
         simms skysim --help
         simms telsim --help
-
-  review:
-    if: github.event_name == 'pull_request'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: write
-      issues: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: anomalyco/opencode/github@latest
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_GO_API }}
-        with:
-          use_github_token: true
-          model: opencode-go/deepseek-v4-pro
-          variant: medium
