@@ -104,6 +104,13 @@ class FitsGrid:
             divide_by_n=False,
         )
 
+    def pixel_lmn(self, i_pix: np.ndarray, j_pix: np.ndarray) -> np.ndarray:
+        """Direction cosines ``(l, m, n - 1)`` of pixels on this regular grid."""
+        el = self.l_ref + self.delta_l * (i_pix - self.ref_l)
+        em = self.m_ref + self.delta_m * (j_pix - self.ref_m)
+        en = np.sqrt(np.maximum(1 - el * el - em * em, 0.0)) - 1
+        return np.stack([el, em, en], axis=-1)
+
 
 @dataclass
 class PreparedFitsSky:
@@ -111,7 +118,7 @@ class PreparedFitsSky:
 
     chan_freqs: np.ndarray  # MS channel centres (Hz)
     spectrum: FitsSpectrum  # how the model varies with frequency
-    backend: str  # "dft" or "fft"
+    backend: str  # "dft", "fft" or "perchan"
     ncorr: int
     polarisation: bool
     linear_basis: bool
@@ -119,12 +126,13 @@ class PreparedFitsSky:
     npix_l: int
     npix_m: int
 
-    # FFT backend: real Stokes planes, (nstokes, npix_l, npix_m, nchan_model).
-    # FLAT and POLY store one plane, at the reference frequency; CUBE stores the
-    # whole MS channel grid.
+    # FFT and perchan backends: real Stokes planes,
+    # (nstokes, npix_l, npix_m, nchan_model). FLAT and POLY store one plane, at
+    # the reference frequency; CUBE (and hence perchan) stores the whole MS grid.
     planes: Optional[np.ndarray] = None
     stokes_names: Optional[List[str]] = None
     grid: Optional[FitsGrid] = None
+    tol: float = 1e-7  # perchan: per-channel component threshold (Jy)
 
     # DFT backend: brightness per correlation, (ncomp, nspec, nchan)
     lmn: Optional[np.ndarray] = None
@@ -642,12 +650,19 @@ def prepare_fits_sky(
         log.warning(f"No FITS pixel exceeds the {tol * 1e6:.2f}-uJy tolerance; the model is empty.")
 
     nplanes = len(stokes_names) if polarisation else 1
+    is_cube = spectrum.kind is SpectralKind.CUBE
     if backend == "auto":
-        backend = choose_backend(ncomp, npix_l, npix_m, nrow, nchan, nplanes)
-    elif backend not in ("dft", "fft"):
-        raise FITSSkymodelError(f"Unknown predict backend '{backend}'. Choose from auto, dft, fft.")
+        # A cube may be sparse channel by channel (a spectral line), so it is
+        # predicted per channel; a single reference plane is not.
+        backend = "perchan" if is_cube else choose_backend(ncomp, npix_l, npix_m, nrow, nchan, nplanes)
+    elif backend not in ("dft", "fft", "perchan"):
+        raise FITSSkymodelError(f"Unknown predict backend '{backend}'. Choose from auto, dft, fft, perchan.")
 
-    if backend == "fft" and (npix_l % 2 or npix_m % 2):
+    if backend == "perchan" and not is_cube:
+        log.info("Per-channel prediction only helps a spectral cube; using the gridder for this single-plane model.")
+        backend = "fft"
+
+    if backend in ("fft", "perchan") and (npix_l % 2 or npix_m % 2):
         log.warning(f"Image is {npix_l}x{npix_m}; the gridder needs even dimensions. Using the DFT instead.")
         backend = "dft"
 
@@ -705,12 +720,16 @@ def prepare_fits_sky(
             npix_l, npix_m = planes.shape[1], planes.shape[2]
             prepared.npix_l, prepared.npix_m = npix_l, npix_m
 
-        log.info(f"Predicting from a {npix_l}x{npix_m} FITS image with the gridder.")
+        if backend == "perchan":
+            log.info(f"Predicting from a {npix_l}x{npix_m} cube per channel (image is {npix_l}x{npix_m}).")
+        else:
+            log.info(f"Predicting from a {npix_l}x{npix_m} FITS image with the gridder.")
         keep = stokes_names if polarisation else ["I"]
         index = [stokes_names.index(name) for name in keep]
         prepared.planes = np.ascontiguousarray(planes[index])
         prepared.stokes_names = keep
         prepared.grid = grid
+        prepared.tol = tol
 
     return prepared
 
@@ -778,21 +797,26 @@ def _resolve_spectrum(
             log.info(f"The cube has {nchan_fits} channels; fitting an order-{fit_order} spectrum instead of {order}.")
 
         if fit_order >= 1:
-            ref_i, coeffs, residual, peak = fit_log_polynomial(
+            ref_i, coeffs, residual, coverage, peak = fit_log_polynomial(
                 lazy_cube, fits_freqs, ref_freq, stokes_i, order=fit_order, tol=tol
             )
-            if spectrum == "poly" or residual <= fit_tol:
+            # A log-polynomial represents only pixels positive at every channel, so
+            # under "auto" it is accepted only when it both fits well and covers
+            # essentially all the emission - a spectral line fails the coverage test
+            # and keeps the cube. An explicit "poly" is honoured regardless.
+            well_fit = residual <= fit_tol and coverage >= 0.99
+            if spectrum == "poly" or well_fit:
                 planes = interpolate_planes_at(lazy_cube, fits_freqs, ref_freq)
                 planes[stokes_i] = ref_i  # Stokes I comes from the fit, which is more accurate
                 log.info(
                     f"Fitted an order-{fit_order} log-polynomial spectrum, reference {ref_freq / 1e9:.6f} GHz, "
-                    f"worst fractional residual {residual:.2e}."
+                    f"worst fractional residual {residual:.2e}, covering {coverage * 100:.1f}% of the emission."
                 )
                 model = FitsSpectrum(kind=SpectralKind.POLY, ref_freq=ref_freq, coeffs=coeffs, residual=residual)
                 return planes[..., np.newaxis], model, peak
             log.info(
-                f"An order-{fit_order} log-polynomial fits the spectrum to only {residual:.2e} "
-                f"(tolerance {fit_tol:.1e}); keeping the cube."
+                f"An order-{fit_order} log-polynomial fits {coverage * 100:.1f}% of the emission to residual "
+                f"{residual:.2e} (tolerance {fit_tol:.1e}); keeping the cube."
             )
 
     cube = np.asarray(lazy_cube, dtype=np.float64)
@@ -835,6 +859,73 @@ def _fft_stokes_visibilities(plane, spectrum, grid, uvw, chan_freqs, npix_l, npi
         if not np.any(image):
             continue
         vis[:, chan] = dirty2vis(freq=chan_freqs[chan : chan + 1], dirty=image, **kwargs)[:, 0]
+    return vis
+
+
+def _perchan_visibilities(prepared, uvw, epsilon, wgridding, nthreads):
+    """
+    Predict a spectral cube one channel at a time, choosing a backend per channel.
+
+    Each channel of a line cube may hold anything from no emission to a full
+    image, so the global backend choice is wrong for most of them. Here an empty
+    channel costs nothing, a channel with few bright pixels is predicted by DFT,
+    and a dense channel is gridded.
+    """
+    nrow, nchan, ncorr = uvw.shape[0], prepared.chan_freqs.size, prepared.ncorr
+    nspec = prepared.nspec
+    npix_l, npix_m = prepared.npix_l, prepared.npix_m
+    nplanes = len(prepared.stokes_names)
+    planes = prepared.planes  # (nplanes, npix_l, npix_m, nchan)
+
+    vis = np.zeros((nrow, nchan, ncorr), dtype=np.complex128)
+    ducc = dict(
+        uvw=uvw, epsilon=epsilon, do_wgridding=wgridding, nthreads=nthreads, **prepared.grid.ducc_kwargs(npix_l, npix_m)
+    )
+
+    for chan in range(nchan):
+        plane = planes[:, :, :, chan]  # (nplanes, npix_l, npix_m)
+        active = np.abs(plane).max(axis=0) > prepared.tol
+        ncomp = int(active.sum())
+        if ncomp == 0:
+            continue
+
+        if choose_backend(ncomp, npix_l, npix_m, nrow, 1, nplanes) == "dft":
+            i_pix, j_pix = np.nonzero(active)
+            lmn = prepared.grid.pixel_lmn(i_pix.astype(np.float64), j_pix.astype(np.float64))
+            comps = plane[:, i_pix, j_pix]  # (nplanes, ncomp)
+            corrs = stokes_to_correlations(
+                _stokes_getter(comps, prepared.stokes_names), ncorr, prepared.polarisation, prepared.linear_basis
+            )
+            bmat = np.zeros((ncomp, nspec, 1), dtype=np.complex128)
+            for corr in range(nspec):
+                bmat[:, corr, 0] = corrs[corr]
+            chan_vis = np.zeros((nrow, 1, nspec), dtype=np.complex128)
+            predict_vis(
+                uvw,
+                prepared.chan_freqs[chan : chan + 1],
+                True,
+                lmn,
+                np.zeros((ncomp, 3)),
+                np.zeros(ncomp, dtype=np.bool_),
+                bmat,
+                np.ones((ncomp, 1)),
+                np.zeros(nrow, dtype=np.int64),
+                chan_vis,
+            )
+            if nspec != ncorr:
+                chan_vis = stack_unpolarised_vis(chan_vis[..., 0], ncorr)
+            vis[:, chan, :] = chan_vis[:, 0, :]
+        else:
+            stokes_vis = np.empty((nplanes, nrow), dtype=np.complex128)
+            for s in range(nplanes):
+                stokes_vis[s] = dirty2vis(
+                    freq=prepared.chan_freqs[chan : chan + 1], dirty=np.ascontiguousarray(plane[s]), **ducc
+                )[:, 0]
+            corrs = stokes_to_correlations(
+                _stokes_getter(stokes_vis, prepared.stokes_names), ncorr, prepared.polarisation, prepared.linear_basis
+            )
+            vis[:, chan, :] = np.stack(corrs, axis=-1)
+
     return vis
 
 
@@ -914,6 +1005,8 @@ def predict_fits_block(
             )
         if prepared.nspec != ncorr:
             vis = stack_unpolarised_vis(vis[..., 0], ncorr)
+    elif prepared.backend == "perchan":
+        vis = _perchan_visibilities(prepared, uvw, epsilon, do_wgridding, nthreads)
     else:
         stokes_vis = np.stack(
             [

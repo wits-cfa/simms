@@ -690,3 +690,113 @@ def test_short_cube_lowers_the_fit_order_rather_than_failing(params, uvw):
     prepared = prepare_fits_sky(path, RA0, DEC0, chan_freqs, 2e8, 2, nrow=uvw.shape[0], backend="dft")
     assert prepared.spectrum.kind is SpectralKind.POLY
     assert prepared.spectrum.coeffs.shape[0] == 1  # order dropped from 2 to 1
+
+
+# --------------------------------------------------------------------------- per-channel
+
+
+def _line_cube(npix, nchan, rng):
+    """A cube with an empty channel, a sparse channel and a dense channel."""
+    cube = np.zeros((npix, npix, nchan))
+    # channel 1: a few scattered bright pixels (sparse -> DFT)
+    idx = rng.choice(npix * npix, 5, replace=False)
+    ii, jj = np.unravel_index(idx, (npix, npix))
+    cube[ii, jj, 1] = rng.uniform(0.5, 1.0, 5)
+    # channel 2: an extended blob (dense -> gridder)
+    yy, xx = np.mgrid[:npix, :npix]
+    cube[:, :, 2] = np.exp(-(((xx - npix // 2 + 6) ** 2 + (yy - npix // 2 - 4) ** 2) / (2 * 5.0**2)))
+    # channels 0 and 3 stay empty
+    return cube
+
+
+def test_perchan_matches_brute_force_on_a_mixed_cube(params, uvw):
+    """A cube with empty, sparse and dense channels; perchan must match the RIME."""
+    npix, nchan = 64, 4
+    chan_freqs = 1.3e9 + np.arange(nchan) * 2e7
+    cube = _line_cube(npix, nchan, np.random.default_rng(41))
+
+    header = make_header(npix, nchan=nchan, freqs=chan_freqs)
+    path = write_image(params, np.transpose(cube, (2, 1, 0)), header)
+
+    prepared = prepare_fits_sky(path, RA0, DEC0, chan_freqs, 2e7, 2, nrow=uvw.shape[0], backend="perchan")
+    assert prepared.backend == "perchan"
+    got = predict_fits_block(prepared, uvw, epsilon=1e-8)
+    expected = brute_force_vis(cube[np.newaxis], header, uvw, chan_freqs, 2, False, True)
+    assert np.abs(got - expected).max() / np.abs(expected).max() < 1e-5
+
+
+def test_auto_selects_perchan_for_a_cube(params, uvw):
+    npix, nchan = 48, 4
+    chan_freqs = 1.3e9 + np.arange(nchan) * 2e7
+    cube = _line_cube(npix, nchan, np.random.default_rng(3))
+    cube[..., 0] += 0.01  # make the spectrum not a clean power law, so it stays a cube
+    header = make_header(npix, nchan=nchan, freqs=chan_freqs)
+    path = write_image(params, np.transpose(cube, (2, 1, 0)), header)
+    prepared = prepare_fits_sky(path, RA0, DEC0, chan_freqs, 2e7, 2, nrow=uvw.shape[0])
+    assert prepared.spectrum.kind is SpectralKind.CUBE
+    assert prepared.backend == "perchan"
+
+
+def test_perchan_leaves_empty_channels_at_zero(params, uvw):
+    npix, nchan = 48, 4
+    chan_freqs = 1.3e9 + np.arange(nchan) * 2e7
+    cube = _line_cube(npix, nchan, np.random.default_rng(9))  # channels 0 and 3 empty
+    header = make_header(npix, nchan=nchan, freqs=chan_freqs)
+    path = write_image(params, np.transpose(cube, (2, 1, 0)), header)
+    vis = predict_fits_block(
+        prepare_fits_sky(path, RA0, DEC0, chan_freqs, 2e7, 2, nrow=uvw.shape[0], backend="perchan"), uvw
+    )
+    assert not np.any(vis[:, 0, :])
+    assert not np.any(vis[:, 3, :])
+    assert np.any(vis[:, 1, :]) and np.any(vis[:, 2, :])
+
+
+@pytest.mark.parametrize("ncorr", [2, 4])
+def test_perchan_full_stokes(params, uvw, ncorr):
+    npix, nchan = 48, 3
+    chan_freqs = 1.3e9 + np.arange(nchan) * 2e7
+    rng = np.random.default_rng(7)
+    cube = np.zeros((4, npix, npix, nchan))
+    idx = rng.choice(npix * npix, 6, replace=False)
+    ii, jj = np.unravel_index(idx, (npix, npix))
+    for s, amp in enumerate([1.0, 0.2, -0.15, 0.05]):
+        cube[s, ii, jj, 1:] = amp * rng.uniform(0.5, 1.0, (6, 1))
+    header = make_header(npix, nchan=nchan, nstokes=4, freqs=chan_freqs)
+    path = write_image(params, np.transpose(cube, (0, 3, 2, 1)), header)
+
+    prepared = prepare_fits_sky(path, RA0, DEC0, chan_freqs, 2e7, ncorr, nrow=uvw.shape[0], backend="perchan")
+    got = predict_fits_block(prepared, uvw, epsilon=1e-8)
+    expected = brute_force_vis(cube, header, uvw, chan_freqs, ncorr, True, True, "IQUV")
+    assert np.abs(got - expected).max() / np.abs(expected).max() < 1e-5
+
+
+def test_perchan_channel_chunking_matches_full(params, uvw):
+    npix, nchan = 48, 6
+    chan_freqs = 1.3e9 + np.arange(nchan) * 2e7
+    rng = np.random.default_rng(13)
+    cube = np.zeros((npix, npix, nchan))
+    for c in range(1, nchan):  # channel 0 empty
+        idx = rng.choice(npix * npix, 4, replace=False)
+        ii, jj = np.unravel_index(idx, (npix, npix))
+        cube[ii, jj, c] = rng.uniform(0.5, 1.0, 4)
+    header = make_header(npix, nchan=nchan, freqs=chan_freqs)
+    path = write_image(params, np.transpose(cube, (2, 1, 0)), header)
+    prepared = prepare_fits_sky(path, RA0, DEC0, chan_freqs, 2e7, 2, nrow=uvw.shape[0], backend="perchan")
+
+    whole = predict_fits_block(prepared, uvw, epsilon=1e-8)
+    chunked = np.concatenate(
+        [predict_fits_block(prepared.select_channels(np.arange(a, a + 2)), uvw, epsilon=1e-8) for a in range(0, 6, 2)],
+        axis=1,
+    )
+    np.testing.assert_array_equal(whole, chunked)
+
+
+def test_perchan_falls_back_for_a_single_plane(params, uvw):
+    """A flat image has no per-channel structure; perchan degrades to the gridder."""
+    npix = 64
+    header = make_header(npix)
+    data = np.zeros((npix, npix))
+    data[40, 30] = 1.0
+    path = write_image(params, data, header)
+    prepared = prepare_fits_sky(path, RA0, DEC0, np.array([1.4e9, 1.5e9]), 1e8, 2, nrow=uvw.shape[0], backend="perchan")
+    assert prepared.backend == "fft"

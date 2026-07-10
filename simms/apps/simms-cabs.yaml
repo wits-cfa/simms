@@ -82,11 +82,13 @@ cabs:
       predict-backend:
         info: >-
           Backend for FITS sky model prediction. 'dft' is exact for any projection;
-          'fft' grids the image and needs a regular (l,m) grid, reprojecting to SIN
-          when necessary. 'auto' picks the cheaper of the two.
+          'fft' grids the image, reprojecting to SIN when necessary; 'perchan' predicts
+          a cube one channel at a time, skipping empty channels and choosing dft or fft
+          per channel. 'auto' uses 'perchan' for a cube and the cheaper of dft/fft for a
+          single-plane model.
         dtype: str
         default: auto
-        choices: ['auto', 'dft', 'fft']
+        choices: ['auto', 'dft', 'fft', 'perchan']
         abbreviation: pb
       fft-precision:
         info: Precision of the FFT calculation. The default is double precision.

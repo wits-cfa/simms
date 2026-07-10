@@ -165,9 +165,10 @@ def fit_log_polynomial(
     Returns
     -------
     tuple
-        ``(ref_plane_i, coeffs, residual, peak)``: Stokes I at ``ref_freq`` with
-        shape ``(npix_l, npix_m)``; ``coeffs`` of shape ``(order, npix_l, npix_m)``;
-        the worst fractional residual over bright pixels; and the peak absolute
+        ``(ref_plane_i, coeffs, residual, coverage, peak)``: Stokes I at ``ref_freq``
+        with shape ``(npix_l, npix_m)``; ``coeffs`` of shape ``(order, npix_l, npix_m)``;
+        the worst fractional residual over bright pixels; the fraction of emitting
+        pixels the fit covers (positive at every channel); and the peak absolute
         brightness per pixel across all Stokes and channels.
 
     Raises
@@ -219,8 +220,14 @@ def fit_log_polynomial(
     dof = max(nchan_fits - nterms, 1)
     rms = np.sqrt(residual_ss / dof)
 
-    bright = positive & (peak > tol)
+    # A log-polynomial can only represent a pixel that is positive at every
+    # channel. Emission that is not - a spectral line, an absorption feature - is
+    # dropped to zero, so report the fraction of emitting pixels the fit covers;
+    # the caller uses it to reject a POLY model that would discard flux.
+    emitting = peak > tol
+    bright = positive & emitting
     residual = float(rms[bright].max()) if bright.any() else 0.0
+    coverage = float(bright.sum() / emitting.sum()) if emitting.any() else 1.0
 
     ref_plane = np.where(positive, np.exp(np.clip(solution[0], -700, 700)), 0.0)
     coeffs = np.where(positive[np.newaxis], solution[1:], 0.0)
@@ -229,6 +236,7 @@ def fit_log_polynomial(
         ref_plane.reshape(npix_l, npix_m),
         coeffs.reshape(order, npix_l, npix_m),
         residual,
+        coverage,
         peak.reshape(npix_l, npix_m),
     )
 
