@@ -2,7 +2,9 @@ import subprocess
 
 import pytest
 
-from . import TESTDIR, InitTest
+from . import TESTDIR, InitTest, simms_executable
+
+SIMMS = simms_executable()
 
 
 @pytest.fixture
@@ -13,7 +15,7 @@ def params():
 def test_telsim_defaults(params):
     subprocess.check_call(
         [
-            "simms",
+            SIMMS,
             "telsim",
             "--telescope",
             "kat-7",
@@ -25,7 +27,7 @@ def test_telsim_defaults(params):
 def test_telsim_subarray(params):
     subprocess.check_call(
         [
-            "simms",
+            SIMMS,
             "telsim",
             "--telescope",
             "skamid-aastar",
@@ -38,7 +40,7 @@ def test_telsim_subarray(params):
 
 def test_telsim_skysim_chain(params):
     main_args = [
-        "simms",
+        SIMMS,
         "--chain",
         "--ms",
         params.random_named_directory(suffix=".ms"),
@@ -62,7 +64,7 @@ def test_telsim_skysim_chain(params):
 def test_error_telsim_chain_double_ms_spec(params):
     ms = params.random_named_directory(suffix=".ms")
     main_args = [
-        "simms",
+        SIMMS,
         "--chain",
         "--ms",
         ms,
