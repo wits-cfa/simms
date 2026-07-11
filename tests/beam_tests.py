@@ -194,9 +194,9 @@ def test_unity_provider_is_flat():
 
 
 def test_resolve_antenna_beams_heterogeneous():
-    telescope_names = ["MK", "MK", "MKE"]
+    telescope_names = ["MKAT-MA", "MKAT-MA", "MKAT-EA"]
     mount = ["ALT-AZ", "ALT-AZ", "ALT-AZ"]
-    config = {"MK": {"jimbeam": "L"}, "MKE": {"jimbeam": "MKAT-AA-L-JIM-2020"}}
+    config = {"MKAT-MA": {"jimbeam": "L"}, "MKAT-EA": {"jimbeam": "MKAT-AA-L-JIM-2020"}}
     ant_type, providers, is_altaz = resolve_antenna_beams(telescope_names, mount, config)
     np.testing.assert_array_equal(ant_type, [0, 0, 1])
     assert len(providers) == 2
@@ -206,7 +206,7 @@ def test_resolve_antenna_beams_heterogeneous():
 
 def test_resolve_antenna_beams_unmapped_and_equatorial():
     ant_type, providers, is_altaz = resolve_antenna_beams(
-        ["MK", "XX"], ["EQUATORIAL", "ALT-AZ"], {"MK": {"jimbeam": "L"}}
+        ["MKAT-MA", "XX"], ["EQUATORIAL", "ALT-AZ"], {"MKAT-MA": {"jimbeam": "L"}}
     )
     np.testing.assert_array_equal(ant_type, [0, 1])
     assert isinstance(providers[0], JimBeamProvider)
@@ -216,10 +216,10 @@ def test_resolve_antenna_beams_unmapped_and_equatorial():
 
 def test_load_beam_config(tmp_path):
     cfg = tmp_path / "beams.yaml"
-    cfg.write_text("MK:\n  jimbeam: L\nMKE:\n  jimbeam: MKAT-EA-L-JIM-2026.csv\n")
+    cfg.write_text("MKAT-MA:\n  jimbeam: L\nMKAT-EA:\n  jimbeam: MKAT-EA-L-JIM-2026.csv\n")
     loaded = load_beam_config(cfg)
-    assert loaded["MK"]["jimbeam"] == "L"
-    assert loaded["MKE"]["jimbeam"] == "MKAT-EA-L-JIM-2026.csv"
+    assert loaded["MKAT-MA"]["jimbeam"] == "L"
+    assert loaded["MKAT-EA"]["jimbeam"] == "MKAT-EA-L-JIM-2026.csv"
 
 
 # --- End-to-end beam application through predict_block ---------------------------
@@ -285,7 +285,7 @@ def _attach(
 
 def test_predict_beam_boresight_vs_offcentre():
     freqs = np.array([1.4e9])
-    config = {"MK": {"jimbeam": "L"}}
+    config = {"MKAT-MA": {"jimbeam": "L"}}
     uvw = np.array([[120.0, 60.0, 5.0]])
     times = np.array([BASE_TIME])
     a1, a2 = np.array([0]), np.array([1])
@@ -293,7 +293,11 @@ def test_predict_beam_boresight_vs_offcentre():
 
     for ell in (0.0, 0.05):  # boresight, then ~2.9 deg off-centre
         prepared = _attach(
-            _make_prepared(_lmn(ell, 0.0), np.array([2.0]), freqs, 2), ["MK", "MK"], ["ALT-AZ", "ALT-AZ"], config, 2
+            _make_prepared(_lmn(ell, 0.0), np.array([2.0]), freqs, 2),
+            ["MKAT-MA", "MKAT-MA"],
+            ["ALT-AZ", "ALT-AZ"],
+            config,
+            2,
         )
         vis = predict_block(prepared, uvw, times=times, antenna1=a1, antenna2=a2)
         # No-beam reference (same phasor), so the ratio is exactly the power beam.
@@ -309,13 +313,17 @@ def test_predict_beam_boresight_vs_offcentre():
 
 def test_predict_beam_heterogeneous_baseline():
     freqs = np.array([1.4e9])
-    config = {"MK": {"jimbeam": "L"}, "MKE": {"jimbeam": "MKAT-AA-UHF-JIM-2020"}}
+    config = {"MKAT-MA": {"jimbeam": "L"}, "MKAT-EA": {"jimbeam": "MKAT-AA-UHF-JIM-2020"}}
     uvw = np.array([[120.0, 60.0, 5.0]])
     times = np.array([BASE_TIME])
     ell = 0.04
     # Baseline mixes an MK antenna (type 0) with an MKE antenna (type 1).
     prepared = _attach(
-        _make_prepared(_lmn(ell, 0.0), np.array([2.0]), freqs, 2), ["MK", "MKE"], ["ALT-AZ", "ALT-AZ"], config, 2
+        _make_prepared(_lmn(ell, 0.0), np.array([2.0]), freqs, 2),
+        ["MKAT-MA", "MKAT-EA"],
+        ["ALT-AZ", "ALT-AZ"],
+        config,
+        2,
     )
     vis = predict_block(prepared, uvw, times=times, antenna1=np.array([0]), antenna2=np.array([1]))
     ref = predict_block(_make_prepared(_lmn(ell, 0.0), np.array([2.0]), freqs, 2), uvw)
@@ -330,7 +338,11 @@ def test_predict_beam_heterogeneous_baseline():
     np.testing.assert_allclose(vis[0, 0, 0], ref[0, 0, 0] * g_mk[0] * np.conj(g_mke[0]), rtol=1e-6)
     # A mixed baseline differs from a same-type (MK-MK) one.
     same = _attach(
-        _make_prepared(_lmn(ell, 0.0), np.array([2.0]), freqs, 2), ["MK", "MK"], ["ALT-AZ", "ALT-AZ"], config, 2
+        _make_prepared(_lmn(ell, 0.0), np.array([2.0]), freqs, 2),
+        ["MKAT-MA", "MKAT-MA"],
+        ["ALT-AZ", "ALT-AZ"],
+        config,
+        2,
     )
     vis_same = predict_block(same, uvw, times=times, antenna1=np.array([0]), antenna2=np.array([1]))
     assert not np.isclose(vis[0, 0, 0], vis_same[0, 0, 0])
@@ -338,11 +350,15 @@ def test_predict_beam_heterogeneous_baseline():
 
 def test_predict_beam_squint_breaks_xx_yy_and_zeros_crosshands():
     freqs = np.array([1.4e9])
-    config = {"MK": {"jimbeam": "L"}}
+    config = {"MKAT-MA": {"jimbeam": "L"}}
     uvw = np.array([[150.0, 70.0, 8.0]])
     times = np.array([BASE_TIME])
     prepared = _attach(
-        _make_prepared(_lmn(0.05, 0.03), np.array([3.0]), freqs, 4), ["MK", "MK"], ["ALT-AZ", "ALT-AZ"], config, 4
+        _make_prepared(_lmn(0.05, 0.03), np.array([3.0]), freqs, 4),
+        ["MKAT-MA", "MKAT-MA"],
+        ["ALT-AZ", "ALT-AZ"],
+        config,
+        4,
     )
     vis = predict_block(prepared, uvw, times=times, antenna1=np.array([0]), antenna2=np.array([1]))
     # Unpolarised source: cross-hands stay exactly zero.
@@ -354,7 +370,7 @@ def test_predict_beam_squint_breaks_xx_yy_and_zeros_crosshands():
 
 def test_predict_beam_mount_altaz_vs_equatorial():
     freqs = np.array([1.4e9])
-    config = {"MK": {"jimbeam": "L"}}
+    config = {"MKAT-MA": {"jimbeam": "L"}}
     uvw = np.array([[120.0, 60.0, 5.0]])
     ell = 0.05
     # Two timestamps 2 h apart -> different parallactic angles.
@@ -364,7 +380,7 @@ def test_predict_beam_mount_altaz_vs_equatorial():
 
     altaz = _attach(
         _make_prepared(_lmn(ell, 0.02), np.array([2.0]), freqs, 2),
-        ["MK", "MK"],
+        ["MKAT-MA", "MKAT-MA"],
         ["ALT-AZ", "ALT-AZ"],
         config,
         2,
@@ -376,7 +392,7 @@ def test_predict_beam_mount_altaz_vs_equatorial():
 
     equ = _attach(
         _make_prepared(_lmn(ell, 0.02), np.array([2.0]), freqs, 2),
-        ["MK", "MK"],
+        ["MKAT-MA", "MKAT-MA"],
         ["EQUATORIAL", "EQUATORIAL"],
         config,
         2,
@@ -465,7 +481,7 @@ def test_resolve_antenna_beams_fits_entry(tmp_path):
     path = tmp_path / "flat.fits"
     fits.PrimaryHDU(data=cube_data, header=hdr).writeto(path)
 
-    _, providers, _ = resolve_antenna_beams(["MKE"], ["ALT-AZ"], {"MKE": {"fits": str(path)}})
+    _, providers, _ = resolve_antenna_beams(["MKAT-EA"], ["ALT-AZ"], {"MKAT-EA": {"fits": str(path)}})
     assert isinstance(providers[0], FitsBeamProvider)
 
 
@@ -636,17 +652,17 @@ def test_basis_transform_matches_brightness_convention():
 def test_full_jones_equals_diagonal_for_jimbeam():
     # JimBeam has no cross-pol, so full 2x2 Jones must reproduce the diagonal kernel.
     freqs = np.array([1.35e9, 1.45e9])
-    config = {"MK": {"jimbeam": "L"}}
+    config = {"MKAT-MA": {"jimbeam": "L"}}
     uvw = np.array([[120.0, 60.0, 5.0]])
     times = np.array([BASE_TIME])
     a1, a2 = np.array([0]), np.array([1])
     lmn = np.concatenate([_lmn(0.0, 0.0), _lmn(0.05, -0.03)])
     flux = np.array([2.0, 1.5])
 
-    diag = _attach(_make_prepared(lmn, flux, freqs, 4), ["MK", "MK"], ["ALT-AZ", "ALT-AZ"], config, 4)
+    diag = _attach(_make_prepared(lmn, flux, freqs, 4), ["MKAT-MA", "MKAT-MA"], ["ALT-AZ", "ALT-AZ"], config, 4)
     full = _attach(
         _make_prepared(lmn, flux, freqs, 4),
-        ["MK", "MK"],
+        ["MKAT-MA", "MKAT-MA"],
         ["ALT-AZ", "ALT-AZ"],
         config,
         4,
@@ -715,7 +731,7 @@ def test_full_jones_leakage_matches_einsum_reference():
 def test_full_jones_circular_equals_S_Vlin_SH():
     # A polarised source: circular visibilities equal S . V_linear . S^H.
     freqs = np.array([1.4e9])
-    config = {"MK": {"jimbeam": "L"}}
+    config = {"MKAT-MA": {"jimbeam": "L"}}
     uvw = np.array([[130.0, 55.0, 6.0]])
     times = np.array([BASE_TIME])
     a1, a2 = np.array([0]), np.array([1])
@@ -728,7 +744,7 @@ def test_full_jones_circular_equals_S_Vlin_SH():
 
     lin = _attach(
         prep(),
-        ["MK", "MK"],
+        ["MKAT-MA", "MKAT-MA"],
         ["ALT-AZ", "ALT-AZ"],
         config,
         4,
@@ -737,7 +753,7 @@ def test_full_jones_circular_equals_S_Vlin_SH():
     )
     circ = _attach(
         prep(),
-        ["MK", "MK"],
+        ["MKAT-MA", "MKAT-MA"],
         ["ALT-AZ", "ALT-AZ"],
         config,
         4,

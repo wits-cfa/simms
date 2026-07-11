@@ -206,9 +206,9 @@ def test_heterogeneous_telescope_name(params):
     ds_ant = xds_from_table(f"{ms}::ANTENNA")[0]
     tnames = np.asarray(ds_ant.TELESCOPE_NAME.values).astype(str)
     sizes = np.asarray(ds_ant.DISH_DIAMETER.values)
-    assert set(tnames) == {"MK", "MKE"}
-    assert np.all(sizes[tnames == "MK"] == 13.5)
-    assert np.all(sizes[tnames == "MKE"] == 15.0)
+    assert set(tnames) == {"MKAT-MA", "MKAT-EA"}
+    assert np.all(sizes[tnames == "MKAT-MA"] == 13.5)
+    assert np.all(sizes[tnames == "MKAT-EA"] == 15.0)
 
 
 def check_circle_or_ellipse(u, v):

@@ -84,7 +84,7 @@ class _E2E(InitTest):
             fh.write("S 0h0m20s -31d0m0s 4.0\n")
         self.beams = self.random_named_file(suffix=".yaml")
         with open(self.beams, "w") as fh:
-            fh.write("MK:\n  jimbeam: L\nMKE:\n  jimbeam: L\n")
+            fh.write("MKAT-MA:\n  jimbeam: MKAT-MA-L-JIM-2026\nMKAT-EA:\n  jimbeam: MKAT-EA-L-JIM-2026\n")
 
 
 @pytest.fixture
