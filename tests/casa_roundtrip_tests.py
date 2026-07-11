@@ -11,16 +11,14 @@ import os
 
 import numpy as np
 import pytest
-from daskms import xds_from_ms
-from omegaconf import OmegaConf
+from daskms import xds_from_ms, xds_from_table
 
 from simms.apps import skysim
 from simms.telescope.generate_ms import create_ms
 
-from . import InitTest
+from . import InitTest, skysim_opts
 
 C = 299792458.0
-REF_FREQ_HZ = 1.42e9
 # Point sources at known positions with distinct fluxes (so a swap/mis-location is caught):
 # one on the phase centre, one offset in RA, one offset in Dec -- all well inside the field.
 SOURCES = [
@@ -28,48 +26,6 @@ SOURCES = [
     ("B", "0h2m0s", "-30d0m0s", 3.0),  # ~0.43 deg east
     ("C", "0h0m0s", "-30d40m0s", 2.0),  # ~0.67 deg south
 ]
-
-
-def _skysim_opts(ms, ascii_sky, column):
-    """Minimal skysim opts for a plain (no-beam) ASCII-model simulation."""
-    return OmegaConf.create(
-        {
-            "ms": ms,
-            "ascii_sky": ascii_sky,
-            "fits_sky": None,
-            "wsclean_sky": None,
-            "nworkers": 1,
-            "row_chunks": 100000,
-            "field_id": 0,
-            "spw_id": 0,
-            "sefd": None,
-            "polarisation": False,
-            "pol_basis": "linear",
-            "chan_chunks": None,
-            "source_schema": None,
-            "ascii_species": None,
-            "ascii_delimiter": None,
-            "primary_beam": None,
-            "beam_band": "L",
-            "beam_pa_step": 1.0,
-            "beam_jones": "diagonal",
-            "telescope_name_column": "TELESCOPE_NAME",
-            "input_column": None,
-            "mode": "sim",
-            "column": column,
-            "seed": None,
-            "log_level": "CRITICAL",
-            "pixel_tol": 1e-7,
-            "predict_backend": "auto",
-            "fits_spectrum": "flat",
-            "fits_spi": None,
-            "fits_ref_freq": None,
-            "fits_spectrum_order": 2,
-            "fits_sky_interp": "linear",
-            "fft_precision": "double",
-            "do_wstacking": True,
-        }
-    )
 
 
 class _Roundtrip(InitTest):
@@ -105,7 +61,9 @@ class _Roundtrip(InitTest):
     def imaging_grid(self):
         """A cell/imsize that oversamples the synthesised beam, derived from the uv coverage."""
         uvw = xds_from_ms(self.ms)[0].UVW.data.compute()
-        uvmax_lambda = np.hypot(uvw[:, 0], uvw[:, 1]).max() / (C / REF_FREQ_HZ)
+        # Highest channel frequency -> shortest wavelength -> finest beam to oversample.
+        max_freq = float(xds_from_table(f"{self.ms}::SPECTRAL_WINDOW")[0].CHAN_FREQ.data.max().compute())
+        uvmax_lambda = np.hypot(uvw[:, 0], uvw[:, 1]).max() * max_freq / C
         cell_arcsec = np.degrees(1.0 / uvmax_lambda) * 3600.0 / 6.0  # ~6x oversampling
         return cell_arcsec, 256
 
@@ -145,7 +103,7 @@ def test_casa_roundtrip_recovers_point_source(rt):
     assert imstat(f"{psf_prefix}.psf")["max"][0] == pytest.approx(1.0, abs=1e-4)
 
     # Step 3: simulate the sources into DATA.
-    skysim.runit(_skysim_opts(rt.ms, rt.sky, column="DATA"))
+    skysim.runit(skysim_opts(rt.ms, ascii_sky=rt.sky, column="DATA"))
     data = xds_from_ms(rt.ms)[0].DATA.data.compute()
     assert np.all(np.isfinite(data))
     assert np.abs(data).max() > 0
@@ -161,7 +119,9 @@ def test_casa_roundtrip_recovers_point_source(rt):
     # source); recovery is a few percent low from sub-pixel gridding and finite cleaning.
     for name, ra, dec, flux in SOURCES:
         st = imstat(imagename=f"{img_prefix}.image", region=f"circle[[{ra}, {dec}], 120arcsec]")
-        assert st["max"][0] == pytest.approx(flux, rel=0.1), f"source {name}: {st['max'][0]} vs {flux}"
+        peak = st.get("max")
+        assert peak is not None and len(peak), f"source {name}: no pixels in region (off-image?)"
+        assert peak[0] == pytest.approx(flux, rel=0.1), f"source {name}: {peak[0]} vs {flux}"
 
     # tclean must have created and populated MODEL_DATA (a real sky model -> finite, non-zero).
     model = xds_from_ms(rt.ms, columns=["MODEL_DATA"])[0].MODEL_DATA.data.compute()

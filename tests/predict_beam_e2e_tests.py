@@ -3,55 +3,16 @@
 import numpy as np
 import pytest
 from daskms import xds_from_ms
-from omegaconf import OmegaConf
 
 from simms.apps import skysim
 from simms.telescope.generate_ms import create_ms
 
-from . import InitTest
+from . import InitTest, skysim_opts
 
 
 def _opts(ms, ascii_sky, primary_beam=None, column="DATA"):
     """A minimal skysim opts object with sensible defaults for the ASCII path."""
-    return OmegaConf.create(
-        {
-            "ms": ms,
-            "ascii_sky": ascii_sky,
-            "fits_sky": None,
-            "wsclean_sky": None,
-            "nworkers": 1,
-            "row_chunks": 100000,
-            "field_id": 0,
-            "spw_id": 0,
-            "sefd": None,
-            "polarisation": False,
-            "pol_basis": "linear",
-            "chan_chunks": None,
-            "source_schema": None,
-            "ascii_species": None,
-            "ascii_delimiter": None,
-            "primary_beam": primary_beam,
-            "beam_band": "L",
-            "beam_pa_step": 1.0,
-            "beam_jones": "diagonal",
-            "telescope_name_column": "TELESCOPE_NAME",
-            "input_column": None,
-            "mode": "sim",
-            "column": column,
-            "seed": None,
-            "log_level": "CRITICAL",
-            # FITS-image path defaults (used only when fits_sky is set).
-            "pixel_tol": 1e-7,
-            "predict_backend": "auto",
-            "fits_spectrum": "flat",
-            "fits_spi": None,
-            "fits_ref_freq": None,
-            "fits_spectrum_order": 2,
-            "fits_sky_interp": "linear",
-            "fft_precision": "double",
-            "do_wstacking": True,
-        }
-    )
+    return skysim_opts(ms, ascii_sky=ascii_sky, primary_beam=primary_beam, column=column)
 
 
 class _E2E(InitTest):
