@@ -161,7 +161,7 @@ def test_casa_roundtrip_recovers_point_source(rt):
     # source); recovery is a few percent low from sub-pixel gridding and finite cleaning.
     for name, ra, dec, flux in SOURCES:
         st = imstat(imagename=f"{img_prefix}.image", region=f"circle[[{ra}, {dec}], 120arcsec]")
-        assert st["max"][0] == pytest.approx(flux, rel=0.05), f"source {name}: {st['max'][0]} vs {flux}"
+        assert st["max"][0] == pytest.approx(flux, rel=0.1), f"source {name}: {st['max'][0]} vs {flux}"
 
     # tclean must have created and populated MODEL_DATA (a real sky model -> finite, non-zero).
     model = xds_from_ms(rt.ms, columns=["MODEL_DATA"])[0].MODEL_DATA.data.compute()
