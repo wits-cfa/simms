@@ -374,6 +374,10 @@ def create_ms(
         "NAME": (("row"), da.from_array(["00"])),
         "NET_SIDEBAND": (("row"), da.array([1])),
         "FREQ_GROUP_NAME": (("row"), da.from_array(["GROUP 1"])),
+        # Frequency measure reference: 5 == TOPO (topocentric). Without this casacore
+        # defaults it to 0 (REST), which leaves the spectral frame undefined and makes CASA
+        # imaging fail ("No MeasFrame specified for conversion of Frequency").
+        "MEAS_FREQ_REF": (("row"), da.array([5])),
     }
 
     spw_table = daskms.Dataset(spw_ds)
