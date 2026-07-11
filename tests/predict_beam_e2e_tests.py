@@ -34,6 +34,7 @@ def _opts(ms, ascii_sky, primary_beam=None, column="DATA"):
             "beam_band": "L",
             "beam_pa_step": 1.0,
             "beam_jones": "diagonal",
+            "telescope_name_column": "TELESCOPE_NAME",
             "input_column": None,
             "mode": "sim",
             "column": column,
@@ -230,3 +231,36 @@ def test_fits_image_beam_accepts_circular_ms(e2e):
     assert np.all(np.isfinite(beam))
     assert not np.allclose(beam, nobeam)
     assert np.abs(beam).mean() <= np.abs(nobeam).mean()
+
+
+def test_configurable_telescope_name_column(e2e):
+    # telsim writes the label to a custom column; skysim must read the same name, and
+    # the default name (absent here) must fail clearly rather than infer the metadata.
+    ms = e2e.random_named_directory(suffix=".ms")
+    create_ms(
+        ms,
+        telescope_name="skamid",
+        pointing_direction=["J2000", "0h0m20s", "-30deg"],
+        dtime=600,
+        ntimes=2,
+        start_freq="1420MHz",
+        dfreq="4MHz",
+        nchan=2,
+        correlations=["XX", "YY"],
+        row_chunks=100000,
+        sefd=None,
+        column="DATA",
+        start_time="2025-03-06T20:00:00",
+        smooth=None,
+        fit_order=None,
+        subarray_range=[60, 68],
+        telescope_name_column="DISH_TYPE",
+    )
+    ok = _opts(ms, e2e.sky, primary_beam=e2e.beams, column="BEAM")
+    ok.telescope_name_column = "DISH_TYPE"
+    skysim.runit(ok)  # reads the custom column
+    assert np.all(np.isfinite(xds_from_ms(ms)[0].BEAM.data.compute()))
+
+    bad = _opts(ms, e2e.sky, primary_beam=e2e.beams, column="BEAM2")  # default TELESCOPE_NAME, absent
+    with pytest.raises(RuntimeError, match="TELESCOPE_NAME"):
+        skysim.runit(bad)

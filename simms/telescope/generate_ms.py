@@ -66,6 +66,7 @@ def create_ms(
     subarray_file: File = None,
     low_source_limit: Union[float, str] = None,
     high_source_limit: Union[float, str] = None,
+    telescope_name_column: str = "TELESCOPE_NAME",
 ):
     """Generate a CASA Measurement Set (MS) for a simulated observation.
 
@@ -407,8 +408,9 @@ def create_ms(
         "STATION": (("row"), da.from_array(names)),
         "TYPE": (("row"), da.from_array(teltype)),
         # Per-antenna telescope/type label used by skysim to select a primary beam
-        # (heterogeneous arrays). Non-standard ANTENNA column; added via the dataset.
-        "TELESCOPE_NAME": (("row"), da.from_array(telescope_names, chunks=num_ants)),
+        # (heterogeneous arrays). Non-standard ANTENNA column; the name is configurable
+        # (default TELESCOPE_NAME) because it is still a provisional spec decision.
+        telescope_name_column: (("row"), da.from_array(telescope_names, chunks=num_ants)),
     }
 
     ant_table = daskms.Dataset(ant_ds)

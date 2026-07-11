@@ -62,8 +62,17 @@ class _BeamContext:
         beam_config = load_beam_config(opts.primary_beam)
         ant_ds = xds_from_table(f"{ms}::ANTENNA")[0]
         pol_ds = xds_from_table(f"{ms}::POLARIZATION")[0]
+        telescope_col = opts.telescope_name_column
+        if telescope_col not in ant_ds:
+            # The per-antenna telescope name is required and never inferred (a single,
+            # authoritative source). Fail clearly instead of guessing from e.g. dish size.
+            raise RuntimeError(
+                f"The ANTENNA table has no '{telescope_col}' column (the per-antenna telescope "
+                f"name that selects a primary beam). Create the MS with telsim, or point "
+                f"--telescope-name-column at the column that holds it."
+            )
         tnames, mount, pos, t0, t1, interval, corr_type = dask.compute(
-            ant_ds.TELESCOPE_NAME.data,
+            ant_ds[telescope_col].data,
             ant_ds.MOUNT.data,
             ant_ds.POSITION.data,
             msds.TIME.data.min(),

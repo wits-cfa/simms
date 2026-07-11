@@ -150,6 +150,14 @@ cabs:
         dtype: str
         default: diagonal
         choices: ['diagonal', 'full']
+      telescope-name-column:
+        info: >-
+          Name of the ANTENNA-table column holding the per-antenna telescope/type label
+          that maps to a beam model. Must match the column telsim wrote (default
+          TELESCOPE_NAME). The primary beam requires this column; it is never inferred.
+        dtype: str
+        default: TELESCOPE_NAME
+        abbreviation: tnc
       field-id:
         info: Field ID
         dtype: int
@@ -219,6 +227,11 @@ cabs:
         dtype: File
         required: no
         abbreviation: subfile
+      telescope-name-column:
+        info: Name of the ANTENNA-table column that holds the per-antenna telescope/type label (used by skysim to select a primary beam). Provisional spec; configurable so skysim can be pointed at the same name.
+        dtype: str
+        default: TELESCOPE_NAME
+        abbreviation: tnc
       direction:
         info: Direction of field centre for MS. Example, J2000,0h24m20s,-30d12m33s or J2000,0:24:20,-30:12:33. Default is J2000,1h0m0s,-31d0m0s.
         dtype: str

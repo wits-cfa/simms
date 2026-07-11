@@ -75,4 +75,5 @@ def runit(opts):
         subarray_file=subarray_file,
         low_source_limit=l_src_limit,
         high_source_limit=h_src_limit,
+        telescope_name_column=opts.telescope_name_column,
     )
