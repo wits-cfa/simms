@@ -34,8 +34,8 @@ jobs:
         python -m pip install --group tests
     - name: Lint with ruff
       run: |
-        ruff check
-        ruff format --check --diff
+        ruff check src tests
+        ruff format --check --diff src tests
     - name: Run unit tests
       run: |
         pytest tests/

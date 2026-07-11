@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "simms"
+abstract: >-
+  Simms 3.0 -- a tool for end-to-end simulations of radio interferometer
+  observations. `telsim` builds a Measurement Set from a telescope layout;
+  `skysim` predicts model visibilities from a sky model into it.
+type: software
+authors:
+  - family-names: "Makhathini"
+    given-names: "Sphesihle"
+    email: "sphemakh@gmail.com"
+  - family-names: "Naidoo"
+    given-names: "Mika"
+    email: "mika.naidoo25@gmail.com"
+  - family-names: "Ramanyimi"
+    given-names: "Mukundi"
+    email: "ramayimimukundi6@gmail.com"
+  - family-names: "Semane"
+    given-names: "Shibre"
+    email: "sshibre0@gmail.com"
+  - family-names: "Mapunda"
+    given-names: "Galefang"
+    email: "allymap@gmail.com"
+  - family-names: "Simelane"
+    given-names: "Senkhosi"
+    email: "senkhxsi@gmail.com"
+version: "3.0beta3"
+license: GPL-3.0-only
+repository-code: "https://github.com/wits-cfa/simms"
+url: "https://simms.readthedocs.io"
+keywords:
+  - radio astronomy
+  - radio interferometry
+  - simulation
+  - measurement set

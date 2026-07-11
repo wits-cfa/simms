@@ -34,10 +34,21 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.sdist]
-include = ["simms"]
+include = [
+    "/src/simms",
+    "/README.rst",
+    "/LICENSE",
+    "/CHANGES.md",
+    "/AGENTS.md",
+    "/CONTRIBUTING.md",
+    "/CODE_OF_CONDUCT.md",
+    "/SECURITY.md",
+    "/CITATION.cff",
+    "/pyproject.toml",
+]
 
 [tool.hatch.build.targets.wheel]
-include = ["simms"]
+packages = ["src/simms"]
 
 [project.scripts]
 simms = "simms.apps.main:cli"
@@ -71,8 +82,9 @@ casa = [
 
 docs = [
     "Sphinx>=7.0,<9.0",
+    "furo>=2024.1",
+    "myst-parser>=2.0",
     "sphinx-copybutton",
-    "sphinx-rtd-theme",
     "sphinx_click",
     "sphinx-autodoc-typehints",
     "docutils",
@@ -88,3 +100,4 @@ dev = [
 [tool.pytest.ini_options]
 python_files = ["*_tests.py"]
 testpaths = ["tests"]
+pythonpath = ["src"]
