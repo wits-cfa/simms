@@ -79,16 +79,15 @@ def parallactic_angle(times: np.ndarray, ra0: float, dec0: float, lon: float, la
 # |taper(0.5)|**2 = 0.5. katbeam truncates this to 1.18896478.
 R_FWHM = 1.1889647809329453
 
-# Bundled coefficient tables. The MKAT-AA-* models are vendored from katbeam
-# (BSD-3-Clause, (c) 2020 SARAO). The MKAT-MA-* (MeerKAT) and MKAT-EA-* (MeerKAT
-# Extension) tables are transcribed from SARAO report SSA-0004B-002 (see beam_data/NOTICE).
+# Bundled coefficient tables (see beam_data/NOTICE). The MKAT-AA-* models are
+# vendored from katbeam (BSD-3-Clause, (c) 2020 SARAO); the rest ship as package data.
 BUILTIN_BEAMS = {
     "MKAT-AA-L-JIM-2020": "MKAT-AA-L-JIM-2020.csv",
     "MKAT-AA-UHF-JIM-2020": "MKAT-AA-UHF-JIM-2020.csv",
-    "MKAT-MA-L-JIM-2026": "MKAT-MA-L-JIM-2026.csv",  # MeerKAT (MK), L band
-    "MKAT-EA-L-JIM-2026": "MKAT-EA-L-JIM-2026.csv",  # MeerKAT Extension (MKE), SKA band 2
-    "MKAT-MA-S-JIM-2020": "MKAT-MA-S-JIM-2020.csv",  # MeerKAT (MK), S band
-    "MKAT-EA-S3-JIM-2026": "MKAT-EA-S3-JIM-2026.csv",  # MeerKAT Extension (MKE), S band (S3)
+    "MKAT-MA-L-JIM-2026": "MKAT-MA-L-JIM-2026.csv",  # MeerKAT, L band
+    "MKAT-EA-L-JIM-2026": "MKAT-EA-L-JIM-2026.csv",  # MeerKAT Extension, band 2
+    "MKAT-MA-S-JIM-2020": "MKAT-MA-S-JIM-2020.csv",  # MeerKAT, S band
+    "MKAT-EA-S3-JIM-2026": "MKAT-EA-S3-JIM-2026.csv",  # MeerKAT Extension, S band (S3)
 }
 
 
@@ -299,7 +298,7 @@ class JimBeamProvider(BeamProvider):
         self.beam = beam
 
     def _eval(self, l_feed, m_feed, freqs):
-        # The report grids the beam in SIN direction cosines scaled to degrees
+        # The model grids the beam in SIN direction cosines scaled to degrees
         # (l_deg = 180/pi * l), and katbeam consumes MHz.
         x_deg = np.degrees(l_feed)
         y_deg = np.degrees(m_feed)
