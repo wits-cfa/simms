@@ -389,6 +389,10 @@ class ASCIISkymodel:
                     source.set_source_param(alias_to_field[param], value)
                 # source has been fully set, finalise and add it to rest of the sources
                 source.finalise()
+                # Record the source's line index in the file (header is line 0, so the first
+                # data line -- counter 0 -- is line 1). Lets consumers map a parsed source back
+                # to its original text line without re-deriving the comment/blank-line skips.
+                source.lineno = counter + 1
                 sources.append(source)
 
         self.sources = sources

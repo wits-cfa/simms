@@ -157,6 +157,8 @@ def test_apply_then_correct_ascii_is_identity(fx):
     with open(sky, "w") as fh:
         fh.write("#format: name ra dec stokes_i\n")
         fh.write("A 1h0m0s -31d0m0s 5.0\n")  # at phase centre
+        fh.write("\n")  # blank line between sources
+        fh.write("# a comment between sources -- lineno mapping must skip it\n")
         fh.write("B 1h0m0s -31d30m0s 3.0\n")  # ~0.5 deg off
 
     apparent = fx.random_named_file(suffix=".txt")

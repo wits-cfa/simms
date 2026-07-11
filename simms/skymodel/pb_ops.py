@@ -196,36 +196,40 @@ def apply_correct_ascii(opts, invert):
     ell, emm = (lm[:, 0], lm[:, 1]) if len(lm) else (np.array([]), np.array([]))
     A = _averaged_beam(provider_from(opts), ell, emm, obs["ra0"], obs["dec0"], obs, opts.beam_pa_step)
 
+    # ASCIISkymodel is read-only, so we edit the flux fields in the original text (preserving
+    # formatting, comments and unknown columns) rather than reserialising. Each parsed source
+    # carries its line index (source.lineno) -- the single source of truth for which line it
+    # came from -- so we never re-implement the comment/blank-line skipping here.
     lines = open(opts.ascii_sky).read().splitlines()
-    header = next(ln for ln in lines if ln.strip().startswith("#format:"))
-    cols = header.replace("#format:", "").strip().split()
+    cols = lines[0].replace("#format:", "").strip().split(sky.delimiter)
     stokes_idx = [cols.index(c) for c in ("stokes_i", "stokes_q", "stokes_u", "stokes_v") if c in cols]
 
-    out_lines, src = [], 0
-    for ln in lines:
-        # Mirror ASCIISkymodel's source counting exactly: it skips unstripped ``#`` lines and
-        # empty rows, so ``src`` stays aligned with the beam array ``A`` built from sky.sources.
-        if ln.startswith("#") or not ln.strip().split(sky.delimiter):
-            out_lines.append(ln)
-            continue
+    dropped = set()
+    for src, source in enumerate(sky.sources):
         a = A[src]
-        src += 1
         if invert and a < opts.pb_cutoff:  # source outside the beam -> drop it
+            dropped.add(source.lineno)
             continue
         factor = (1.0 / a) if invert else a
-        fields = ln.split()
+        fields = lines[source.lineno].split(sky.delimiter)
         for idx in stokes_idx:
             if idx < len(fields) and fields[idx].lower() not in ("null", "none", ""):
                 try:
                     fields[idx] = f"{float(fields[idx]) * factor:.8g}"
                 except ValueError:
                     pass
-        out_lines.append(" ".join(fields))
+        lines[source.lineno] = (sky.delimiter or " ").join(fields)
 
+    out_lines = [ln for i, ln in enumerate(lines) if i not in dropped]
     output = opts.output or ("corrected.txt" if invert else "apparent.txt")
     with open(output, "w") as fh:
         fh.write("\n".join(out_lines) + "\n")
-    log.info("%s primary beam to %d sources -> %s", "Corrected" if invert else "Applied", src, output)
+    log.info(
+        "%s primary beam to %d sources -> %s",
+        "Corrected" if invert else "Applied",
+        len(sky.sources) - len(dropped),
+        output,
+    )
 
 
 def provider_from(opts):
