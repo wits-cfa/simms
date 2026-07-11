@@ -262,6 +262,8 @@ def attach_image_beam(
     duration: float,
     pa_step: float,
     mid_freq: float,
+    phase_ra0: float | None = None,
+    phase_dec0: float | None = None,
 ) -> PreparedFitsSky:
     """Multiply the apparent sky by a parallactic-angle-averaged power beam (in place).
 
@@ -270,13 +272,19 @@ def attach_image_beam(
     heterogeneity and cross-hand leakage -- correct only for a homogeneous array. The
     beam is applied per channel where the model has a real channel axis (DFT components,
     a spectral CUBE), otherwise at the band mid-frequency (single FLAT/POLY plane).
+
+    ``ra0``/``dec0`` are the beam (antenna pointing) centre; ``phase_ra0``/``phase_dec0`` are
+    the phase centre the image ``l/m`` are referenced to, so the beam is sampled at each pixel's
+    offset from where the dish points.
     """
-    from simms.skymodel.beams import image_power_beam, pa_sample_grid
+    from simms.skymodel.beams import image_power_beam, pa_sample_grid, reproject_lm
 
     _, chi_grid = pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step)
 
     if prepared.backend == "dft":
         ell, emm = prepared.lmn[:, 0], prepared.lmn[:, 1]
+        if phase_ra0 is not None:
+            ell, emm = reproject_lm(ell, emm, phase_ra0, phase_dec0, ra0, dec0)
         power = image_power_beam(provider, is_altaz, ell, emm, prepared.chan_freqs, chi_grid)
         prepared.bmat *= power[:, None, :]  # (ncomp, nspec, nchan)
         return prepared
@@ -284,9 +292,12 @@ def attach_image_beam(
     npix_l, npix_m, nchan_model = prepared.planes.shape[1], prepared.planes.shape[2], prepared.planes.shape[3]
     i_pix, j_pix = (a.ravel() for a in np.meshgrid(np.arange(npix_l), np.arange(npix_m), indexing="ij"))
     lmn = prepared.grid.pixel_lmn(i_pix, j_pix)
+    ell, emm = lmn[:, 0], lmn[:, 1]
+    if phase_ra0 is not None:
+        ell, emm = reproject_lm(ell, emm, phase_ra0, phase_dec0, ra0, dec0)
     per_channel = nchan_model == prepared.chan_freqs.size
     freqs = prepared.chan_freqs if per_channel else np.array([mid_freq])
-    power = image_power_beam(provider, is_altaz, lmn[:, 0], lmn[:, 1], freqs, chi_grid)
+    power = image_power_beam(provider, is_altaz, ell, emm, freqs, chi_grid)
     prepared.planes *= power.reshape(npix_l, npix_m, freqs.size)[None]
     return prepared
 

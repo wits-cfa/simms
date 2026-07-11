@@ -86,7 +86,13 @@ class _BeamContext:
             tnames, mount, beam_config, opts.beam_band
         )
         self.lon, self.lat = _array_lonlat(pos)
-        self.ra0, self.dec0, self.ncorr = ra0, dec0, ncorr
+        # The beam is centred on the antenna pointing centre (POINTING.DIRECTION), not the phase
+        # centre; source l/m are prepared for the phase centre, so keep it too for reprojection.
+        from simms.skymodel.beams import read_pointing_centre
+
+        self.phase_ra0, self.phase_dec0 = ra0, dec0
+        self.ra0, self.dec0 = read_pointing_centre(ms, ra0, dec0)
+        self.ncorr = ncorr
         self.t_start = float(t0)
         self.duration = float(t1 - t0) + float(interval)
         self.pa_step = opts.beam_pa_step
@@ -124,6 +130,8 @@ class _BeamContext:
             self.duration,
             self.pa_step,
             mid_freq,
+            phase_ra0=self.phase_ra0,
+            phase_dec0=self.phase_dec0,
         )
 
     def attach(self, prepared):
@@ -157,6 +165,8 @@ class _BeamContext:
             self.ncorr,
             full_jones=self.full_jones,
             basis_transform=basis_transform,
+            phase_ra0=self.phase_ra0,
+            phase_dec0=self.phase_dec0,
         )
 
 

@@ -21,35 +21,12 @@ log = logging.getLogger(BIN.primary_beam)
 # --------------------------------------------------------------------- geometry
 
 
-def _beam_centre(ms, phase_dir):
-    """Antenna pointing centre (radians) -- the primary beam sits here, not on the phase centre.
-
-    Reads ``POINTING.DIRECTION`` (J2000 RA/Dec, poly order 0), which is the direction the
-    dishes are commanded to; the correlator phase centre (``FIELD.PHASE_DIR``) is a separate,
-    freely-shiftable quantity. Falls back to the phase centre when the MS has no usable
-    POINTING table (common for externally produced MSs).
-    """
-    from daskms import xds_from_table
-
-    try:
-        pnt = xds_from_table(f"{ms}::POINTING")[0]
-        direction = pnt.DIRECTION.data
-        if direction.shape[0] == 0:
-            raise ValueError("empty POINTING table")
-        # (row, poly, radec): first antenna/time row, constant-term of the direction polynomial.
-        radec = np.asarray(direction[0, 0].compute(), dtype=np.float64)
-        return float(radec[0]), float(radec[1])
-    except Exception as exc:
-        log.warning("No usable POINTING.DIRECTION (%s); using the phase centre as the beam centre.", exc)
-        return float(phase_dir[0][0]), float(phase_dir[0][1])
-
-
 def _observation(ms, field_id=0, spw_id=0):
     """Read the geometry an averaged beam needs from an MS (for the given field/spw)."""
     import dask
     from daskms import xds_from_ms, xds_from_table
 
-    from simms.skymodel.beams import array_lonlat
+    from simms.skymodel.beams import array_lonlat, read_pointing_centre
 
     ant = xds_from_table(f"{ms}::ANTENNA")[0]
     spw = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
@@ -64,7 +41,8 @@ def _observation(ms, field_id=0, spw_id=0):
         field.PHASE_DIR.data[int(field_id)],
     )
     lon, lat = array_lonlat(pos)
-    ra0, dec0 = _beam_centre(ms, phase_dir)  # antenna pointing centre, not the phase centre
+    # Beam centre is the antenna pointing centre, not the phase centre.
+    ra0, dec0 = read_pointing_centre(ms, phase_dir[0][0], phase_dir[0][1])
     return {
         "t_start": float(t0),
         "duration": float(t1 - t0) + float(interval),
