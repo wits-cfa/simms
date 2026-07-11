@@ -21,6 +21,29 @@ log = logging.getLogger(BIN.primary_beam)
 # --------------------------------------------------------------------- geometry
 
 
+def _beam_centre(ms, phase_dir):
+    """Antenna pointing centre (radians) -- the primary beam sits here, not on the phase centre.
+
+    Reads ``POINTING.DIRECTION`` (J2000 RA/Dec, poly order 0), which is the direction the
+    dishes are commanded to; the correlator phase centre (``FIELD.PHASE_DIR``) is a separate,
+    freely-shiftable quantity. Falls back to the phase centre when the MS has no usable
+    POINTING table (common for externally produced MSs).
+    """
+    from daskms import xds_from_table
+
+    try:
+        pnt = xds_from_table(f"{ms}::POINTING")[0]
+        direction = pnt.DIRECTION.data
+        if direction.shape[0] == 0:
+            raise ValueError("empty POINTING table")
+        # (row, poly, radec): first antenna/time row, constant-term of the direction polynomial.
+        radec = np.asarray(direction[0, 0].compute(), dtype=np.float64)
+        return float(radec[0]), float(radec[1])
+    except Exception as exc:
+        log.warning("No usable POINTING.DIRECTION (%s); using the phase centre as the beam centre.", exc)
+        return float(phase_dir[0][0]), float(phase_dir[0][1])
+
+
 def _observation(ms, field_id=0, spw_id=0):
     """Read the geometry an averaged beam needs from an MS (for the given field/spw)."""
     import dask
@@ -41,14 +64,15 @@ def _observation(ms, field_id=0, spw_id=0):
         field.PHASE_DIR.data[int(field_id)],
     )
     lon, lat = array_lonlat(pos)
+    ra0, dec0 = _beam_centre(ms, phase_dir)  # antenna pointing centre, not the phase centre
     return {
         "t_start": float(t0),
         "duration": float(t1 - t0) + float(interval),
         "lon": lon,
         "lat": lat,
         "freqs": np.asarray(chan_freq, dtype=np.float64),
-        "ra0": float(phase_dir[0][0]),
-        "dec0": float(phase_dir[0][1]),
+        "ra0": ra0,
+        "dec0": dec0,
     }
 
 
@@ -58,6 +82,19 @@ def _averaged_beam(provider, ell, emm, ra0, dec0, obs, pa_step):
 
     _, chi_grid = pa_sample_grid(obs["t_start"], obs["duration"], ra0, dec0, obs["lon"], obs["lat"], pa_step)
     return averaged_power_beam(provider, ell, emm, obs["freqs"], chi_grid)
+
+
+def _angular_separation(ra1, dec1, ra2, dec2):
+    """Great-circle angle (radians) between two directions given in radians."""
+    return float(
+        np.arccos(
+            np.clip(
+                np.sin(dec1) * np.sin(dec2) + np.cos(dec1) * np.cos(dec2) * np.cos(ra1 - ra2),
+                -1.0,
+                1.0,
+            )
+        )
+    )
 
 
 # --------------------------------------------------------------------- to-fits
@@ -162,14 +199,30 @@ def apply_correct_image(opts, invert):
         out_dtype = hdul[0].data.dtype
 
     cel = WCS(header).celestial
-    ra0 = np.radians(cel.wcs.crval[cel.wcs.lng])
-    dec0 = np.radians(cel.wcs.crval[cel.wcs.lat])
+    # The primary beam sits on the antenna pointing centre (POINTING.DIRECTION) -- not the
+    # correlator phase centre, and not necessarily the image's reference pixel. Centre the beam
+    # (pixel l/m and the PA track) there; the image WCS only maps pixels to world coordinates.
+    obs = _observation(opts.ms, opts.field_id, opts.spw_id)
+    ra0, dec0 = obs["ra0"], obs["dec0"]
+    img_ra0 = np.radians(cel.wcs.crval[cel.wcs.lng])
+    img_dec0 = np.radians(cel.wcs.crval[cel.wcs.lat])
+    sep = _angular_separation(img_ra0, img_dec0, ra0, dec0)
+    if sep > np.radians(1.0 / 3600.0):  # > 1 arcsec: image reference and antenna pointing disagree
+        log.warning(
+            "Image reference pixel (%.6f, %.6f deg) differs from the antenna pointing centre "
+            "(%.6f, %.6f deg) by %.1f arcsec; centring the beam on the pointing centre.",
+            np.degrees(img_ra0),
+            np.degrees(img_dec0),
+            np.degrees(ra0),
+            np.degrees(dec0),
+            np.degrees(sep) * 3600.0,
+        )
+
     # Standard axis order: FITS axis 1 = RA (numpy last), axis 2 = DEC (numpy second-last).
     npix_dec, npix_ra = data.shape[-2], data.shape[-1]
     i_ra, j_dec = np.meshgrid(np.arange(npix_ra), np.arange(npix_dec))  # (npix_dec, npix_ra)
 
     ell, emm = pixel_lm(cel, ra0, dec0, i_ra.ravel(), j_dec.ravel())
-    obs = _observation(opts.ms, opts.field_id, opts.spw_id)
     A = _averaged_beam(provider_from(opts), ell, emm, ra0, dec0, obs, opts.beam_pa_step)
     A = A.reshape(npix_dec, npix_ra)
 

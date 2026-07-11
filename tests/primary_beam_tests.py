@@ -1,8 +1,11 @@
 """Tests for the `simms primary-beam` utility (to-fits, tag-ms, apply, correct)."""
 
+import logging
+
 import numpy as np
 import pytest
 from astropy.io import fits
+from astropy.wcs import WCS
 from daskms import xds_from_table
 from omegaconf import OmegaConf
 
@@ -11,7 +14,7 @@ from simms.skymodel.beams import CosineTaperBeam, FitsBeamProvider, JimBeamProvi
 from simms.telescope.generate_ms import create_ms
 
 from . import InitTest
-from .predict_fits_tests import make_header
+from .predict_fits_tests import DEC0_DEG, RA0_DEG, make_header
 
 
 def _opts(mode, **over):
@@ -150,6 +153,64 @@ def test_apply_then_correct_image_is_identity(fx):
     np.testing.assert_allclose(rec[offsrc], original[offsrc], rtol=1e-4)
     # Corners (beam below cutoff) are blanked by correct.
     assert np.isnan(rec[0, 0])
+
+
+def test_apply_centres_beam_on_pointing_centre(fx, caplog):
+    # Image reference pixel offset 0.4 deg north of the pointing centre (dec -31). The primary
+    # beam belongs to the antenna pointing centre (POINTING.DIRECTION), not the image reference.
+    npix = 256
+    header = make_header(npix, nstokes=1, nchan=1, crval2=DEC0_DEG + 0.4)
+    img = fx.random_named_file(suffix=".fits")
+    fits.PrimaryHDU(data=np.ones((npix, npix), np.float32), header=header).writeto(img)
+
+    out = fx.random_named_file(suffix=".fits")
+    with caplog.at_level(logging.WARNING):
+        primary_beam.runit(_opts("apply", ms=fx.ms, fits_sky=img, output=out, log_level="WARNING"))
+    assert any("pointing centre" in r.message for r in caplog.records)
+
+    # Uniform input -> the apparent image *is* the power beam A(l, m). It must peak on the
+    # pointing centre, not on the image reference pixel (which is 0.4 deg off it).
+    app = fits.getdata(out)
+    ((col, row),) = WCS(header).celestial.wcs_world2pix([[RA0_DEG, DEC0_DEG]], 0)
+    pc = (int(round(row)), int(round(col)))  # numpy [dec, ra]
+    ref = (npix // 2, npix // 2)  # image reference pixel
+    assert app[pc] > app[ref]  # would fail if the beam were centred on the image reference
+    assert app[pc] > 0.9  # ~on-axis at the pointing centre
+
+
+def _set_pointing_direction(ms, ra_rad, dec_rad):
+    """Overwrite POINTING.DIRECTION so it differs from FIELD.PHASE_DIR (which simms keeps equal)."""
+    import dask
+    import dask.array as da
+    from daskms import xds_from_table, xds_to_table
+
+    pnt = xds_from_table(f"{ms}::POINTING")[0]
+    nrow = pnt.DIRECTION.shape[0]
+    newdir = np.broadcast_to(np.array([ra_rad, dec_rad]), (nrow, 1, 2)).copy()
+    pnt = pnt.assign(DIRECTION=(("row", "point-poly", "radec"), da.from_array(newdir, chunks=(nrow, 1, 2))))
+    dask.compute(xds_to_table([pnt], f"{ms}::POINTING", columns=["DIRECTION"]))
+
+
+def test_apply_uses_pointing_direction_not_phase_centre(fx):
+    # Point the dishes 0.3 deg north of the phase centre; the image WCS stays on the phase centre.
+    _set_pointing_direction(fx.ms, np.radians(RA0_DEG), np.radians(DEC0_DEG + 0.3))
+
+    npix = 256
+    header = make_header(npix, nstokes=1, nchan=1)  # reference == phase centre (dec -31)
+    img = fx.random_named_file(suffix=".fits")
+    fits.PrimaryHDU(data=np.ones((npix, npix), np.float32), header=header).writeto(img)
+
+    out = fx.random_named_file(suffix=".fits")
+    primary_beam.runit(_opts("apply", ms=fx.ms, fits_sky=img, output=out))
+
+    # The beam must follow POINTING.DIRECTION (dec -30.7), not FIELD.PHASE_DIR (dec -31).
+    app = fits.getdata(out)
+    wcs = WCS(header).celestial
+    ((pc_col, pc_row),) = wcs.wcs_world2pix([[RA0_DEG, DEC0_DEG + 0.3]], 0)  # pointing pixel
+    pnt_pix = (int(round(pc_row)), int(round(pc_col)))
+    phase_pix = (npix // 2, npix // 2)  # phase centre / image reference pixel
+    assert app[pnt_pix] > app[phase_pix]  # follows POINTING, not PHASE_DIR
+    assert app[pnt_pix] > 0.9
 
 
 def test_apply_then_correct_ascii_is_identity(fx):
