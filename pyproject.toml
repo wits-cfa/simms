@@ -68,7 +68,7 @@ ruff = [
 ]
 
 tests = [
-    "pytest>=7.1.3",
+    "pytest>=9.0.3",
     {include-group = "ruff"},
 ]
 
