@@ -393,9 +393,19 @@ cabs:
         info: Number of pixels per side for the to-fits grid.
         dtype: int
         default: 256
-      freqs:
-        info: Frequencies for the to-fits cube as "start,end,n" in Hz; defaults to the beam's tabulated frequencies.
+      start-freq:
+        info: Start frequency of the to-fits cube, e.g. "856MHz". Defaults to the beam's first tabulated frequency.
         dtype: str
+        abbreviation: sf
+      chan-width:
+        info: Channel width of the to-fits cube, e.g. "10MHz". Defaults to spanning the beam's frequency range across --nchan.
+        dtype: str
+        abbreviation: cw
+      nchan:
+        info: Number of output channels in the to-fits cube. Defaults to the beam's tabulated channel count.
+        dtype: int
+        required: no
+        abbreviation: nc
       nworkers:
         info: Number of worker threads.
         dtype: int

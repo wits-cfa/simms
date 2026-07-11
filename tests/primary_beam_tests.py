@@ -31,7 +31,9 @@ def _opts(mode, **over):
         "pb_cutoff": 0.1,
         "pixel_size": "2arcmin",
         "npix": 64,
-        "freqs": None,
+        "start_freq": None,
+        "chan_width": None,
+        "nchan": None,
         "nworkers": 1,
         "log_level": "CRITICAL",
     }
@@ -71,14 +73,17 @@ def fx():
 
 def test_to_fits_roundtrips_through_provider(fx):
     out = fx.random_named_file(suffix=".fits")
-    # 1.4 GHz is a node of this freq grid, so the round-trip has no frequency-interp error.
+    # start 1300 MHz, 100 MHz channels x 3 -> [1.3, 1.4, 1.5] GHz; 1.4 GHz is a node, so the
+    # round-trip has no frequency-interp error.
     primary_beam.runit(
         _opts(
             "to-fits",
             beam_pattern="MKAT-EA-L-JIM-2026",
             pixel_size="1arcmin",
             npix=128,
-            freqs="1.3e9,1.5e9,3",
+            start_freq="1300MHz",
+            chan_width="100MHz",
+            nchan=3,
             output=out,
         )
     )

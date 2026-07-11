@@ -73,17 +73,23 @@ def to_fits(opts):
         raise RuntimeError("to-fits needs an analytic cosine-taper beam (CSV or built-in), not a FITS cube.")
     beam = provider.beam
 
+    from simms.telescope.generate_ms import parse_frequency
+
     pixel_rad = Angle(opts.pixel_size).to_value("rad")
     npix = int(opts.npix)
     grid = (np.arange(npix) - npix // 2) * pixel_rad  # direction cosines, centred at 0
 
-    if opts.freqs:
-        start, end, nfreq = opts.freqs.split(",")
-        freqs = np.linspace(float(start), float(end), int(nfreq))
+    # Uniform frequency grid (the FITS FREQ axis is linear and the model is continuous in
+    # frequency, so a uniform resample loses nothing). Defaults follow the beam's table.
+    nchan = int(opts.nchan) if opts.nchan else beam.freqs_mhz.size
+    start = parse_frequency(opts.start_freq, "start-freq") if opts.start_freq else beam.freqs_mhz[0] * 1e6
+    if opts.chan_width:
+        width = parse_frequency(opts.chan_width, "chan-width")
+        freqs = start + np.arange(nchan) * width
+    elif nchan > 1:
+        freqs = np.linspace(start, beam.freqs_mhz[-1] * 1e6, nchan)
     else:
-        # Uniform grid over the beam's tabulated range (the FITS FREQ axis is linear; the
-        # model is continuous in frequency, so a uniform resample loses nothing).
-        freqs = np.linspace(beam.freqs_mhz[0] * 1e6, beam.freqs_mhz[-1] * 1e6, beam.freqs_mhz.size)
+        freqs = np.array([start])
 
     output = opts.output or "beam.fits"
     write_beam_fits(beam, grid, grid, freqs, output)
