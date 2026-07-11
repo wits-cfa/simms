@@ -1,7 +1,7 @@
 Cosine-taper ("JimBeam") primary-beam coefficient tables and model
 ==================================================================
 
-The cosine-taper voltage model in `simms/skymodel/beams.py` and the
+The cosine-taper voltage model in `src/simms/skymodel/beams.py` and the
 MKAT-AA-* coefficient tables in this directory are re-implemented / vendored
 from katbeam:
 

@@ -3,7 +3,8 @@
 Radio-interferometry simulator. `telsim` builds a Measurement Set from a telescope layout;
 `skysim` predicts model visibilities from a sky model into an MS; `primary-beam` provides
 standalone beam operations. Single CLI entry point `simms` (`simms.apps.main:cli`), with
-subcommands wired in `simms/apps/` (one module + one `<name>.yaml` cab per subcommand).
+subcommands wired in `src/simms/apps/` (one module + one `<name>.yaml` cab per subcommand).
+Src layout: the importable package lives under `src/simms/`, not at the repo root.
 
 ## Environment & commands
 
@@ -11,7 +12,7 @@ Use `uv` for everything — never call `python`/`pytest`/`ruff` directly.
 
 - Run code: `uv run python ...`, or the CLI via `uv run simms <subcommand> ...`
 - Tests: `uv run --group tests python -m pytest` (a specific file: `... python -m pytest tests/<name>_tests.py`)
-- Lint/format: `uv run --group ruff ruff check simms tests` and `uv run --group ruff ruff format <paths>`
+- Lint/format: `uv run --group ruff ruff check src tests` and `uv run --group ruff ruff format <paths>`
 
 A pre-commit hook runs `ruff` + `ruff-format`; if it reformats a file the commit aborts, so
 re-stage and commit again.
@@ -43,7 +44,7 @@ re-stage and commit again.
 
 ## Beam data
 
-Cosine-taper (`beams.py`) tables under `simms/skymodel/beam_data/`. The `MKAT-AA-*` model and its
+Cosine-taper (`beams.py`) tables under `src/simms/skymodel/beam_data/`. The `MKAT-AA-*` model and its
 tables are vendored from katbeam (BSD-3-Clause) — keep that attribution in `beam_data/NOTICE`. The
 other tables ship as ordinary bundled package data.
 
