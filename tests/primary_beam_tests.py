@@ -29,6 +29,8 @@ def _opts(mode, **over):
         "label_map": None,
         "from_layout": None,
         "pb_cutoff": 0.1,
+        "field_id": 0,
+        "spw_id": 0,
         "pixel_size": "2arcmin",
         "npix": 64,
         "start_freq": None,

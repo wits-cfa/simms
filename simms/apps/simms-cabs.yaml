@@ -385,6 +385,15 @@ cabs:
         info: In correct mode, blank (NaN) where the beam is below this level.
         dtype: float
         default: 0.1
+      field-id:
+        info: FIELD_ID whose phase centre and time span define the beam (apply/correct).
+        dtype: int
+        default: 0
+        abbreviation: fi
+      spw-id:
+        info: Spectral-window (DATA_DESC_ID) whose frequencies define the beam (apply/correct).
+        dtype: int
+        default: 0
       pixel-size:
         info: Angular pixel size for the to-fits grid, e.g. "1arcmin" or "0.02deg".
         dtype: str

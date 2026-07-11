@@ -21,8 +21,8 @@ log = logging.getLogger(BIN.primary_beam)
 # --------------------------------------------------------------------- geometry
 
 
-def _observation(ms):
-    """Read the geometry an averaged beam needs from an MS."""
+def _observation(ms, field_id=0, spw_id=0):
+    """Read the geometry an averaged beam needs from an MS (for the given field/spw)."""
     import dask
     from daskms import xds_from_ms, xds_from_table
 
@@ -31,14 +31,14 @@ def _observation(ms):
     ant = xds_from_table(f"{ms}::ANTENNA")[0]
     spw = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
     field = xds_from_table(f"{ms}::FIELD")[0]
-    msds = xds_from_ms(ms, group_cols=["DATA_DESC_ID"])[0]
+    msds = xds_from_ms(ms, group_cols=["DATA_DESC_ID"], taql_where=f"FIELD_ID=={int(field_id)}")[int(spw_id)]
     pos, t0, t1, interval, chan_freq, phase_dir = dask.compute(
         ant.POSITION.data,
         msds.TIME.data.min(),
         msds.TIME.data.max(),
         msds.INTERVAL.data[0],
-        spw.CHAN_FREQ.data[0],
-        field.PHASE_DIR.data[0],
+        spw.CHAN_FREQ.data[int(spw_id)],
+        field.PHASE_DIR.data[int(field_id)],
     )
     lon, lat = array_lonlat(pos)
     return {
@@ -169,7 +169,7 @@ def apply_correct_image(opts, invert):
     i_ra, j_dec = np.meshgrid(np.arange(npix_ra), np.arange(npix_dec))  # (npix_dec, npix_ra)
 
     ell, emm = pixel_lm(cel, ra0, dec0, i_ra.ravel(), j_dec.ravel())
-    obs = _observation(opts.ms)
+    obs = _observation(opts.ms, opts.field_id, opts.spw_id)
     A = _averaged_beam(provider_from(opts), ell, emm, ra0, dec0, obs, opts.beam_pa_step)
     A = A.reshape(npix_dec, npix_ra)
 
@@ -190,7 +190,7 @@ def apply_correct_ascii(opts, invert):
     from simms.skymodel.ascii_skies import ASCIISkymodel
     from simms.utilities import radec2lm
 
-    obs = _observation(opts.ms)
+    obs = _observation(opts.ms, opts.field_id, opts.spw_id)
     sky = ASCIISkymodel(opts.ascii_sky, source_schema_file=f"{SCHEMADIR}/source_schema.yaml")
     lm = np.array([radec2lm(obs["ra0"], obs["dec0"], s.ra, s.dec) for s in sky.sources])
     ell, emm = (lm[:, 0], lm[:, 1]) if len(lm) else (np.array([]), np.array([]))
@@ -203,8 +203,9 @@ def apply_correct_ascii(opts, invert):
 
     out_lines, src = [], 0
     for ln in lines:
-        s = ln.strip()
-        if not s or s.startswith("#"):
+        # Mirror ASCIISkymodel's source counting exactly: it skips unstripped ``#`` lines and
+        # empty rows, so ``src`` stays aligned with the beam array ``A`` built from sky.sources.
+        if ln.startswith("#") or not ln.strip().split(sky.delimiter):
             out_lines.append(ln)
             continue
         a = A[src]
