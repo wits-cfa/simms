@@ -33,6 +33,7 @@ def skysim_opts(ms, ascii_sky=None, column="DATA", **overrides):
         "primary_beam": None,
         "beam_band": "L",
         "beam_pa_step": 1.0,
+        "beam_grid_max_gib": 4.0,
         "beam_jones": "diagonal",
         "telescope_name_column": "TELESCOPE_NAME",
         "input_column": None,

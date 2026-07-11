@@ -573,6 +573,54 @@ def test_pa_sample_grid_caps_near_zenith_transit():
     assert tg2.size < 200
 
 
+# --- Beam-grid memory ceiling (#140) ---------------------------------------------
+
+from simms.skymodel.beams import (  # noqa: E402
+    BEAM_GRID_MAX_GIB_DEFAULT,
+    build_beam_grid,
+    build_beam_grid_jones,
+)
+
+
+def _small_grid_args():
+    providers = [UnityBeamProvider()]
+    type_is_altaz = np.array([False])
+    ell = np.array([0.0, 0.01, -0.02])
+    emm = np.array([0.0, -0.01, 0.02])
+    freqs = np.array([1.3e9, 1.4e9])
+    chi_grid = np.zeros(4)
+    return providers, type_is_altaz, ell, emm, freqs, chi_grid
+
+
+def test_build_beam_grid_raises_above_ceiling():
+    providers, type_is_altaz, ell, emm, freqs, chi_grid = _small_grid_args()
+    with pytest.raises(MemoryError, match="beam-pa-step"):
+        build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid, max_gib=1e-9)
+    # The Jones grid (fold 4) is checked the same way.
+    with pytest.raises(MemoryError, match="beam-grid-max-gib"):
+        build_beam_grid_jones(
+            providers, type_is_altaz, ell, emm, freqs, chi_grid, corr_basis_transform(False), max_gib=1e-9
+        )
+
+
+def test_build_beam_grid_warns_in_soft_band(caplog):
+    providers, type_is_altaz, ell, emm, freqs, chi_grid = _small_grid_args()
+    # 1 x 4 x 3 x 2 x 2 x 8 B = 384 B; a ceiling just above it puts us over half.
+    max_gib = 5e-7
+    with caplog.at_level("WARNING", logger="simms.skysim"):
+        grid = build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid, max_gib=max_gib)
+    assert grid.shape == (1, 4, 3, 2, 2)
+    assert any("half" in r.message for r in caplog.records)
+
+
+def test_build_beam_grid_default_limit_passes_quietly(caplog):
+    providers, type_is_altaz, ell, emm, freqs, chi_grid = _small_grid_args()
+    with caplog.at_level("WARNING", logger="simms.skysim"):
+        grid = build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid, max_gib=BEAM_GRID_MAX_GIB_DEFAULT)
+    assert grid.shape == (1, 4, 3, 2, 2)
+    assert not caplog.records
+
+
 def test_fits_provider_handles_descending_grid():
     # FITS L/M axes commonly descend (negative CDELT); the constructor must re-sort
     # ascending rather than let RegularGridInterpolator raise, with identical results.

@@ -96,6 +96,7 @@ class _BeamContext:
         self.t_start = float(t0)
         self.duration = float(t1 - t0) + float(interval)
         self.pa_step = opts.beam_pa_step
+        self.beam_grid_max_gib = opts.beam_grid_max_gib
 
     @property
     def brightness_linear_basis(self):
@@ -167,6 +168,7 @@ class _BeamContext:
             basis_transform=basis_transform,
             phase_ra0=self.phase_ra0,
             phase_dec0=self.phase_dec0,
+            beam_grid_max_gib=self.beam_grid_max_gib,
         )
 
 
