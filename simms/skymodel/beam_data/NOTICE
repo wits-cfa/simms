@@ -27,12 +27,14 @@ parameters in:
     SARAO, Doc No. SSA-0004B-002, Rev 01
 
 Files:
-  MKAT-MA-L-JIM-2026.csv     MeerKAT (MK) L band            (report Table 1, 2025 Q3)
-  MKAT-EA-L-JIM-2026.csv     MeerKAT Extension (MKE) band 2 (report Table 2, 2026 Q1)
+  MKAT-MA-L-JIM-2026.csv     MeerKAT (MK) L band              (report Table 1, 2025 Q3)
+  MKAT-EA-L-JIM-2026.csv     MeerKAT Extension (MKE) band 2   (report Table 2, 2026 Q1)
+  MKAT-MA-S-JIM-2020.csv     MeerKAT (MK) S band              (report Table 3, 2020)
+  MKAT-EA-S3-JIM-2026.csv    MeerKAT Extension (MKE) S band   (report Table 4, 2026 Q1)
 
-NOTE: these two were transcribed by hand from the report's tables, not exported
-from the authoritative source CSVs. Validate against the official SARAO files
-before using for anything beyond simulation/commissioning development.
+NOTE: these were transcribed by hand from the report's tables, not exported from
+the authoritative source CSVs. Validate against the official SARAO files before
+using for anything beyond simulation/commissioning development.
 
 Additional coefficient CSVs in the same (two-header-row, arcmin) format can be
 loaded directly via `CosineTaperBeam.from_csv(path)` without modifying this package.

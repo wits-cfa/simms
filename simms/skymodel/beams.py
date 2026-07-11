@@ -87,6 +87,8 @@ BUILTIN_BEAMS = {
     "MKAT-AA-UHF-JIM-2020": "MKAT-AA-UHF-JIM-2020.csv",
     "MKAT-MA-L-JIM-2026": "MKAT-MA-L-JIM-2026.csv",  # MeerKAT (MK), L band
     "MKAT-EA-L-JIM-2026": "MKAT-EA-L-JIM-2026.csv",  # MeerKAT Extension (MKE), SKA band 2
+    "MKAT-MA-S-JIM-2020": "MKAT-MA-S-JIM-2020.csv",  # MeerKAT (MK), S band
+    "MKAT-EA-S3-JIM-2026": "MKAT-EA-S3-JIM-2026.csv",  # MeerKAT Extension (MKE), S band (S3)
 }
 
 
