@@ -10,10 +10,6 @@ the standard MS subtables (``ANTENNA``, ``FIELD``, ``SPECTRAL_WINDOW``,
 ``POINTING``, ...) with no visibility data yet -- that's what :doc:`skysim`
 fills in afterwards.
 
-.. contents::
-   :local:
-   :depth: 2
-
 Required inputs
 ----------------
 

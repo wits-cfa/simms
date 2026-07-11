@@ -7,10 +7,6 @@ This walkthrough builds a small `Measurement Set (MS)
 <https://casa.nrao.edu/Memos/229.html>`_ from scratch and simulates
 visibilities into it from an ASCII sky model.
 
-.. contents::
-   :local:
-   :depth: 1
-
 1. Create an MS
 ----------------
 

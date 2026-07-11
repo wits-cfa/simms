@@ -8,10 +8,6 @@ FITS image(s), or a WSClean component list) into an existing MS, writing them
 to a chosen data column. It can also add or subtract an existing column
 in-place instead of simulating from a sky model.
 
-.. contents::
-   :local:
-   :depth: 2
-
 Basic usage
 -----------
 

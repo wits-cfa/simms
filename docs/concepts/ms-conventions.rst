@@ -8,10 +8,6 @@ simms follows a few `Measurement Set (MS)
 wrong if you're scripting around it directly (rather than through
 :doc:`telsim`/:doc:`skysim`).
 
-.. contents::
-   :local:
-   :depth: 1
-
 Telescope metadata has a single source of truth
 --------------------------------------------------
 
