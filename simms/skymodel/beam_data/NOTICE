@@ -11,10 +11,28 @@ The coefficient tables in this directory and the cosine-taper voltage model in
 
 BSD 3-Clause License text: https://opensource.org/licenses/BSD-3-Clause
 
-Files:
+Files (vendored from katbeam, BSD-3-Clause):
   MKAT-AA-L-JIM-2020.csv     MeerKAT L-band  (array-average, 60 deg elevation)
   MKAT-AA-UHF-JIM-2020.csv   MeerKAT UHF-band
 
-Additional coefficient CSVs in the same (two-header-row, arcmin) format -- for
-example the MeerKAT-Extension MKAT-EA-* tables -- can be loaded directly via
-`CosineTaperBeam.from_csv(path)` without modifying this package.
+
+MeerKAT / MeerKAT-Extension cosine-taper tables (SARAO report)
+==============================================================
+
+The following tables are transcribed from the array-average cosine-taper model
+parameters in:
+
+    "MeerKAT Extension Report: Primary Beam Measurements of MeerKAT Extension
+     Antennas in SKA band 2 and S band using DVS"
+    SARAO, Doc No. SSA-0004B-002, Rev 01
+
+Files:
+  MKAT-MA-L-JIM-2026.csv     MeerKAT (MK) L band            (report Table 1, 2025 Q3)
+  MKAT-EA-L-JIM-2026.csv     MeerKAT Extension (MKE) band 2 (report Table 2, 2026 Q1)
+
+NOTE: these two were transcribed by hand from the report's tables, not exported
+from the authoritative source CSVs. Validate against the official SARAO files
+before using for anything beyond simulation/commissioning development.
+
+Additional coefficient CSVs in the same (two-header-row, arcmin) format can be
+loaded directly via `CosineTaperBeam.from_csv(path)` without modifying this package.

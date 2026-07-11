@@ -79,10 +79,14 @@ def parallactic_angle(times: np.ndarray, ra0: float, dec0: float, lon: float, la
 # |taper(0.5)|**2 = 0.5. katbeam truncates this to 1.18896478.
 R_FWHM = 1.1889647809329453
 
-# Bundled coefficient tables (vendored from katbeam, BSD-3-Clause, (c) 2020 SARAO).
+# Bundled coefficient tables. The MKAT-AA-* models are vendored from katbeam
+# (BSD-3-Clause, (c) 2020 SARAO). The MKAT-MA-* (MeerKAT) and MKAT-EA-* (MeerKAT
+# Extension) tables are transcribed from SARAO report SSA-0004B-002 (see beam_data/NOTICE).
 BUILTIN_BEAMS = {
     "MKAT-AA-L-JIM-2020": "MKAT-AA-L-JIM-2020.csv",
     "MKAT-AA-UHF-JIM-2020": "MKAT-AA-UHF-JIM-2020.csv",
+    "MKAT-MA-L-JIM-2026": "MKAT-MA-L-JIM-2026.csv",  # MeerKAT (MK), L band
+    "MKAT-EA-L-JIM-2026": "MKAT-EA-L-JIM-2026.csv",  # MeerKAT Extension (MKE), SKA band 2
 }
 
 

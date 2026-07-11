@@ -129,6 +129,28 @@ def test_from_csv_roundtrip(tmp_path):
     np.testing.assert_allclose(g0[0], 1.0, atol=1e-9)
 
 
+@pytest.mark.parametrize("name", ["MKAT-MA-L-JIM-2026", "MKAT-EA-L-JIM-2026"])
+def test_meerkat_extension_builtins(name):
+    # Bundled MK / MKE L-band tables (transcribed from SARAO SSA-0004B-002) load and are
+    # physically sane: unity at the squint centre, half power at FWHM/2 from it.
+    beam = CosineTaperBeam.from_builtin(name)
+    freq = np.array([1400.0])
+    sq, fw = beam._interp(freq)  # (4, 1)
+    cx, cy = np.array([sq[0, 0]]), np.array([sq[1, 0]])  # H-feed squint centre
+    peak = beam.voltages(cx, cy, freq)[0, 0, 0]
+    hwhm = beam.voltages(cx + fw[0, 0] / 2, cy, freq)[0, 0, 0]
+    assert abs(peak) == pytest.approx(1.0, abs=1e-9)
+    assert abs(hwhm) ** 2 == pytest.approx(0.5, abs=1e-6)
+
+
+def test_mke_beam_is_narrower_than_mk():
+    # The MeerKAT-Extension (15 m) beam is narrower than the MeerKAT (13.5 m) beam.
+    freq = np.array([1400.0])
+    mk = CosineTaperBeam.from_builtin("MKAT-MA-L-JIM-2026")._interp(freq)[1][0, 0]
+    mke = CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026")._interp(freq)[1][0, 0]
+    assert mke < mk
+
+
 def test_jimbeam_provider_matches_cosine_taper_at_zero_pa():
     beam = CosineTaperBeam.from_builtin("MKAT-AA-L-JIM-2020")
     provider = JimBeamProvider(beam)
