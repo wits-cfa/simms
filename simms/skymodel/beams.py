@@ -549,15 +549,59 @@ def pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step_deg):
     return tgrid, chi_grid
 
 
-def build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid):
+# Default hard ceiling (GiB) on the sampled beam grid. The grid is built once at full
+# size and only sliced per channel-chunk downstream, so its whole footprint lives in
+# memory for the run; --chan-chunks does not reduce it.
+BEAM_GRID_MAX_GIB_DEFAULT = 4.0
+
+
+def _beam_grid_gib(ntype, n_pa, nsrc, nchan, fold):
+    """Footprint (GiB) of a ``(ntype, n_pa, nsrc, nchan, fold)`` complex64 beam grid.
+
+    ``fold`` is 2 for the diagonal per-feed grid, 4 for the 2x2 Jones grid; complex64 is
+    8 bytes per element.
+    """
+    return ntype * n_pa * nsrc * nchan * fold * 8 / 2**30
+
+
+def _check_beam_grid_footprint(ntype, n_pa, nsrc, nchan, fold, max_gib):
+    """Warn/raise on the beam-grid footprint before it is allocated.
+
+    Warns above half the ceiling and raises :class:`MemoryError` above ``max_gib``, with an
+    actionable message naming the levers (the grid scales with PA samples x sources x
+    channels). See :data:`BEAM_GRID_MAX_GIB_DEFAULT`.
+    """
+    gib = _beam_grid_gib(ntype, n_pa, nsrc, nchan, fold)
+    dims = f"{ntype} type(s) x {n_pa} PA x {nsrc} src x {nchan} chan x {fold}"
+    if gib > max_gib:
+        raise MemoryError(
+            f"Primary-beam grid would need {gib:.2f} GiB ({dims}), above the "
+            f"{max_gib:.2f} GiB ceiling. Reduce it with a coarser --beam-pa-step (fewer PA "
+            f"samples), fewer sky components, or raise --beam-grid-max-gib. --chan-chunks "
+            f"does not help: the grid is built once for all channels."
+        )
+    if gib > 0.5 * max_gib:
+        log.warning(
+            "Primary-beam grid needs %.2f GiB (%s), over half the %.2f GiB ceiling; a "
+            "coarser --beam-pa-step or fewer components lowers it.",
+            gib,
+            dims,
+            max_gib,
+        )
+
+
+def build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid, max_gib=BEAM_GRID_MAX_GIB_DEFAULT):
     """Sample every type's voltage beam on the PA grid.
 
     Returns an array of shape ``(ntype, n_pa, nsrc, nchan, 2)``. Stored as ``complex64``
     (halving this large array vs ``complex128``); a beam voltage is O(1), so single
     precision is ample and visibilities still accumulate in double. Alt-az types use
-    ``chi_grid``; others are evaluated at zero parallactic angle (no rotation).
+    ``chi_grid``; others are evaluated at zero parallactic angle (no rotation). Raises
+    :class:`MemoryError` if the grid would exceed ``max_gib`` (see
+    :func:`_check_beam_grid_footprint`).
     """
     ntype = len(providers)
+    _check_beam_grid_footprint(ntype, chi_grid.size, ell.size, freqs.size, 2, max_gib)
     grid = np.empty((ntype, chi_grid.size, ell.size, freqs.size, 2), dtype=np.complex64)
     zeros = np.zeros_like(chi_grid)
     for ti, prov in enumerate(providers):
@@ -581,14 +625,19 @@ def corr_basis_transform(is_circular: bool) -> np.ndarray:
     return _S_LIN2CIRC.copy() if is_circular else np.eye(2, dtype=np.complex128)
 
 
-def build_beam_grid_jones(providers, type_is_altaz, ell, emm, freqs, chi_grid, basis_transform):
+def build_beam_grid_jones(
+    providers, type_is_altaz, ell, emm, freqs, chi_grid, basis_transform, max_gib=BEAM_GRID_MAX_GIB_DEFAULT
+):
     """Sample every type's 2x2 voltage Jones on the PA grid, folding the basis transform.
 
     Returns ``(ntype, n_pa, nsrc, nchan, 2, 2)`` complex64 holding ``E' = S . E``, so the
     kernel's ``V = E'_p B_feed E'_q^H = S (E_p B E_q^H) S^H`` lands in the MS correlation
-    basis (``B_feed`` is the linear-feed coherency). Alt-az types use ``chi_grid``.
+    basis (``B_feed`` is the linear-feed coherency). Alt-az types use ``chi_grid``. Raises
+    :class:`MemoryError` if the grid would exceed ``max_gib`` (see
+    :func:`_check_beam_grid_footprint`).
     """
     ntype = len(providers)
+    _check_beam_grid_footprint(ntype, chi_grid.size, ell.size, freqs.size, 4, max_gib)
     grid = np.empty((ntype, chi_grid.size, ell.size, freqs.size, 2, 2), dtype=np.complex64)
     zeros = np.zeros_like(chi_grid)
     for ti, prov in enumerate(providers):
