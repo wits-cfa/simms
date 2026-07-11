@@ -20,8 +20,14 @@ from simms.telescope.generate_ms import create_ms
 from . import InitTest
 
 C = 299792458.0
-FLUX = 3.0  # Jy, single point source at the phase centre
 REF_FREQ_HZ = 1.42e9
+# Point sources at known positions with distinct fluxes (so a swap/mis-location is caught):
+# one on the phase centre, one offset in RA, one offset in Dec -- all well inside the field.
+SOURCES = [
+    ("A", "0h0m0s", "-30d0m0s", 5.0),  # phase centre
+    ("B", "0h2m0s", "-30d0m0s", 3.0),  # ~0.43 deg east
+    ("C", "0h0m0s", "-30d40m0s", 2.0),  # ~0.67 deg south
+]
 
 
 def _skysim_opts(ms, ascii_sky, column):
@@ -92,7 +98,8 @@ class _Roundtrip(InitTest):
         self.sky = self.random_named_file(suffix=".txt")
         with open(self.sky, "w") as fh:
             fh.write("#format: name ra dec stokes_i\n")
-            fh.write(f"S 0h0m0s -30d0m0s {FLUX}\n")  # exactly on the phase centre
+            for name, ra, dec, flux in SOURCES:
+                fh.write(f"{name} {ra} {dec} {flux}\n")
         self.outdir = self.random_named_directory(suffix=".img")
 
     def imaging_grid(self):
@@ -113,7 +120,6 @@ def test_casa_roundtrip_recovers_point_source(rt):
     from casatasks import imstat
 
     cell_arcsec, imsize = rt.imaging_grid()
-    centre = imsize // 2
 
     def image(prefix, niter=0, savemodel="none"):
         tclean(
@@ -125,6 +131,7 @@ def test_casa_roundtrip_recovers_point_source(rt):
             gridder="standard",
             weighting="natural",
             niter=niter,
+            threshold="0.01Jy",
             savemodel=savemodel,
             datacolumn="data",
             stokes="I",
@@ -137,24 +144,26 @@ def test_casa_roundtrip_recovers_point_source(rt):
     image(psf_prefix)
     assert imstat(f"{psf_prefix}.psf")["max"][0] == pytest.approx(1.0, abs=1e-4)
 
-    # Step 3: simulate the point source into DATA.
+    # Step 3: simulate the sources into DATA.
     skysim.runit(_skysim_opts(rt.ms, rt.sky, column="DATA"))
     data = xds_from_ms(rt.ms)[0].DATA.data.compute()
     assert np.all(np.isfinite(data))
-    assert np.abs(data).mean() == pytest.approx(FLUX, rel=1e-3)  # |V| == flux for an on-axis source
+    assert np.abs(data).max() > 0
 
-    # Step 4: clean the simulated MS (a few iterations) and write the model back to MODEL_DATA.
-    # niter>0 + savemodel='modelcolumn' exercises tclean's *write* path into the MS, another
-    # thing that only works if the MS is well formed. The restored image of a point source at
-    # the phase centre peaks at its flux, at the image centre.
+    # Step 4: clean the simulated MS and write the model back to MODEL_DATA. niter>0 +
+    # savemodel='modelcolumn' also exercises tclean's *write* path into the MS, which only
+    # works if the MS is well formed.
     img_prefix = os.path.join(rt.outdir, "img")
-    image(img_prefix, niter=10, savemodel="modelcolumn")
-    st = imstat(f"{img_prefix}.image")
-    assert st["max"][0] == pytest.approx(FLUX, rel=5e-2)
-    assert list(st["maxpos"][:2]) == [centre, centre]
+    image(img_prefix, niter=5000, savemodel="modelcolumn")
 
-    # tclean must have created and populated MODEL_DATA (a real point-source model at the
-    # phase centre -> finite, non-zero visibilities).
+    # Each source is recovered at its known sky position with its input flux. imstat over a
+    # small region centred on the source reads the restored peak (Jy/beam == Jy for a point
+    # source); recovery is a few percent low from sub-pixel gridding and finite cleaning.
+    for name, ra, dec, flux in SOURCES:
+        st = imstat(imagename=f"{img_prefix}.image", region=f"circle[[{ra}, {dec}], 120arcsec]")
+        assert st["max"][0] == pytest.approx(flux, rel=0.05), f"source {name}: {st['max'][0]} vs {flux}"
+
+    # tclean must have created and populated MODEL_DATA (a real sky model -> finite, non-zero).
     model = xds_from_ms(rt.ms, columns=["MODEL_DATA"])[0].MODEL_DATA.data.compute()
     assert np.all(np.isfinite(model))
     assert np.abs(model).max() > 0
