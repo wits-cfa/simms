@@ -61,6 +61,14 @@ tests = [
     {include-group = "ruff"},
 ]
 
+# Opt-in: the CASA round-trip test (tests/casa_roundtrip_tests.py) images MSs with
+# casatasks.tclean. Heavy (pulls casatools) so it is kept out of the default `tests`
+# group; the test itself skips when casatasks is absent. Run with:
+#   uv run --group tests --group casa python -m pytest tests/casa_roundtrip_tests.py
+casa = [
+    "casatasks>=6.6",
+]
+
 docs = [
     "Sphinx>=7.0,<9.0",
     "sphinx-copybutton",

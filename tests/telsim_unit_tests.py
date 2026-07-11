@@ -140,6 +140,10 @@ def test_visdata_configuration_info(params):
     dfreq = ds_spw.CHAN_FREQ.values[0][1] - freq
     assert np.isclose(dfreq, 1e6)
 
+    # Frequencies are topocentric: MEAS_FREQ_REF must be 5 (TOPO), not the casacore
+    # default of 0 (REST/undefined) which breaks CASA imaging.
+    assert int(ds_spw.MEAS_FREQ_REF.values[0]) == 5
+
     time = np.unique(ds.TIME).shape
     assert np.isclose(time, 10)
 
