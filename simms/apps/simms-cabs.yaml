@@ -122,6 +122,42 @@ cabs:
         dtype: int
         required: no
         abbreviation: ccs
+      primary-beam:
+        info: >-
+          Path to a beam-config YAML mapping each ANTENNA TELESCOPE_NAME to a beam model
+          (e.g. "MK: {jimbeam: L}"). Applies a per-antenna, parallactic-rotating primary
+          beam to component skies (ASCII/WSClean). Requires a linear pol basis.
+        dtype: File
+        required: no
+        abbreviation: pb
+      beam-band:
+        info: Default band for JimBeam entries that omit an explicit model/CSV.
+        dtype: str
+        default: L
+        choices: ['UHF', 'L']
+      beam-pa-step:
+        info: >-
+          Spacing (degrees) of the parallactic-angle grid the beam is sampled on and
+          interpolated from. Smaller is more accurate but uses more memory/compute.
+        dtype: float
+        default: 1.0
+      beam-jones:
+        info: >-
+          Primary-beam application for component skies. "diagonal" applies a per-feed
+          voltage (fast, linear correlations only). "full" applies the complete 2x2
+          E-Jones (models cross-hand leakage from FITS beam cubes and supports circular
+          correlations); requires 4 correlations. Ignored on the FITS-image path.
+        dtype: str
+        default: diagonal
+        choices: ['diagonal', 'full']
+      telescope-name-column:
+        info: >-
+          Name of the ANTENNA-table column holding the per-antenna telescope/type label
+          that maps to a beam model. Must match the column telsim wrote (default
+          TELESCOPE_NAME). The primary beam requires this column; it is never inferred.
+        dtype: str
+        default: TELESCOPE_NAME
+        abbreviation: tnc
       field-id:
         info: Field ID
         dtype: int
@@ -191,6 +227,11 @@ cabs:
         dtype: File
         required: no
         abbreviation: subfile
+      telescope-name-column:
+        info: Name of the ANTENNA-table column that holds the per-antenna telescope/type label (used by skysim to select a primary beam). Provisional spec; configurable so skysim can be pointed at the same name.
+        dtype: str
+        default: TELESCOPE_NAME
+        abbreviation: tnc
       direction:
         info: Direction of field centre for MS. Example, J2000,0h24m20s,-30d12m33s or J2000,0:24:20,-30:12:33. Default is J2000,1h0m0s,-31d0m0s.
         dtype: str
@@ -281,3 +322,100 @@ cabs:
         dtype: int
         abbreviation: fo
         
+
+  primary-beam:
+    info: >-
+      Primary-beam utilities (no visibility simulation): build a FITS beam cube from a
+      cosine-taper model (to-fits), tag an MS with per-antenna telescope names (tag-ms),
+      or multiply/divide a sky model by the frequency- and time-averaged beam (apply/correct).
+    inputs:
+      mode:
+        info: Operation to perform.
+        dtype: str
+        choices: [to-fits, tag-ms, apply, correct]
+        required: yes
+        policies:
+          positional: true
+      beam-pattern:
+        info: >-
+          Beam model: a cosine-taper CSV path, a built-in name (e.g. MKAT-EA-L-JIM-2026),
+          a band shorthand (L/UHF), or a FITS beam cube (.fits). Used by to-fits/apply/correct.
+        dtype: str
+        abbreviation: bp
+      beam-band:
+        info: Default band for a built-in beam when beam-pattern omits one.
+        dtype: str
+        default: L
+        choices: [UHF, L]
+      beam-pa-step:
+        info: Parallactic-angle sampling step (degrees) for the time-averaged beam.
+        dtype: float
+        default: 1.0
+      ms:
+        info: Measurement set (time/parallactic-angle range, array position and frequencies). Required for tag-ms/apply/correct.
+        dtype: MS
+        required: no
+      fits-sky:
+        info: Input FITS image sky model (apply/correct).
+        dtype: File
+        abbreviation: fits
+      ascii-sky:
+        info: Input ASCII component sky model (apply/correct).
+        dtype: File
+        abbreviation: ascii
+      output:
+        info: Output path - FITS beam (to-fits) or beamed/corrected sky model (apply/correct).
+        dtype: str
+        abbreviation: o
+      telescope-name-column:
+        info: ANTENNA-table column holding the per-antenna telescope/type label (tag-ms).
+        dtype: str
+        default: TELESCOPE_NAME
+        abbreviation: tnc
+      label:
+        info: Single telescope-name label applied to all antennas (tag-ms).
+        dtype: str
+      label-map:
+        info: YAML mapping antenna NAME -> telescope-name label (tag-ms).
+        dtype: File
+      from-layout:
+        info: simms layout whose per-antenna telescope_name is matched to the MS antenna names (tag-ms).
+        dtype: str
+      pb-cutoff:
+        info: In correct mode, blank (NaN) where the beam is below this level.
+        dtype: float
+        default: 0.1
+      field-id:
+        info: FIELD_ID whose phase centre and time span define the beam (apply/correct).
+        dtype: int
+        default: 0
+        abbreviation: fi
+      spw-id:
+        info: Spectral-window (DATA_DESC_ID) whose frequencies define the beam (apply/correct).
+        dtype: int
+        default: 0
+      pixel-size:
+        info: Angular pixel size for the to-fits grid, e.g. "1arcmin" or "0.02deg".
+        dtype: str
+        default: 1arcmin
+      npix:
+        info: Number of pixels per side for the to-fits grid.
+        dtype: int
+        default: 256
+      start-freq:
+        info: Start frequency of the to-fits cube, e.g. "856MHz". Defaults to the beam's first tabulated frequency.
+        dtype: str
+        abbreviation: sf
+      chan-width:
+        info: Channel width of the to-fits cube, e.g. "10MHz". Defaults to spanning the beam's frequency range across --nchan.
+        dtype: str
+        abbreviation: cw
+      nchan:
+        info: Number of output channels in the to-fits cube. Defaults to the beam's tabulated channel count.
+        dtype: int
+        required: no
+        abbreviation: nc
+      nworkers:
+        info: Number of worker threads.
+        dtype: int
+        default: 4

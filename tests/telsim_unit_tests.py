@@ -171,6 +171,46 @@ def test_visdata_configuration_info(params):
     assert np.isclose(size, 12)
 
 
+def test_antenna_telescope_name(params):
+    # The ANTENNA table carries a per-antenna TELESCOPE_NAME column (used by skysim to
+    # select a primary beam). For a homogeneous layout it defaults to the array name.
+    ds_ant = xds_from_table(f"{params.ms}::ANTENNA")[0]
+    assert hasattr(ds_ant, "TELESCOPE_NAME")
+    tnames = list(np.asarray(ds_ant.TELESCOPE_NAME.values))
+    assert len(tnames) == params.nant
+    assert set(tnames) == {"kat-7"}
+
+
+def test_heterogeneous_telescope_name(params):
+    # A mixed subarray (spanning the skamid 13.5 m / 15 m boundary) writes per-antenna
+    # TELESCOPE_NAME labels aligned with the dish sizes, so skysim can pick a beam per type.
+    ms = params.random_named_directory(suffix=".ms")
+    create_ms(
+        ms,
+        telescope_name="skamid",
+        pointing_direction=params.direction,
+        dtime=params.dtime,
+        ntimes=2,
+        start_freq=params.start_freq,
+        dfreq=params.dfreq,
+        nchan=params.nchan,
+        correlations=["XX", "YY"],
+        row_chunks=10000,
+        sefd=params.sefd,
+        column=params.column,
+        start_time=params.start_time,
+        smooth=None,
+        fit_order=None,
+        subarray_range=[60, 68],  # M060..M063 (MeerKAT) + SKA001..SKA004 (MeerKAT+)
+    )
+    ds_ant = xds_from_table(f"{ms}::ANTENNA")[0]
+    tnames = np.asarray(ds_ant.TELESCOPE_NAME.values).astype(str)
+    sizes = np.asarray(ds_ant.DISH_DIAMETER.values)
+    assert set(tnames) == {"MKAT-MA", "MKAT-EA"}
+    assert np.all(sizes[tnames == "MKAT-MA"] == 13.5)
+    assert np.all(sizes[tnames == "MKAT-EA"] == 15.0)
+
+
 def check_circle_or_ellipse(u, v):
     """
     Check if UV points form a circle, ellipse or line.

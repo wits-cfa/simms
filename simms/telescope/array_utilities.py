@@ -135,6 +135,14 @@ class Array:
         self.coordsys = self.layout["coord_sys"]
         self.size = self.layout["size"]
 
+        # Per-antenna telescope/type label for the ANTENNA table (heterogeneous
+        # arrays), defaulting to the array name. Normalised to a per-antenna list.
+        tel_name = self.layout.get("telescope_name", "") or self.layout.get("name", "")
+        if isinstance(tel_name, str):
+            self.telescope_name = [tel_name] * nant
+        else:
+            self.telescope_name = list(tel_name)
+
         if self.sefd is None:
             sefd = self.layout.get("sefd", None)
             self.sefd = sefd
@@ -300,7 +308,11 @@ class Array:
         if start_ha:
             ih0 = start_ha * constants.PI
         else:
-            # obs_location = EarthLocation(lon=longitude * u.rad, lat=latitude * u.rad)
+            # Greenwich hour angle: the baselines below are differences of absolute
+            # ECEF/ITRF antenna positions (X axis at longitude 0), so the UVW rotation
+            # uses GMST - RA, not the local hour angle. The array longitude is already
+            # encoded in the antenna coordinates. (The beam parallactic angle, by
+            # contrast, uses the *local* hour angle -- a different, site-local quantity.)
             gmst = start_day.sidereal_time(kind="mean", longitude=0 * u.deg)
             gmst_rad = gmst.to_value("rad")
             gha = gmst_rad - ra0

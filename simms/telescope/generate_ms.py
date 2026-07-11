@@ -66,6 +66,7 @@ def create_ms(
     subarray_file: File = None,
     low_source_limit: Union[float, str] = None,
     high_source_limit: Union[float, str] = None,
+    telescope_name_column: str = "TELESCOPE_NAME",
 ):
     """Generate a CASA Measurement Set (MS) for a simulated observation.
 
@@ -140,6 +141,7 @@ def create_ms(
     mount = telescope_array.mount
     antnames = telescope_array.names
     antlocation = telescope_array.antlocations
+    ant_telescope_names = telescope_array.telescope_name
 
     if freq_range:
         start_freq = parse_frequency(freq_range[0], "freq-range start-freq")
@@ -392,6 +394,12 @@ def create_ms(
 
     names = np.array(antnames)
     teltype = ["GROUND_BASED"] * num_ants
+    if isinstance(ant_telescope_names, str):
+        telescope_names = [ant_telescope_names] * num_ants
+    else:
+        telescope_names = list(ant_telescope_names)
+    # casacore STRING columns map to numpy object dtype (not fixed-width unicode).
+    telescope_names = np.array(telescope_names, dtype=object)
     ant_ds = {
         "DISH_DIAMETER": (("row"), da.from_array(dish_diameter)),
         "MOUNT": (("row"), da.from_array(ant_mount)),
@@ -399,11 +407,18 @@ def create_ms(
         "NAME": (("row"), da.from_array(names)),
         "STATION": (("row"), da.from_array(names)),
         "TYPE": (("row"), da.from_array(teltype)),
+        # Per-antenna telescope/type label used by skysim to select a primary beam
+        # (heterogeneous arrays). Non-standard ANTENNA column; the name is configurable
+        # (default TELESCOPE_NAME) because it is still a provisional spec decision.
+        telescope_name_column: (("row"), da.from_array(telescope_names, chunks=num_ants)),
     }
 
     ant_table = daskms.Dataset(ant_ds)
 
-    write_ant = xds_to_table(ant_table, f"{ms}::ANTENNA", descriptor=ms_desc)
+    # ANTENNA carries the non-standard TELESCOPE_NAME column, so it needs a valid
+    # subtable descriptor builder (the shared ms_desc string is only tolerated for
+    # all-standard subtables, where the column descriptors are never built).
+    write_ant = xds_to_table(ant_table, f"{ms}::ANTENNA", descriptor="mssubtable('ANTENNA')")
     with TqdmCallback(desc=f"Writing the ANTENNA table to {ms}"):
         dask.compute(write_ant)
 

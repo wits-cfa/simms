@@ -21,6 +21,10 @@ Array:
     info: Aperture size in metres
     dtype: Union[float, List[float]]
     default: 1.0
+  telescope_name:
+    info: Per-antenna telescope/type label written to the ANTENNA table (e.g. MeerKAT, MeerKAT+). A scalar applies to all antennas; a list gives one label per antenna. Defaults to the array name.
+    dtype: Union[str, List[str]]
+    default: ""
   antnames:
     info: Names of antennas listed in antlocations.
     dtype: List[str]
