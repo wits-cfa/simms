@@ -134,8 +134,8 @@ def test_from_csv_roundtrip(tmp_path):
     ["MKAT-MA-L-JIM-2026", "MKAT-EA-L-JIM-2026", "MKAT-MA-S-JIM-2020", "MKAT-EA-S3-JIM-2026"],
 )
 def test_meerkat_extension_builtins(name):
-    # Bundled MK / MKE tables (transcribed from SARAO SSA-0004B-002) load and are
-    # physically sane: unity at the squint centre, half power at FWHM/2 from it.
+    # Bundled MeerKAT / MeerKAT-Extension tables load and are physically sane:
+    # unity at the squint centre, half power at FWHM/2 from it.
     beam = CosineTaperBeam.from_builtin(name)
     freq = np.array([float(np.mean(beam.freqs_mhz))])  # in-band for L or S
     sq, fw = beam._interp(freq)  # (4, 1)
