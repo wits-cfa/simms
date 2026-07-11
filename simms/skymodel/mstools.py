@@ -339,19 +339,32 @@ def attach_beam(
     ncorr: int,
     full_jones: bool = False,
     basis_transform: np.ndarray | None = None,
+    phase_ra0: float | None = None,
+    phase_dec0: float | None = None,
 ) -> PreparedSky:
     """Return a copy of ``prepared`` with a primary-beam grid attached.
 
     Samples each type's beam on a parallactic-angle grid spanning the observation
     (built once, sliced per channel-chunk by :meth:`PreparedSky.select_channels`).
-    ``prepared`` must carry the full-width brightness (``nspec == ncorr``). With
-    ``full_jones`` the grid holds 2x2 Jones (folding ``basis_transform``) and the
-    ``predict_vis_jones`` kernel is used; otherwise the diagonal per-feed grid.
+    ``ra0``/``dec0`` are the beam (antenna pointing) centre; ``phase_ra0``/``phase_dec0``
+    are the phase centre the source ``l/m`` were prepared for, so the beam is sampled at each
+    source's offset from where the dish points. ``prepared`` must carry the full-width
+    brightness (``nspec == ncorr``). With ``full_jones`` the grid holds 2x2 Jones (folding
+    ``basis_transform``) and the ``predict_vis_jones`` kernel is used; otherwise the diagonal
+    per-feed grid.
     """
-    from simms.skymodel.beams import build_beam_grid, build_beam_grid_jones, corr_feed_maps, pa_sample_grid
+    from simms.skymodel.beams import (
+        build_beam_grid,
+        build_beam_grid_jones,
+        corr_feed_maps,
+        pa_sample_grid,
+        reproject_lm,
+    )
 
     tgrid, chi_grid = pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step)
     ell, emm = prepared.lmn[:, 0], prepared.lmn[:, 1]
+    if phase_ra0 is not None:
+        ell, emm = reproject_lm(ell, emm, phase_ra0, phase_dec0, ra0, dec0)
     if full_jones:
         beam_grid = build_beam_grid_jones(providers, type_is_altaz, ell, emm, prepared.freqs, chi_grid, basis_transform)
         corr_feed_p = corr_feed_q = None

@@ -663,6 +663,43 @@ def array_lonlat(positions):
     return loc.lon.to_value(u.rad), loc.lat.to_value(u.rad)
 
 
+def read_pointing_centre(ms, fallback_ra0, fallback_dec0):
+    """Antenna pointing centre (radians) from ``POINTING.DIRECTION``.
+
+    This is where the dishes point, and hence where the primary beam is centred -- distinct
+    from ``FIELD.PHASE_DIR`` (the correlator phase centre, a freely-shiftable quantity). Reads
+    the poly order-0 term of the first row's direction (J2000 RA/Dec) and falls back to the
+    given phase centre, with a warning, when the MS has no usable POINTING table.
+    """
+    from daskms import xds_from_table
+
+    try:
+        pnt = xds_from_table(f"{ms}::POINTING")[0]
+        direction = pnt.DIRECTION.data
+        if direction.shape[0] == 0:
+            raise ValueError("empty POINTING table")
+        radec = np.asarray(direction[0, 0].compute(), dtype=np.float64)
+        return float(radec[0]), float(radec[1])
+    except Exception as exc:
+        log.warning("No usable POINTING.DIRECTION (%s); using the phase centre as the beam centre.", exc)
+        return float(fallback_ra0), float(fallback_dec0)
+
+
+def reproject_lm(ell, emm, from_ra0, from_dec0, to_ra0, to_dec0):
+    """Re-reference direction cosines from one tangent centre to another (a no-op if they match).
+
+    Source ``(l, m)`` prepared for the phase centre are re-expressed relative to the beam
+    (pointing) centre, so the beam is sampled at each source's offset from where the dish points.
+    """
+    if from_ra0 == to_ra0 and from_dec0 == to_dec0:
+        return ell, emm
+    from simms.skymodel.fits_skies import lm_to_radec
+    from simms.utilities import radec2lm
+
+    ra, dec = lm_to_radec(np.asarray(ell), np.asarray(emm), from_ra0, from_dec0)
+    return radec2lm(to_ra0, to_dec0, ra, dec)
+
+
 def resolve_beam(spec, band: str = "L") -> BeamProvider:
     """Build a beam provider from a spec: a ``.fits`` cube, a CSV/built-in JimBeam, or a band."""
     spec = band if spec in (None, "") else str(spec)

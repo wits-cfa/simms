@@ -108,6 +108,44 @@ def test_beam_attenuates_and_differs_from_nobeam(e2e):
     assert np.abs(beam).max() > 0
 
 
+def _set_pointing_direction(ms, ra_rad, dec_rad):
+    """Overwrite POINTING.DIRECTION so it differs from FIELD.PHASE_DIR (which simms keeps equal)."""
+    import dask
+    import dask.array as da
+    from daskms import xds_from_table, xds_to_table
+
+    pnt = xds_from_table(f"{ms}::POINTING")[0]
+    nrow = pnt.DIRECTION.shape[0]
+    newdir = np.broadcast_to(np.array([ra_rad, dec_rad]), (nrow, 1, 2)).copy()
+    pnt = pnt.assign(DIRECTION=(("row", "point-poly", "radec"), da.from_array(newdir, chunks=(nrow, 1, 2))))
+    dask.compute(xds_to_table([pnt], f"{ms}::POINTING", columns=["DIRECTION"]))
+
+
+def test_beam_follows_pointing_direction(e2e):
+    # A source sitting exactly on the phase centre.
+    from daskms import xds_from_table
+
+    sky = e2e.random_named_file(suffix=".txt")
+    with open(sky, "w") as fh:
+        fh.write("#format: name ra dec stokes_i\n")
+        fh.write("S 0h0m20s -30d0m0s 4.0\n")  # == the fixture's pointing/phase centre
+
+    # Baseline: POINTING.DIRECTION == PHASE_DIR (as simms writes), so the source is on-axis.
+    skysim.runit(_opts(e2e.ms, sky, primary_beam=e2e.beams, column="ALIGNED"))
+
+    # Point the dishes 0.8 deg south of the phase centre; the same source is now off-axis.
+    cur = np.asarray(xds_from_table(f"{e2e.ms}::POINTING")[0].DIRECTION.data[0, 0].compute())
+    _set_pointing_direction(e2e.ms, float(cur[0]), float(cur[1]) - np.radians(0.8))
+    skysim.runit(_opts(e2e.ms, sky, primary_beam=e2e.beams, column="OFFSET"))
+
+    ds = xds_from_ms(e2e.ms)[0]
+    aligned = np.abs(ds.ALIGNED.data.compute()).mean()
+    offset = np.abs(ds.OFFSET.data.compute()).mean()
+    # The on-phase-centre source is attenuated more once the dishes point elsewhere. Under the
+    # old phase-centre logic the beam would ignore the pointing shift and the two would match.
+    assert offset < 0.9 * aligned
+
+
 def test_beam_rejects_nonlinear_correlations(e2e):
     # A circular-correlation MS must be refused: the beam's feed mapping is linear-only.
     ms = e2e.random_named_directory(suffix=".ms")
