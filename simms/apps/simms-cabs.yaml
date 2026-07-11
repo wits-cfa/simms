@@ -322,3 +322,81 @@ cabs:
         dtype: int
         abbreviation: fo
         
+
+  primary-beam:
+    info: >-
+      Primary-beam utilities (no visibility simulation): build a FITS beam cube from a
+      cosine-taper model (to-fits), tag an MS with per-antenna telescope names (tag-ms),
+      or multiply/divide a sky model by the frequency- and time-averaged beam (apply/correct).
+    inputs:
+      mode:
+        info: Operation to perform.
+        dtype: str
+        choices: [to-fits, tag-ms, apply, correct]
+        required: yes
+        policies:
+          positional: true
+      beam-pattern:
+        info: >-
+          Beam model: a cosine-taper CSV path, a built-in name (e.g. MKAT-EA-L-JIM-2026),
+          a band shorthand (L/UHF), or a FITS beam cube (.fits). Used by to-fits/apply/correct.
+        dtype: str
+        abbreviation: bp
+      beam-band:
+        info: Default band for a built-in beam when beam-pattern omits one.
+        dtype: str
+        default: L
+        choices: [UHF, L]
+      beam-pa-step:
+        info: Parallactic-angle sampling step (degrees) for the time-averaged beam.
+        dtype: float
+        default: 1.0
+      ms:
+        info: Measurement set (time/parallactic-angle range, array position and frequencies). Required for tag-ms/apply/correct.
+        dtype: MS
+        required: no
+      fits-sky:
+        info: Input FITS image sky model (apply/correct).
+        dtype: File
+        abbreviation: fits
+      ascii-sky:
+        info: Input ASCII component sky model (apply/correct).
+        dtype: File
+        abbreviation: ascii
+      output:
+        info: Output path - FITS beam (to-fits) or beamed/corrected sky model (apply/correct).
+        dtype: str
+        abbreviation: o
+      telescope-name-column:
+        info: ANTENNA-table column holding the per-antenna telescope/type label (tag-ms).
+        dtype: str
+        default: TELESCOPE_NAME
+        abbreviation: tnc
+      label:
+        info: Single telescope-name label applied to all antennas (tag-ms).
+        dtype: str
+      label-map:
+        info: YAML mapping antenna NAME -> telescope-name label (tag-ms).
+        dtype: File
+      from-layout:
+        info: simms layout whose per-antenna telescope_name is matched to the MS antenna names (tag-ms).
+        dtype: str
+      pb-cutoff:
+        info: In correct mode, blank (NaN) where the beam is below this level.
+        dtype: float
+        default: 0.1
+      pixel-size:
+        info: Angular pixel size for the to-fits grid, e.g. "1arcmin" or "0.02deg".
+        dtype: str
+        default: 1arcmin
+      npix:
+        info: Number of pixels per side for the to-fits grid.
+        dtype: int
+        default: 256
+      freqs:
+        info: Frequencies for the to-fits cube as "start,end,n" in Hz; defaults to the beam's tabulated frequencies.
+        dtype: str
+      nworkers:
+        info: Number of worker threads.
+        dtype: int
+        default: 4

@@ -6,14 +6,16 @@ from scabha.basetypes import File
 from scabha.schema_utils import clickify_parameters, paramfile_loader
 
 from simms import BIN, __version__
-from simms.apps import skysim, telsim
+from simms.apps import primary_beam, skysim, telsim
 
 thisdir = os.path.dirname(__file__)
 telsim_parserfile = File(f"{thisdir}/{BIN.telsim}.yaml")
 skysim_parserfile = File(f"{thisdir}/{BIN.skysim}.yaml")
+primary_beam_parserfile = File(f"{thisdir}/{BIN.primary_beam}.yaml")
 
 telsim_config = paramfile_loader(telsim_parserfile, sources=[])[BIN.telsim]
 skysim_config = paramfile_loader(skysim_parserfile, sources=[])[BIN.skysim]
+primary_beam_config = paramfile_loader(primary_beam_parserfile, sources=[])[BIN.primary_beam]
 
 
 class RemoveMSIfChained(click.Command):
@@ -103,3 +105,12 @@ def run_skysim(ctx, **kwargs):
     if ctx.obj["chain"]:
         opts["ms"] = ctx.obj["ms"]
     skysim.runit(opts)
+
+
+@cli.command(BIN.primary_beam, no_args_is_help=True)
+@clickify_parameters(primary_beam_config)
+@click.pass_context
+def run_primary_beam(ctx, **kwargs):
+    opts = OmegaConf.create(kwargs)
+    opts["log_level"] = ctx.obj["log_level"]
+    primary_beam.runit(opts)

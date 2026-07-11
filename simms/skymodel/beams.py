@@ -652,3 +652,68 @@ def corr_feed_maps(ncorr):
     if ncorr == 2:
         return np.array([0, 1], dtype=np.int64), np.array([0, 1], dtype=np.int64)
     raise ValueError(f"Primary beam supports 2 or 4 correlations, got {ncorr}.")
+
+
+def array_lonlat(positions):
+    """Geodetic (lon, lat) in radians from the mean of ITRF/ECEF antenna positions."""
+    from astropy import units as u
+    from astropy.coordinates import EarthLocation
+
+    x, y, z = np.asarray(positions, dtype=np.float64).mean(axis=0)
+    loc = EarthLocation.from_geocentric(x * u.m, y * u.m, z * u.m)
+    return loc.lon.to_value(u.rad), loc.lat.to_value(u.rad)
+
+
+def resolve_beam(spec, band: str = "L") -> BeamProvider:
+    """Build a beam provider from a spec: a ``.fits`` cube, a CSV/built-in JimBeam, or a band."""
+    spec = band if spec in (None, "") else str(spec)
+    if spec.lower().endswith(".fits"):
+        return FitsBeamProvider.from_fits(spec)
+    return _build_jimbeam(spec, band)
+
+
+def averaged_power_beam(provider, ell, emm, freqs, chi_grid):
+    """Frequency- and parallactic-angle-averaged Stokes-I power beam ``A(l, m)``, shape ``(npts,)``.
+
+    Averages :func:`image_power_beam` (already PA-averaged) over frequency. Used for the
+    image-/component-domain apply/correct, which is a direct multiply/divide by one map.
+    """
+    return image_power_beam(provider, True, ell, emm, freqs, chi_grid).mean(axis=1)
+
+
+def write_beam_fits(beam: CosineTaperBeam, l_grid, m_grid, freqs_hz, path):
+    """Write a cosine-taper beam to a 4-plane FITS cube that :meth:`FitsBeamProvider.from_fits` reads.
+
+    Samples ``beam`` on the ``(l_grid, m_grid)`` direction-cosine grid at ``freqs_hz`` and stores
+    ``[HH, VV]`` feed voltages as real/imag planes: ``(4, nfreq, nm, nl)``, with a linear WCS giving
+    L/M in degrees and FREQ in Hz.
+    """
+    from astropy.io import fits
+
+    l_grid = np.ascontiguousarray(l_grid, dtype=np.float64)
+    m_grid = np.ascontiguousarray(m_grid, dtype=np.float64)
+    freqs_hz = np.atleast_1d(np.asarray(freqs_hz, dtype=np.float64))
+    nl, nm, nf = l_grid.size, m_grid.size, freqs_hz.size
+    # The FITS FREQ axis is linear (CRVAL + CDELT*pixel), so the frequencies must be
+    # uniformly spaced. The cosine-taper model is continuous in frequency, so resample
+    # onto a uniform grid rather than write a non-uniform one that reloads incorrectly.
+    if nf > 2 and not np.allclose(np.diff(freqs_hz), freqs_hz[1] - freqs_hz[0]):
+        raise ValueError("write_beam_fits needs uniformly-spaced frequencies for the linear FITS FREQ axis.")
+
+    ll, mm = np.meshgrid(l_grid, m_grid, indexing="ij")
+    v = beam.voltages(np.degrees(ll.ravel()), np.degrees(mm.ravel()), freqs_hz / 1e6)  # (nl*nm, nf, 2)
+    v = v.reshape(nl, nm, nf, 2)
+    hh = v[..., 0].transpose(2, 1, 0)  # (nf, nm, nl)
+    vv = v[..., 1].transpose(2, 1, 0)
+    data = np.stack([hh.real, hh.imag, vv.real, vv.imag], axis=0).astype(np.float32)  # (4, nf, nm, nl)
+
+    dl = np.degrees(l_grid[1] - l_grid[0]) if nl > 1 else 1.0
+    dm = np.degrees(m_grid[1] - m_grid[0]) if nm > 1 else 1.0
+    df = float(freqs_hz[1] - freqs_hz[0]) if nf > 1 else 1e6
+    hdr = fits.Header()
+    hdr["CTYPE1"], hdr["CRPIX1"], hdr["CRVAL1"], hdr["CDELT1"], hdr["CUNIT1"] = "L", 1, np.degrees(l_grid[0]), dl, "deg"
+    hdr["CTYPE2"], hdr["CRPIX2"], hdr["CRVAL2"], hdr["CDELT2"], hdr["CUNIT2"] = "M", 1, np.degrees(m_grid[0]), dm, "deg"
+    hdr["CTYPE3"], hdr["CRPIX3"], hdr["CRVAL3"], hdr["CDELT3"], hdr["CUNIT3"] = "FREQ", 1, float(freqs_hz[0]), df, "Hz"
+    hdr["CTYPE4"], hdr["CRPIX4"], hdr["CRVAL4"], hdr["CDELT4"] = "FEED", 1, 0, 1
+    hdr["BUNIT"] = "1"
+    fits.PrimaryHDU(data=data, header=hdr).writeto(path, overwrite=True)

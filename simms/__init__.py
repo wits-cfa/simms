@@ -51,6 +51,7 @@ class BinClass:
     def __init__(self):
         self.skysim = "skysim"
         self.telsim = "telsim"
+        self.primary_beam = "primary-beam"
 
 
 BIN = BinClass()
