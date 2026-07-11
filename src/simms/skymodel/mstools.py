@@ -341,6 +341,7 @@ def attach_beam(
     basis_transform: np.ndarray | None = None,
     phase_ra0: float | None = None,
     phase_dec0: float | None = None,
+    beam_grid_max_gib: float | None = None,
 ) -> PreparedSky:
     """Return a copy of ``prepared`` with a primary-beam grid attached.
 
@@ -354,6 +355,7 @@ def attach_beam(
     per-feed grid.
     """
     from simms.skymodel.beams import (
+        BEAM_GRID_MAX_GIB_DEFAULT,
         build_beam_grid,
         build_beam_grid_jones,
         corr_feed_maps,
@@ -361,15 +363,18 @@ def attach_beam(
         reproject_lm,
     )
 
+    max_gib = BEAM_GRID_MAX_GIB_DEFAULT if beam_grid_max_gib is None else beam_grid_max_gib
     tgrid, chi_grid = pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step)
     ell, emm = prepared.lmn[:, 0], prepared.lmn[:, 1]
     if phase_ra0 is not None:
         ell, emm = reproject_lm(ell, emm, phase_ra0, phase_dec0, ra0, dec0)
     if full_jones:
-        beam_grid = build_beam_grid_jones(providers, type_is_altaz, ell, emm, prepared.freqs, chi_grid, basis_transform)
+        beam_grid = build_beam_grid_jones(
+            providers, type_is_altaz, ell, emm, prepared.freqs, chi_grid, basis_transform, max_gib=max_gib
+        )
         corr_feed_p = corr_feed_q = None
     else:
-        beam_grid = build_beam_grid(providers, type_is_altaz, ell, emm, prepared.freqs, chi_grid)
+        beam_grid = build_beam_grid(providers, type_is_altaz, ell, emm, prepared.freqs, chi_grid, max_gib=max_gib)
         corr_feed_p, corr_feed_q = corr_feed_maps(ncorr)
     return replace(
         prepared,

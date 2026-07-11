@@ -141,6 +141,14 @@ cabs:
           interpolated from. Smaller is more accurate but uses more memory/compute.
         dtype: float
         default: 1.0
+      beam-grid-max-gib:
+        info: >-
+          Hard ceiling (GiB) on the sampled beam grid, which scales with parallactic-angle
+          samples x sky components x channels and is held in memory for the whole run.
+          skysim errors (rather than risking an out-of-memory kill) if the grid would exceed
+          this; lower it with a coarser --beam-pa-step or fewer components.
+        dtype: float
+        default: 4.0
       beam-jones:
         info: >-
           Primary-beam application for component skies. "diagonal" applies a per-feed

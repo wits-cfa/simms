@@ -573,6 +573,54 @@ def test_pa_sample_grid_caps_near_zenith_transit():
     assert tg2.size < 200
 
 
+# --- Beam-grid memory ceiling (#140) ---------------------------------------------
+
+from simms.skymodel.beams import (  # noqa: E402
+    BEAM_GRID_MAX_GIB_DEFAULT,
+    build_beam_grid,
+    build_beam_grid_jones,
+)
+
+
+def _small_grid_args():
+    providers = [UnityBeamProvider()]
+    type_is_altaz = np.array([False])
+    ell = np.array([0.0, 0.01, -0.02])
+    emm = np.array([0.0, -0.01, 0.02])
+    freqs = np.array([1.3e9, 1.4e9])
+    chi_grid = np.zeros(4)
+    return providers, type_is_altaz, ell, emm, freqs, chi_grid
+
+
+def test_build_beam_grid_raises_above_ceiling():
+    providers, type_is_altaz, ell, emm, freqs, chi_grid = _small_grid_args()
+    with pytest.raises(MemoryError, match="beam-pa-step"):
+        build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid, max_gib=1e-9)
+    # The Jones grid (fold 4) is checked the same way.
+    with pytest.raises(MemoryError, match="beam-grid-max-gib"):
+        build_beam_grid_jones(
+            providers, type_is_altaz, ell, emm, freqs, chi_grid, corr_basis_transform(False), max_gib=1e-9
+        )
+
+
+def test_build_beam_grid_warns_in_soft_band(caplog):
+    providers, type_is_altaz, ell, emm, freqs, chi_grid = _small_grid_args()
+    # 1 x 4 x 3 x 2 x 2 x 8 B = 384 B; a ceiling just above it puts us over half.
+    max_gib = 5e-7
+    with caplog.at_level("WARNING", logger="simms.skysim"):
+        grid = build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid, max_gib=max_gib)
+    assert grid.shape == (1, 4, 3, 2, 2)
+    assert any("half" in r.message for r in caplog.records)
+
+
+def test_build_beam_grid_default_limit_passes_quietly(caplog):
+    providers, type_is_altaz, ell, emm, freqs, chi_grid = _small_grid_args()
+    with caplog.at_level("WARNING", logger="simms.skysim"):
+        grid = build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid, max_gib=BEAM_GRID_MAX_GIB_DEFAULT)
+    assert grid.shape == (1, 4, 3, 2, 2)
+    assert not caplog.records
+
+
 def test_fits_provider_handles_descending_grid():
     # FITS L/M axes commonly descend (negative CDELT); the constructor must re-sort
     # ascending rather than let RegularGridInterpolator raise, with identical results.
@@ -764,3 +812,68 @@ def test_full_jones_circular_equals_S_Vlin_SH():
     vc = predict_block(circ, uvw, times=times, antenna1=a1, antenna2=a2)[0, 0].reshape(2, 2)
     S = corr_basis_transform(True)
     np.testing.assert_allclose(vc, S @ vl @ S.conj().T, atol=1e-5)
+
+
+# --- POINTING.DIRECTION measure frame (#144) -------------------------------------
+
+import os  # noqa: E402
+
+from simms.skymodel.beams import read_pointing_centre  # noqa: E402
+
+from . import InitTest  # noqa: E402
+
+
+def _write_pointing_ms(base_dir, ra, dec, ref):
+    """A minimal MS whose ``POINTING.DIRECTION`` carries the given measure ``Ref``.
+
+    ``ref=None`` omits the MEASINFO keyword entirely (as older MSs may).
+    """
+    from casacore.tables import makearrcoldesc, maketabdesc, table
+
+    ms = os.path.join(base_dir, "pnt.ms")
+    pnt = os.path.join(ms, "POINTING")
+    mt = table(ms, maketabdesc([makearrcoldesc("DUMMY", 0.0)]), nrow=1, ack=False)
+    pt = table(pnt, maketabdesc([makearrcoldesc("DIRECTION", 0.0, ndim=2)]), nrow=1, ack=False)
+    pt.putcell("DIRECTION", 0, np.array([[ra, dec]], dtype=float))  # (npoly=1, radec=2)
+    if ref is not None:
+        pt.putcolkeyword("DIRECTION", "MEASINFO", {"type": "direction", "Ref": ref})
+    pt.flush()
+    pt.close()
+    mt.putkeyword("POINTING", f"Table: {pnt}")
+    mt.flush()
+    mt.close()
+    return ms
+
+
+def test_read_pointing_centre_j2000_fast_path():
+    pytest.importorskip("casacore")
+    it = InitTest()
+    ms = _write_pointing_ms(it.random_named_directory(), 0.5, -0.7, "J2000")
+    assert read_pointing_centre(ms, 1.0, 1.0) == pytest.approx((0.5, -0.7))
+
+
+def test_read_pointing_centre_missing_measinfo_falls_through():
+    # An absent MEASINFO keyword is treated as equatorial (legacy behaviour): the stored
+    # direction is returned rather than the phase-centre fallback.
+    pytest.importorskip("casacore")
+    it = InitTest()
+    ms = _write_pointing_ms(it.random_named_directory(), 0.3, -0.4, None)
+    assert read_pointing_centre(ms, 1.0, 1.0) == pytest.approx((0.3, -0.4))
+
+
+def test_read_pointing_centre_rejects_azel():
+    pytest.importorskip("casacore")
+    it = InitTest()
+    ms = _write_pointing_ms(it.random_named_directory(), 0.5, -0.7, "AZEL")
+    with pytest.raises(NotImplementedError, match="AZEL"):
+        read_pointing_centre(ms, 1.0, 1.0)
+
+
+def test_read_pointing_centre_warns_on_nonstandard_equatorial(caplog):
+    pytest.importorskip("casacore")
+    it = InitTest()
+    ms = _write_pointing_ms(it.random_named_directory(), 0.5, -0.7, "B1950")
+    with caplog.at_level("WARNING", logger="simms.skysim"):
+        centre = read_pointing_centre(ms, 1.0, 1.0)
+    assert centre == pytest.approx((0.5, -0.7))
+    assert any("B1950" in r.message for r in caplog.records)
