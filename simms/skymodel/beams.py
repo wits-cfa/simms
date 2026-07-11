@@ -663,15 +663,58 @@ def array_lonlat(positions):
     return loc.lon.to_value(u.rad), loc.lat.to_value(u.rad)
 
 
+# POINTING.DIRECTION measure frames that name a horizontal (az/el-type) direction. These
+# map to a *time-dependent* sky position, so a single fixed beam centre is meaningless.
+_HORIZONTAL_POINTING_FRAMES = frozenset({"AZEL", "AZELGEO", "AZELSW", "AZELNE", "HADEC"})
+# Equatorial frames handled silently on the fast path (a constant RA/Dec direction).
+_EQUATORIAL_POINTING_FRAMES = frozenset({"J2000", "ICRS"})
+
+
+def _pointing_direction_frame(ms):
+    """Measure reference of ``POINTING.DIRECTION`` (upper-case), or ``""`` if unavailable.
+
+    Reads the column's ``MEASINFO``/``Ref`` keyword via casacore. A missing table or keyword
+    yields ``""`` (treated as equatorial by the caller, preserving the legacy fast path).
+    """
+    try:
+        from casacore.tables import table
+
+        with table(f"{ms}::POINTING", ack=False) as tab:
+            measinfo = tab.getcolkeywords("DIRECTION").get("MEASINFO", {})
+        return str(measinfo.get("Ref", "")).upper()
+    except Exception:
+        return ""
+
+
 def read_pointing_centre(ms, fallback_ra0, fallback_dec0):
     """Antenna pointing centre (radians) from ``POINTING.DIRECTION``.
 
     This is where the dishes point, and hence where the primary beam is centred -- distinct
     from ``FIELD.PHASE_DIR`` (the correlator phase centre, a freely-shiftable quantity). Reads
-    the poly order-0 term of the first row's direction (J2000 RA/Dec) and falls back to the
-    given phase centre, with a warning, when the MS has no usable POINTING table.
+    the poly order-0 term of the first row's direction and falls back to the given phase
+    centre, with a warning, when the MS has no usable POINTING table.
+
+    The direction is interpreted as a fixed sky position, which requires an equatorial measure
+    frame. ``J2000``/``ICRS`` (and an absent keyword, as older simms MSs may have) take the
+    fast path silently; another equatorial frame is accepted with a warning; a **horizontal**
+    frame (``AZEL`` etc.) raises :class:`NotImplementedError`, since it maps to a
+    time-dependent sky direction that a single beam centre cannot represent.
     """
     from daskms import xds_from_table
+
+    frame = _pointing_direction_frame(ms)
+    if frame in _HORIZONTAL_POINTING_FRAMES:
+        raise NotImplementedError(
+            f"POINTING.DIRECTION is in the horizontal frame {frame!r}, which maps to a "
+            f"time-dependent sky position; a fixed primary-beam centre is unsupported. Supply "
+            f"a J2000/ICRS POINTING table or a target-tracking MS."
+        )
+    if frame and frame not in _EQUATORIAL_POINTING_FRAMES:
+        log.warning(
+            "POINTING.DIRECTION frame %r is treated as a fixed RA/Dec beam centre; if it is "
+            "not equatorial the primary beam may be mis-centred.",
+            frame,
+        )
 
     try:
         pnt = xds_from_table(f"{ms}::POINTING")[0]

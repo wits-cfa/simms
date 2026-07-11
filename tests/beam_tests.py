@@ -764,3 +764,68 @@ def test_full_jones_circular_equals_S_Vlin_SH():
     vc = predict_block(circ, uvw, times=times, antenna1=a1, antenna2=a2)[0, 0].reshape(2, 2)
     S = corr_basis_transform(True)
     np.testing.assert_allclose(vc, S @ vl @ S.conj().T, atol=1e-5)
+
+
+# --- POINTING.DIRECTION measure frame (#144) -------------------------------------
+
+import os  # noqa: E402
+
+from simms.skymodel.beams import read_pointing_centre  # noqa: E402
+
+from . import InitTest  # noqa: E402
+
+
+def _write_pointing_ms(base_dir, ra, dec, ref):
+    """A minimal MS whose ``POINTING.DIRECTION`` carries the given measure ``Ref``.
+
+    ``ref=None`` omits the MEASINFO keyword entirely (as older MSs may).
+    """
+    from casacore.tables import makearrcoldesc, maketabdesc, table
+
+    ms = os.path.join(base_dir, "pnt.ms")
+    pnt = os.path.join(ms, "POINTING")
+    mt = table(ms, maketabdesc([makearrcoldesc("DUMMY", 0.0)]), nrow=1, ack=False)
+    pt = table(pnt, maketabdesc([makearrcoldesc("DIRECTION", 0.0, ndim=2)]), nrow=1, ack=False)
+    pt.putcell("DIRECTION", 0, np.array([[ra, dec]], dtype=float))  # (npoly=1, radec=2)
+    if ref is not None:
+        pt.putcolkeyword("DIRECTION", "MEASINFO", {"type": "direction", "Ref": ref})
+    pt.flush()
+    pt.close()
+    mt.putkeyword("POINTING", f"Table: {pnt}")
+    mt.flush()
+    mt.close()
+    return ms
+
+
+def test_read_pointing_centre_j2000_fast_path():
+    pytest.importorskip("casacore")
+    it = InitTest()
+    ms = _write_pointing_ms(it.random_named_directory(), 0.5, -0.7, "J2000")
+    assert read_pointing_centre(ms, 1.0, 1.0) == pytest.approx((0.5, -0.7))
+
+
+def test_read_pointing_centre_missing_measinfo_falls_through():
+    # An absent MEASINFO keyword is treated as equatorial (legacy behaviour): the stored
+    # direction is returned rather than the phase-centre fallback.
+    pytest.importorskip("casacore")
+    it = InitTest()
+    ms = _write_pointing_ms(it.random_named_directory(), 0.3, -0.4, None)
+    assert read_pointing_centre(ms, 1.0, 1.0) == pytest.approx((0.3, -0.4))
+
+
+def test_read_pointing_centre_rejects_azel():
+    pytest.importorskip("casacore")
+    it = InitTest()
+    ms = _write_pointing_ms(it.random_named_directory(), 0.5, -0.7, "AZEL")
+    with pytest.raises(NotImplementedError, match="AZEL"):
+        read_pointing_centre(ms, 1.0, 1.0)
+
+
+def test_read_pointing_centre_warns_on_nonstandard_equatorial(caplog):
+    pytest.importorskip("casacore")
+    it = InitTest()
+    ms = _write_pointing_ms(it.random_named_directory(), 0.5, -0.7, "B1950")
+    with caplog.at_level("WARNING", logger="simms.skysim"):
+        centre = read_pointing_centre(ms, 1.0, 1.0)
+    assert centre == pytest.approx((0.5, -0.7))
+    assert any("B1950" in r.message for r in caplog.records)
