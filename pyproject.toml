@@ -1,6 +1,6 @@
 [project]
 name = "simms"
-version = "3.0beta3"
+version = "3.0.0"
 description = "Simms 3.0. Tool for end-to-end simulations of radio inteferometer observations"
 authors = [
     {name="Sphesihle Makhathini", email="sphemakh@gmail.com"},
