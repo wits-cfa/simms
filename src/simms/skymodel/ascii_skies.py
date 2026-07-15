@@ -180,7 +180,9 @@ class ASCIISource:
 
         self.is_polarised = polarised_source.is_valid(fields)
 
-        self.is_line = line_source.is_valid(fields)
+        # none_or_all: a source with some but not all line fields is an error,
+        # not silently a continuum source
+        self.is_line = line_source.is_valid(fields, none_or_all=True)
 
         self.is_continuum = continuum_source.is_valid(fields)
 
@@ -277,8 +279,13 @@ class ASCIISource:
         self.stokes = StokesData([getattr(self, f"stokes_{x}", 0) for x in "iquv"], linear_basis=linear_basis)
         if self.is_line:
             specfunc = gauss_1d
+            # The line centre is the observed peak frequency when given;
+            # otherwise it is derived from the rest frequency and redshift.
+            x0 = getattr(self, "line_peak", None)
+            if x0 is None:
+                x0 = self.line_restfreq / (1.0 + getattr(self, "line_redshift", 0.0))
             kwargs = {
-                "x0": self.value_or_default("line_peak"),
+                "x0": x0,
                 "width": self.value_or_default("line_width"),
             }
         elif self.is_continuum:
@@ -384,6 +391,13 @@ class ASCIISkymodel:
                 raise ASCIISkymodelError("ASCII sky model needs to have a header starting with the string #format:")
 
             header = line.strip().replace("#format:", "").strip().split(self.delimiter)
+
+            unknown = [key for key in header if key not in alias_to_field]
+            if unknown:
+                raise ASCIISkymodelError(
+                    f"ASCII sky model header has unknown fields {unknown}."
+                    f" Known fields/aliases are: {sorted(alias_to_field.keys())}"
+                )
 
             try:
                 point_source.is_valid(fields=[alias_to_field[key] for key in header], raise_exception=True)

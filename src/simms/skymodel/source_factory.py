@@ -40,20 +40,24 @@ class SourceType:
         fields_no_abs_reqs = set(fields) - set(self.abs_reqs)
 
         missing_cond_reqs = []
-        missing_cond_reqs_flat = []
         # now remove fields in the conditional groups
         for group in self.cond_req_groups:
             # if one exists, remove the full group
             if fields_no_abs_reqs.isdisjoint(group):
                 missing_cond_reqs.append("|".join(group))
-                missing_cond_reqs_flat + group
 
         missing = missing_abs_req + missing_cond_reqs
         error_message = f"Source type '{self.name}' is missing required source fields: {missing}"
         if missing:
+            # For none_or_all, compare against the individual field names, not the
+            # "a|b" spec strings, so a field from a conditional group also counts
+            # as "some of this type's fields are present".
+            own_fields = set()
+            for item in self.required_no_parent:
+                own_fields.update(item.split("|"))
             if raise_exception:
                 raise ASCIISourceError(error_message)
-            elif none_or_all and set(self.required_no_parent).intersection(fields):
+            elif none_or_all and own_fields.intersection(fields):
                 raise ASCIISourceError(error_message)
             else:
                 return False
@@ -81,8 +85,8 @@ continuum_source = SourceType(
 line_source = SourceType(
     "Spectral Line Source",
     inherit=point_source,
-    required=["line_peak", "line_ref_freq|line_redshift"],
-    surplus=["line_width"],
+    required=["line_peak|line_restfreq", "line_width"],
+    surplus=["line_redshift"],
 )
 polarised_source = SourceType("Polarised Source", inherit=point_source, required=["stokes_q|stokes_u|stokes_v"])
 exoplanet_transient_source = SourceType(

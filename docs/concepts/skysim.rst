@@ -27,8 +27,11 @@ ASCII sky model schema
 - **Extended sources** are 2D Gaussians, parametrised by FWHM major/minor axes
   (``emaj``/``emin``) and position angle (``pa``); double-horn profiles are
   not supported.
-- **Spectral line sources** need the peak frequency (``line_peak``) and width
-  (``line_width``).
+- **Spectral line sources** need the line centre and width (``line_width``,
+  an observed-frame FWHM). The centre is either the observed peak frequency
+  (``line_peak``), or a rest frequency (``line_restfreq``) optionally shifted
+  by a redshift (``line_redshift``, default 0). ``line_peak`` wins when both
+  are given.
 - **Continuum sources** need a reference frequency (``cont_reffreq``) and at
   least one power-law coefficient (``cont_coeff_1`` = spectral index,
   ``cont_coeff_2`` = curvature, ...).

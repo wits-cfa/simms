@@ -403,6 +403,76 @@ def test_continuum_coefficients_truncation():
     assert src3.continuum_coefficients() == []
 
 
+def gauss_line_profile(freqs, flux, centre, width):
+    from simms.constants import FWHM_scale_fact
+
+    sigma = width / FWHM_scale_fact
+    return flux * np.exp(-((freqs - centre) ** 2) / (2 * sigma**2))
+
+
+def test_line_source_from_peak_frequency(params):
+    # Regression for issue #152: is_line never activated, so every line source
+    # silently fell through to the (flat) continuum branch.
+    src = parse_single_source(params, "#format: ra dec stokes_i line_peak line_width\n0 -30 1.5 1.42e9 1e7\n")
+    assert src.is_line is True
+
+    freqs = np.linspace(1.40e9, 1.44e9, 81)
+    bmatrix = src.get_brightness_matrix(freqs, ncorr=2)
+    # ncorr=2, unpolarised: XX = I
+    assert bmatrix[0] == pytest.approx(gauss_line_profile(freqs, 1.5, 1.42e9, 1e7))
+
+
+def test_line_source_from_restfreq_and_redshift(params):
+    # observed centre = line_restfreq / (1 + line_redshift)
+    restfreq, redshift = 1.420405751e9, 0.1
+    src = parse_single_source(
+        params,
+        f"#format: ra dec stokes_i line_restfreq line_redshift line_width\n0 -30 1.0 {restfreq} {redshift} 1e6\n",
+    )
+    assert src.is_line is True
+
+    centre = restfreq / (1 + redshift)
+    freqs = np.linspace(centre - 5e6, centre + 5e6, 101)
+    bmatrix = src.get_brightness_matrix(freqs, ncorr=2)
+    assert bmatrix[0] == pytest.approx(gauss_line_profile(freqs, 1.0, centre, 1e6))
+
+
+def test_line_source_restfreq_without_redshift(params):
+    # redshift defaults to 0: the observed centre is the rest frequency
+    src = parse_single_source(params, "#format: ra dec stokes_i line_restfreq line_width\n0 -30 1.0 1.42e9 1e6\n")
+    assert src.is_line is True
+
+    freqs = np.linspace(1.415e9, 1.425e9, 101)
+    bmatrix = src.get_brightness_matrix(freqs, ncorr=2)
+    assert bmatrix[0] == pytest.approx(gauss_line_profile(freqs, 1.0, 1.42e9, 1e6))
+
+
+def test_line_source_peak_wins_over_restfreq(params):
+    # line_peak takes precedence when both parametrisations are given
+    src = parse_single_source(
+        params,
+        "#format: ra dec stokes_i line_peak line_restfreq line_redshift line_width\n0 -30 1.0 1.30e9 1.42e9 0.1 1e6\n",
+    )
+    freqs = np.linspace(1.295e9, 1.305e9, 101)
+    bmatrix = src.get_brightness_matrix(freqs, ncorr=2)
+    assert bmatrix[0] == pytest.approx(gauss_line_profile(freqs, 1.0, 1.30e9, 1e6))
+
+
+def test_unknown_header_field_error(params):
+    # an unknown column must be a clear error naming the field, not a raw
+    # KeyError from the alias lookup
+    with pytest.raises(ASCIISkymodelError, match="line_ref_freq"):
+        parse_single_source(params, "#format: ra dec stokes_i line_ref_freq\n0 -30 1.0 1.42e9\n")
+
+
+def test_line_source_partial_fields_error(params):
+    # some but not all line fields must be an error, not silently a continuum source
+    with pytest.raises(ASCIISourceError, match="Spectral Line Source"):
+        parse_single_source(params, "#format: ra dec stokes_i line_peak\n0 -30 1.0 1.42e9\n")
+    with pytest.raises(ASCIISourceError, match="Spectral Line Source"):
+        parse_single_source(params, "#format: ra dec stokes_i line_width\n0 -30 1.0 1e6\n")
+
+
 def test_transient_brightness_matrix_time_axis():
     schema = load_default_schema()
     src = ASCIISource(schema)
