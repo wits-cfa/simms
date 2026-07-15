@@ -53,7 +53,7 @@ class SourceType:
             # "a|b" spec strings, so a field from a conditional group also counts
             # as "some of this type's fields are present".
             own_fields = set()
-            for item in self.required_no_parent:
+            for item in self.required_no_parent + (self.surplus or []):
                 own_fields.update(item.split("|"))
             if raise_exception:
                 raise ASCIISourceError(error_message)
