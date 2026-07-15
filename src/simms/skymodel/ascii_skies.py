@@ -183,6 +183,15 @@ class ASCIISource:
         # none_or_all: a source with some but not all line fields is an error,
         # not silently a continuum source
         self.is_line = line_source.is_valid(fields, none_or_all=True)
+        if self.is_line:
+            # gauss_1d divides by the width, so width <= 0 gives NaNs, and
+            # 1 + redshift <= 0 gives a zero/negative observed line centre
+            width = self.value_or_default("line_width")
+            if width <= 0:
+                raise ASCIISourceError(f"Spectral line source line_width must be positive, got {width} Hz")
+            redshift = getattr(self, "line_redshift", 0.0)
+            if redshift <= -1:
+                raise ASCIISourceError(f"Spectral line source line_redshift must be > -1, got {redshift}")
 
         self.is_continuum = continuum_source.is_valid(fields)
 

@@ -473,6 +473,28 @@ def test_line_source_partial_fields_error(params):
         parse_single_source(params, "#format: ra dec stokes_i line_width\n0 -30 1.0 1e6\n")
 
 
+def test_line_source_nonpositive_width_error(params):
+    # gauss_1d divides by the width: zero or negative must fail at parse time,
+    # not as NaNs in the predicted visibilities
+    with pytest.raises(ASCIISourceError, match="line_width"):
+        parse_single_source(params, "#format: ra dec stokes_i line_peak line_width\n0 -30 1.0 1.42e9 0\n")
+    with pytest.raises(ASCIISourceError, match="line_width"):
+        parse_single_source(params, "#format: ra dec stokes_i line_peak line_width\n0 -30 1.0 1.42e9 -1e6\n")
+
+
+def test_line_source_unphysical_redshift_error(params):
+    # 1 + redshift <= 0 gives a zero/negative observed line centre
+    with pytest.raises(ASCIISourceError, match="line_redshift"):
+        parse_single_source(
+            params, "#format: ra dec stokes_i line_restfreq line_redshift line_width\n0 -30 1.0 1.42e9 -1 1e6\n"
+        )
+    # blueshifts (-1 < z < 0) remain valid
+    src = parse_single_source(
+        params, "#format: ra dec stokes_i line_restfreq line_redshift line_width\n0 -30 1.0 1.42e9 -0.5 1e6\n"
+    )
+    assert src.is_line is True
+
+
 def test_transient_brightness_matrix_time_axis():
     schema = load_default_schema()
     src = ASCIISource(schema)
