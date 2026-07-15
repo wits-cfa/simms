@@ -76,20 +76,28 @@ parameters:
     units: null
     ptype: number
   line_peak:
-    info: Line source peak frequency; default units
+    info: Observed frequency of the line peak (line centre). Takes precedence
+          over line_restfreq/line_redshift when both are given.
     alias: null
     units: Hz
     ptype: frequency
   line_width:
-    info: Line width; default units
+    info: Line FWHM in the observed frame; default units
     alias: null
     units: Hz
     ptype: frequency
   line_restfreq:
-    info: Line rest frequency; default units
+    info: Line rest frequency. Used with line_redshift to derive the observed
+          line centre when line_peak is not given.
     alias: null
     units: Hz
     ptype: frequency
+  line_redshift:
+    info: Source redshift; shifts line_restfreq to the observed frame
+          (observed centre = line_restfreq / (1 + line_redshift)). Default 0.
+    alias: null
+    units: null
+    ptype: number
   transient_start:
     info: Beginning of transient event relative to observation start
     alias: null
