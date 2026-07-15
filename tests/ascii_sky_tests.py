@@ -1,6 +1,7 @@
 import math
 import os
 
+import numpy as np
 import pytest
 from astropy.coordinates import Angle, Latitude, Longitude
 from omegaconf import OmegaConf
@@ -43,13 +44,15 @@ def load_default_schema() -> ASCIISourceSchema:
     return schema
 
 
-def source_type_validation_test():
-    src = SourceType(requires=["ra", "dec", "a|b|c", "e|f"])
+def test_source_type_validation():
+    src = SourceType("Test Source", required=["ra", "dec", "a|b|c", "e|f"])
     with pytest.raises(ASCIISourceError):
         src.is_valid(["ra", "dec", "a"], raise_exception=True)
 
+    # 'a' satisfies 'a|b|c' but nothing satisfies 'e|f'
     assert not src.is_valid(["ra", "dec", "a"])
     assert src.is_valid(["ra", "dec", "a", "e"])
+    assert not src.is_valid(["dec", "a", "e"])
 
 
 def test_set_source_param_conversions():
@@ -73,10 +76,12 @@ def test_alias_mapper():
     src = ASCIISource(schema)
 
     a2f = src.alias_to_field_mapper()
+    f2a = src.field_to_alias_mapper()
 
-    # Default schema has no aliases set, so mapping is identity
+    # Default schema has no aliases set, so mapping is identity both ways
     for key in ["ra", "dec", "stokes_i", "name"]:
         assert a2f[key] == key
+        assert f2a[key] == key
 
 
 def test_finalise_point_vs_extended_and_polarisation():
@@ -264,3 +269,167 @@ def test_skymodel_parsing_csv_with_alias(params):
     assert pytest.approx(s1.dec, abs=1e-12) == Latitude("-45 deg").to("rad").value
     assert pytest.approx(s1.stokes_i, abs=1e-12) == 0.5
     assert s1.name == "S1"
+
+
+SEXAGESIMAL_HEADER = "#format: name ra_h ra_m ra_s dec_d dec_m dec_s stokes_i"
+
+
+def parse_single_source(params, content: str, **kwargs):
+    model = ASCIISkymodel(params.write_temp_file(content), **kwargs)
+    assert len(model.sources) == 1
+    return model.sources[0]
+
+
+def test_sexagesimal_join_negative_dec(params):
+    # Regression: the sign of dec_d must apply to the arcmin/arcsec components
+    # too. The naive sum gave -65 + 45' + 9.08'' = -64.2475 deg for PKS0407-65.
+    src = parse_single_source(params, f"{SEXAGESIMAL_HEADER}\nPKS0407-65 4 8 20.38 -65 45 9.08 15.0\n")
+    assert pytest.approx(math.degrees(src.dec), abs=1e-9) == -(65 + 45 / 60 + 9.08 / 3600)
+    # Regression: ra_m/ra_s are minutes/seconds of time (15 arcmin/arcsec each),
+    # not arcmin/arcsec.
+    assert pytest.approx(math.degrees(src.ra), abs=1e-9) == (4 + 8 / 60 + 20.38 / 3600) * 15
+
+
+def test_sexagesimal_join_minus_zero_degrees(params):
+    # Declinations between 0 and -1 deg have dec_d == "-00"; the sign must
+    # survive even though the degrees component parses to 0.0.
+    src = parse_single_source(params, f"{SEXAGESIMAL_HEADER}\nJ0000-0045 0 0 0 -00 45 9.08 1.0\n")
+    assert pytest.approx(math.degrees(src.dec), abs=1e-9) == -(45 / 60 + 9.08 / 3600)
+
+
+def test_sexagesimal_join_positive(params):
+    src = parse_single_source(params, f"{SEXAGESIMAL_HEADER}\nSrc 12 30 0 30 30 30 1.0\n")
+    assert pytest.approx(math.degrees(src.ra), abs=1e-9) == 187.5
+    assert pytest.approx(math.degrees(src.dec), abs=1e-9) == 30 + 30 / 60 + 30 / 3600
+
+
+def test_sexagesimal_join_partial_components(params):
+    # Only some components in the header: the missing ones default to 0
+    src = parse_single_source(params, "#format: ra_h dec_d stokes_i\n6 -30 1.0\n")
+    assert pytest.approx(math.degrees(src.ra), abs=1e-9) == 90.0
+    assert pytest.approx(math.degrees(src.dec), abs=1e-9) == -30.0
+
+
+def test_direct_field_wins_over_join(params):
+    # If ra/dec are given directly, the sexagesimal components are ignored
+    src = parse_single_source(params, "#format: ra dec dec_d dec_m stokes_i\n10 -10 -65 45 1.0\n")
+    assert pytest.approx(math.degrees(src.dec), abs=1e-9) == -10.0
+
+
+def test_join_out_of_range_dec_rejected(params):
+    with pytest.raises(ASCIISourceError, match="dec"):
+        parse_single_source(params, f"{SEXAGESIMAL_HEADER}\nBad 0 0 0 -95 0 0 1.0\n")
+
+
+def test_join_signed_minutes_rejected(params):
+    # The sign belongs on the leading component only; signed arcminutes are
+    # ambiguous and must be a clear error, not a silently wrong coordinate
+    with pytest.raises(ASCIISourceError, match="dec"):
+        parse_single_source(params, f"{SEXAGESIMAL_HEADER}\nBad 0 0 0 -65 -45 -9.08 1.0\n")
+
+
+def test_join_backward_compat_old_component_schema(params):
+    # Custom user schemas copied from the old default declare the components
+    # with units hour/min/sec and ptype longitude; joins must still be correct
+    schema_yaml = "\n".join(
+        [
+            "info: Old-style schema",
+            "parameters:",
+            "  name: {info: Name, units: null, ptype: string}",
+            "  ra: {info: RA, units: deg, ptype: longitude, join: [ra_h, ra_m, ra_s]}",
+            "  ra_h: {info: RA, units: hour, ptype: longitude}",
+            "  ra_m: {info: RA, units: min, ptype: longitude}",
+            "  ra_s: {info: RA, units: sec, ptype: longitude}",
+            "  dec: {info: Dec, units: deg, ptype: latitude, join: [dec_d, dec_m, dec_s]}",
+            "  dec_d: {info: Dec, units: deg, ptype: longitude}",
+            "  dec_m: {info: Dec, units: arcmin, ptype: longitude}",
+            "  dec_s: {info: Dec, units: arcsec, ptype: longitude}",
+            "  stokes_i: {info: Stokes I, units: Jy, ptype: flux, required: true}",
+        ]
+    )
+    schema_path = params.write_temp_file(schema_yaml, suffix=".yaml")
+    src = parse_single_source(
+        params,
+        f"{SEXAGESIMAL_HEADER}\nPKS0407-65 4 8 20.38 -65 45 9.08 15.0\n",
+        source_schema_file=schema_path,
+    )
+    assert pytest.approx(math.degrees(src.dec), abs=1e-9) == -(65 + 45 / 60 + 9.08 / 3600)
+    assert pytest.approx(math.degrees(src.ra), abs=1e-9) == (4 + 8 / 60 + 20.38 / 3600) * 15
+
+
+def test_blank_and_comment_lines_skipped_and_lineno_tracked(params):
+    content = "\n".join(
+        [
+            "#format: ra,dec,stokes_i,name",
+            "0,0,1.0,S0",
+            "",
+            "# a comment",
+            "45,-45,0.5,S1",
+            "",
+        ]
+    )
+    model = ASCIISkymodel(params.write_temp_file(content, suffix=".csv"), delimiter=",")
+    assert len(model.sources) == 2
+    assert [src.name for src in model.sources] == ["S0", "S1"]
+    # lineno maps a parsed source back to its line in the file (header is line 0)
+    assert [src.lineno for src in model.sources] == [1, 4]
+
+
+def test_value_or_default():
+    schema = load_default_schema()
+    src = ASCIISource(schema)
+    src.set_source_param("stokes_i", "2.0")
+
+    # a set field returns its value; unset fields fall back to the schema null value
+    assert src.value_or_default("stokes_i") == pytest.approx(2.0)
+    assert src.value_or_default("pa") == 0  # angle fields default to 0
+    assert src.value_or_default("cont_reffreq") is None  # frequency fields have no default
+
+
+def test_continuum_coefficients_truncation():
+    schema = load_default_schema()
+
+    src = ASCIISource(schema)
+    src.set_source_param("cont_coeff_1", "-0.7")
+    assert src.continuum_coefficients() == pytest.approx([-0.7])
+
+    # unset coefficient between set ones is zero-filled, trailing ones dropped
+    src2 = ASCIISource(schema)
+    src2.set_source_param("cont_coeff_1", "-0.7")
+    src2.set_source_param("cont_coeff_3", "0.1")
+    assert src2.continuum_coefficients() == pytest.approx([-0.7, 0.0, 0.1])
+
+    src3 = ASCIISource(schema)
+    assert src3.continuum_coefficients() == []
+
+
+def test_transient_brightness_matrix_time_axis():
+    schema = load_default_schema()
+    src = ASCIISource(schema)
+    for k, v in {
+        "ra": 0,
+        "dec": 0,
+        "stokes_i": 1.0,
+        "transient_start": "100 s",
+        "transient_period": "500 s",
+        "transient_ingress": "50 s",
+        "transient_absorb": 0.5,
+    }.items():
+        src.set_source_param(k, v)
+    src.finalise()
+    assert src.is_transient is True
+
+    freqs = [1.0e9, 1.1e9, 1.2e9]
+    unique_times = 1e9 + 60.0 * np.arange(20)
+    bmatrix = src.get_brightness_matrix(freqs, ncorr=4, unique_times=unique_times)
+    # transient sources get a time axis: (ncorr, ntime, nchan)
+    assert bmatrix.shape == (4, 20, 3)
+    # flux dips by transient_absorb mid-transit relative to out-of-transit
+    out_of_transit = bmatrix[0, 0, 0].real
+    mid_transit = bmatrix[0, :, 0].real.min()
+    assert pytest.approx(mid_transit / out_of_transit, abs=0.05) == 0.5
+
+    # a mapper expands unique times onto arbitrary output rows
+    mapper = [0, 0, 5, 19]
+    bmatrix_mapped = src.get_brightness_matrix(freqs, ncorr=4, unique_times=unique_times, time_index_mapper=mapper)
+    assert bmatrix_mapped.shape == (4, 4, 3)

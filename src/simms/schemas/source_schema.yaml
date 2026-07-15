@@ -15,21 +15,24 @@ parameters:
     units: deg
     ptype: longitude
     join: [ra_h, ra_m, ra_s]
+  # The h/m/s and d/m/s fields below are sexagesimal components of ra and dec.
+  # They are plain numbers; the units of the leading component (ra_h, dec_d)
+  # set the scale of the joined sexagesimal value.
   ra_h:
-    info: Right ascension
+    info: Right ascension hours (sexagesimal component)
     alias: null
-    units: hour
-    ptype: longitude
+    units: hourangle
+    ptype: number
   ra_m:
-    info: Right ascension
+    info: Right ascension minutes (sexagesimal component)
     alias: null
-    units: min
-    ptype: longitude
+    units: null
+    ptype: number
   ra_s:
-    info: Right ascension
+    info: Right ascension seconds (sexagesimal component)
     alias: null
-    units: sec
-    ptype: longitude
+    units: null
+    ptype: number
   dec:
     info: Declination
     alias: null
@@ -37,20 +40,20 @@ parameters:
     ptype: latitude
     join: [dec_d, dec_m, dec_s]
   dec_d:
-    info: Right ascension
+    info: Declination degrees (sexagesimal component)
     alias: null
     units: deg
-    ptype: longitude
+    ptype: number
   dec_m:
-    info: Right ascension
+    info: Declination arcminutes (sexagesimal component)
     alias: null
-    units: arcmin
-    ptype: longitude
+    units: null
+    ptype: number
   dec_s:
-    info: Right ascension
+    info: Declination arcseconds (sexagesimal component)
     alias: null
-    units: arcsec
-    ptype: longitude
+    units: null
+    ptype: number
   stokes_i: 
     info: Stokes I
     alias: null

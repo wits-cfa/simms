@@ -26,6 +26,8 @@ def _opts(mode, **over):
         "ms": None,
         "fits_sky": None,
         "ascii_sky": None,
+        "ascii_delimiter": None,
+        "source_schema": None,
         "output": None,
         "telescope_name_column": "TELESCOPE_NAME",
         "label": None,
@@ -235,12 +237,53 @@ def test_apply_then_correct_ascii_is_identity(fx):
     assert rec_flux["B"] == pytest.approx(3.0, rel=1e-3)
 
 
-def _read_ascii_flux(path):
+def _read_ascii_flux(path, delimiter=None):
     flux = {}
     for ln in open(path):
         s = ln.strip()
         if not s or s.startswith("#"):
             continue
-        f = s.split()
+        f = s.split(delimiter)
         flux[f[0]] = float(f[3])  # name ra dec stokes_i
     return flux
+
+
+def test_apply_then_correct_ascii_custom_schema(fx):
+    # A CSV sky model whose columns are renamed via a custom source schema;
+    # apply/correct must honour --source-schema and --ascii-delimiter, and find
+    # the flux column through its alias.
+    schema_yaml = "\n".join(
+        [
+            "info: Aliased schema",
+            "parameters:",
+            "  name: {info: Name, alias: NAME, units: null, ptype: string}",
+            "  ra: {info: RA, alias: RA, units: deg, ptype: longitude, required: true}",
+            "  dec: {info: Dec, alias: DEC, units: deg, ptype: latitude, required: true}",
+            "  stokes_i: {info: Stokes I, alias: I, units: Jy, ptype: flux, required: true}",
+        ]
+    )
+    schema = fx.random_named_file(suffix=".yaml")
+    with open(schema, "w") as fh:
+        fh.write(schema_yaml + "\n")
+
+    sky = fx.random_named_file(suffix=".csv")
+    with open(sky, "w") as fh:
+        fh.write("#format: NAME,RA,DEC,I\n")
+        fh.write("A,15.0,-31.0,5.0\n")  # at phase centre (1h0m0s -31d)
+        fh.write("B,15.0,-31.5,3.0\n")  # ~0.5 deg off
+
+    apparent = fx.random_named_file(suffix=".csv")
+    primary_beam.runit(
+        _opts("apply", ms=fx.ms, ascii_sky=sky, ascii_delimiter=",", source_schema=schema, output=apparent)
+    )
+    app_flux = _read_ascii_flux(apparent, delimiter=",")
+    assert app_flux["A"] == pytest.approx(5.0, rel=1e-3)  # on-axis ~unattenuated
+    assert app_flux["B"] < 3.0  # off-axis attenuated
+
+    recovered = fx.random_named_file(suffix=".csv")
+    primary_beam.runit(
+        _opts("correct", ms=fx.ms, ascii_sky=apparent, ascii_delimiter=",", source_schema=schema, output=recovered)
+    )
+    rec_flux = _read_ascii_flux(recovered, delimiter=",")
+    assert rec_flux["A"] == pytest.approx(5.0, rel=1e-3)
+    assert rec_flux["B"] == pytest.approx(3.0, rel=1e-3)
