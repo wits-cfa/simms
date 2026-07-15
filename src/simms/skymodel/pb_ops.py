@@ -217,12 +217,12 @@ def apply_correct_image(opts, invert):
 
 def apply_correct_ascii(opts, invert):
     """Scale ASCII component fluxes by the averaged power beam (apply) or its inverse (correct)."""
-    from simms import SCHEMADIR
-    from simms.skymodel.ascii_skies import ASCIISkymodel
+    from simms.skymodel.ascii_skies import ASCIISkymodel, ASCIISource
     from simms.utilities import radec2lm
 
     obs = _observation(opts.ms, opts.field_id, opts.spw_id)
-    sky = ASCIISkymodel(opts.ascii_sky, source_schema_file=f"{SCHEMADIR}/source_schema.yaml")
+    # ASCIISkymodel falls back to the built-in source schema when source_schema is unset
+    sky = ASCIISkymodel(opts.ascii_sky, delimiter=opts.ascii_delimiter, source_schema_file=opts.source_schema)
     lm = np.array([radec2lm(obs["ra0"], obs["dec0"], s.ra, s.dec) for s in sky.sources])
     ell, emm = (lm[:, 0], lm[:, 1]) if len(lm) else (np.array([]), np.array([]))
     A = _averaged_beam(provider_from(opts), ell, emm, obs["ra0"], obs["dec0"], obs, opts.beam_pa_step)
@@ -233,7 +233,11 @@ def apply_correct_ascii(opts, invert):
     # came from -- so we never re-implement the comment/blank-line skipping here.
     lines = open(opts.ascii_sky).read().splitlines()
     cols = lines[0].replace("#format:", "").strip().split(sky.delimiter)
-    stokes_idx = [cols.index(c) for c in ("stokes_i", "stokes_q", "stokes_u", "stokes_v") if c in cols]
+    # The header holds column aliases when a custom schema renames them; map each
+    # column back to its schema field before looking for the stokes columns.
+    alias_to_field = ASCIISource(sky.schema).alias_to_field_mapper()
+    fields_by_col = [alias_to_field.get(col, col) for col in cols]
+    stokes_idx = [i for i, f in enumerate(fields_by_col) if f in ("stokes_i", "stokes_q", "stokes_u", "stokes_v")]
 
     dropped = set()
     for src, source in enumerate(sky.sources):

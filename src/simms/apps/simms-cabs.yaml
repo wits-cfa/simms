@@ -371,6 +371,15 @@ cabs:
         info: Input ASCII component sky model (apply/correct).
         dtype: File
         abbreviation: ascii
+      ascii-delimiter:
+        info: Delimiter used in the ascii-sky file. Defaults to whitespace.
+        dtype: str
+        abbreviation: ad
+      source-schema:
+        info: Custom source schema (YAML) mapping the ascii-sky columns to the fields simms expects,
+              as for skysim. Defaults to the built-in simms source schema.
+        dtype: File
+        required: no
       output:
         info: Output path - FITS beam (to-fits) or beamed/corrected sky model (apply/correct).
         dtype: str
