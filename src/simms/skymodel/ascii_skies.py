@@ -106,6 +106,7 @@ class ASCIISource:
     def __post_init__(self):
         self.parameters = self.schema.parameters
         self.existing_fields = []
+        self.raw_values = {}
         self.is_finalised = False
 
     def set_source_param(self, field: str, value: str | float | int):
@@ -137,6 +138,10 @@ class ASCIISource:
         param = getattr(self.parameters, field)
         param.set_value(value)
         setattr(self, field, param.value)
+        # Joined fields (e.g. dec from dec_d/dec_m/dec_s) are re-parsed from the
+        # original strings in finalise(), because the sign is lost once "-00" is
+        # converted to 0.0.
+        self.raw_values[field] = value
         self.existing_fields.append(field)
 
     def alias_to_field_mapper(self):
@@ -184,7 +189,23 @@ class ASCIISource:
         for field, param in self.parameters.items():
             if getattr(param, "join", []) and field not in fields:
                 join_us = param.join
-                joined = np.sum([getattr(self, key, 0) for key in join_us])
+                if not any(key in fields for key in join_us):
+                    continue
+                # Join the components as one sexagesimal string so the sign of the
+                # leading component applies to the minutes/seconds too: summing the
+                # already-converted values gives -65 + 45' = -64.25 deg instead of
+                # -65.75 deg, and a "-00" degree field loses its sign entirely.
+                sexagesimal = ":".join(str(self.raw_values.get(key, 0)) for key in join_us)
+                # The leading component's units set the sexagesimal scale
+                # (hourangle for h:m:s of RA, deg for d:m:s of declination).
+                scale_units = getattr(self.parameters, join_us[0]).units or param.units
+                ptype_coord, target_units, _ = PTYPE_MAPPER[param.ptype]
+                try:
+                    joined = ptype_coord(sexagesimal, unit=scale_units).to(target_units).value
+                except ValueError as exc:
+                    raise ASCIISourceError(
+                        f"Cannot parse field '{field}' from its components {join_us} (joined as '{sexagesimal}'): {exc}"
+                    )
                 setattr(self, field, joined)
 
     def value_or_default(self, field: str) -> int | float | str:
@@ -373,11 +394,12 @@ class ASCIISkymodel:
                 # skip lines that are commented
                 if line.startswith("#"):
                     continue
-                rowdata = line.strip().split(self.delimiter)
-                # skip empty lines
-                if len(rowdata) == 0:
+                # skip empty lines before splitting: "".split(",") is [""], not [],
+                # so a blank line in a delimited file would fail the column count
+                if not line.strip():
                     continue
-                elif len(rowdata) != len(header):
+                rowdata = line.strip().split(self.delimiter)
+                if len(rowdata) != len(header):
                     # plus 2 because header line is not counted (+1), and python starts counting at 0 (+1)
                     raise ASCIISkymodelError(
                         f"The number of columns in row {counter + 2} rows does not match the number of"

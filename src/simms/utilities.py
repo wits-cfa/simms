@@ -138,7 +138,7 @@ def quantity_to_value(
             try:
                 quant_value = value * getattr(units, val_units)
             except AttributeError:
-                raise SkymodelSchemaError("Unknown parameter units '{val_units}'")
+                raise SkymodelSchemaError(f"Unknown parameter units '{val_units}'")
         else:
             quant_value = units.Quantity(value)
     elif is_numeric(value):
