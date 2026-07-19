@@ -1,6 +1,6 @@
 import os.path
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import astropy.units as aunits
 import numpy as np
@@ -11,8 +11,6 @@ from astropy.coordinates import (
     SpectralCoord,
 )
 from omegaconf import OmegaConf
-from scabha.basetypes import File
-from scabha.cargo import Parameter
 
 from simms import SCHEMADIR
 from simms.exceptions import (
@@ -49,7 +47,7 @@ PTYPE_MAPPER = {
 
 
 @dataclass
-class SkymodelParameter(Parameter):
+class SkymodelParameter:
     info: Optional[str] = None
     units: Optional[str] = None
     alias: Optional[str] = None
@@ -57,6 +55,7 @@ class SkymodelParameter(Parameter):
     frame: Optional[str] = None
     required: Optional[bool] = False
     join: Optional[List[str]] = None
+    value: Any = None
 
     def set_value(self, value: str | float | int):
         """
@@ -363,11 +362,11 @@ class ASCIISkymodel:
 
     Parameters
     ----------
-    skymodel_file : str or scabha.basetypes.File
+    skymodel_file : str
         Path to the sky model file.
     delimiter : str, optional
         Column delimiter used in the file. If ``None``, split on whitespace.
-    source_schema_file : str or scabha.basetypes.File, optional
+    source_schema_file : str, optional
         Path to the YAML source schema. Defaults to ``DEFAULT_SOURCE_SCHEMA``.
     sources : list of ASCIISource, optional
         Populated after parsing.
@@ -378,13 +377,13 @@ class ASCIISkymodel:
         If the file cannot be read or validated.
     """
 
-    skymodel_file: str | File
+    skymodel_file: str
     delimiter: str = None
-    source_schema_file: str | File = None
+    source_schema_file: str = None
     sources: List[ASCIISource] = None
 
     def __post_init__(self):
-        self.source_schema_file = self.source_schema_file or File(DEFAULT_SOURCE_SCHEMA)
+        self.source_schema_file = self.source_schema_file or DEFAULT_SOURCE_SCHEMA
         schema = OmegaConf.load(self.source_schema_file)
         self.schema = ASCIISourceSchema(**schema)
         sources = []

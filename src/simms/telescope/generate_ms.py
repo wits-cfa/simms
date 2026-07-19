@@ -10,7 +10,6 @@ import numpy as np
 from casacore.measures import measures
 from daskms import xds_to_table
 from omegaconf import OmegaConf
-from scabha.basetypes import File
 from scipy import interpolate
 from tqdm.dask import TqdmCallback
 
@@ -33,7 +32,7 @@ def nda(items):
 log = logging.getLogger(BIN.telsim)
 
 
-def remove_ms(ms: Union[File, str]):
+def remove_ms(ms: str):
     if os.path.exists(ms):
         shutil.rmtree(ms, ignore_errors=True)
         log.debug(f"MS file {ms} exists. It will be overriden.")
@@ -43,7 +42,7 @@ def remove_ms(ms: Union[File, str]):
 
 def create_ms(
     ms: str,
-    telescope_name: Union[str, File],
+    telescope_name: str,
     pointing_direction: str,
     dtime: int,
     ntimes: int,
@@ -59,11 +58,11 @@ def create_ms(
     start_time: Union[str, List[str]] = None,
     start_ha: float = None,
     freq_range: str = None,
-    sfile: File = None,
+    sfile: str = None,
     tsys_over_eta: float = None,
     subarray_list: List[str] = None,
     subarray_range: List[int] = None,
-    subarray_file: File = None,
+    subarray_file: str = None,
     low_source_limit: Union[float, str] = None,
     high_source_limit: Union[float, str] = None,
     telescope_name_column: str = "TELESCOPE_NAME",

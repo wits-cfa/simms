@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Union
+from typing import List, Union
 
 import astropy.units as u
 import numpy as np
@@ -9,7 +9,6 @@ from astropy.constants import k_B
 from astropy.time import Time
 from casacore.measures import measures
 from omegaconf import OmegaConf
-from scabha.basetypes import File, List
 
 from simms import BIN, constants
 from simms.telescope.layouts import SIMMS_TELESCOPES, custom_telescopes
@@ -25,14 +24,14 @@ class Array:
 
     def __init__(
         self,
-        layout: Union[str, File],
+        layout: str,
         degrees: bool = True,
         sefd: Union[int, float, List[Union[int, float]]] = None,
         tsys_over_eta: Union[int, float, List[Union[int, float]]] = None,
-        sensitivity_file: File = None,
+        sensitivity_file: str = None,
         subarray_list: List[str] = None,
         subarray_range: List[int] = None,
-        subarray_file: File = None,
+        subarray_file: str = None,
     ):
         """
         Initialize the Array.
@@ -65,7 +64,7 @@ class Array:
             layout = "vla-c"
 
         if layout not in SIMMS_TELESCOPES:
-            fname = File(layout)
+            fname = str(layout)
             if fname.EXISTS:
                 self.layout = OmegaConf.load(fname)
                 if "centre" not in self.layout:
@@ -158,7 +157,7 @@ class Array:
 
             if isinstance(sefd, (float, int)):
                 self.sefd = [sefd]
-            elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
+            elif (not isinstance(sefd, str)) and isinstance(sefd, list):
                 self.sefd = sefd
 
         if self.tsys_over_eta and self.sefd is None:
@@ -174,7 +173,7 @@ class Array:
 
             if isinstance(sefd, (float, int)):
                 self.sefd = [sefd]
-            elif (not isinstance(sefd, str)) and isinstance(sefd, (list, List)):
+            elif (not isinstance(sefd, str)) and isinstance(sefd, list):
                 self.sefd = sefd
 
     def set_itrf(self):
@@ -437,7 +436,7 @@ def calculate_array_centre(ant_locations: List[List[float]]) -> List[float]:
     return centre.tolist()
 
 
-def write_centre_to_array_config(array_config_path: File, centre: List[float]) -> None:
+def write_centre_to_array_config(array_config_path: str, centre: List[float]) -> None:
     """
     Write the calculated centre to the array configuration YAML file.
 

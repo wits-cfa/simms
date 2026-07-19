@@ -34,7 +34,6 @@ from astropy import units
 from astropy.wcs import WCS
 from ducc0.wgridder import dirty2vis
 from fitstoolz.reader import FitsData
-from scabha.basetypes import File
 from scipy.interpolate import interp1d
 from scipy.ndimage import map_coordinates
 
@@ -544,7 +543,7 @@ def _interpolate_spectrum(cube, fits_freqs, chan_freqs, method):
 
 
 def prepare_fits_sky(
-    input_fitsimages: Union[File, str, List[File]],
+    input_fitsimages: Union[str, List[str]],
     ra0: float,
     dec0: float,
     chan_freqs: np.ndarray,
@@ -556,7 +555,7 @@ def prepare_fits_sky(
     tol: float = 1e-7,
     backend: str = "auto",
     spectrum: str = "auto",
-    spi_maps: Optional[List[File]] = None,
+    spi_maps: Optional[List[str]] = None,
     ref_freq: Optional[float] = None,
     spectrum_order: int = 2,
     spectrum_tol: float = DEFAULT_FIT_TOLERANCE,
@@ -626,7 +625,7 @@ def prepare_fits_sky(
     chan_freqs = np.ascontiguousarray(chan_freqs, dtype=np.float64)
     nchan = chan_freqs.size
 
-    files = [input_fitsimages] if isinstance(input_fitsimages, (str, File)) else list(input_fitsimages)
+    files = [input_fitsimages] if isinstance(input_fitsimages, str) else list(input_fitsimages)
 
     ms_start_freq = chan_freqs[0] - 0.5 * ms_delta_nu
     ms_end_freq = chan_freqs[-1] + 0.5 * ms_delta_nu

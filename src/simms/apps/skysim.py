@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 import glob
 import logging
 import os.path
+from types import SimpleNamespace
+from typing import Literal
 
 import dask
 import dask.array as da
 import numpy as np
+import shinobi
 from dask import config as dask_config
 from daskms import xds_from_ms, xds_from_table, xds_to_table
+from pydantic import BaseModel, Field
 from tqdm.dask import TqdmCallback
 
 from simms import BIN, SCHEMADIR, set_logger
@@ -174,7 +180,7 @@ class _BeamContext:
 
 def runit(opts):
     # Set logger here, so subsequent modeules get it via logging.getLogger(<name>)
-    set_logger(BIN.skysim, opts["log_level"])
+    set_logger(BIN.skysim, opts.log_level)
     ms = opts.ms
     ascii_sky = opts.ascii_sky
     fs = opts.fits_sky
@@ -419,3 +425,128 @@ def runit(opts):
 
     with TqdmCallback(desc="Computing and writing visibilities"):
         da.compute(writes)
+
+
+class SimmsOutputs(BaseModel):
+    """Passthrough MS path, so telsim/skysim can be wired into a shinobi Recipe or dosho."""
+
+    ms: str | None = None
+
+
+@shinobi.pystep(name=BIN.skysim, info="Predict model visibilities from a sky model into an MS.")
+def skysim(
+    ms: str = Field(..., description="Measurement set."),
+    ascii_sky: str | None = Field(
+        None,
+        description="Catalogue of sources. See the documentation for accepted units.",
+        json_schema_extra={"abbreviation": "as"},
+    ),
+    fits_sky: str | None = Field(
+        None,
+        description="FITS file (or directory of Stokes cubes) containing the sky model.",
+        json_schema_extra={"abbreviation": "fs"},
+    ),
+    wsclean_sky: str | None = Field(
+        None,
+        description="WSClean component list (point and Gaussian components, Stokes I).",
+        json_schema_extra={"abbreviation": "ws"},
+    ),
+    fits_sky_interp: Literal["nearest", "linear", "cubic"] = Field(
+        "linear",
+        description="Interpolation method when the MS and FITS frequency grids do not match and the cube is kept.",
+        json_schema_extra={"abbreviation": "fsi"},
+    ),
+    polarisation: bool = Field(
+        True,
+        description="Simulate all available Stokes parameters. If false, only Stokes I.",
+        json_schema_extra={"abbreviation": "pol"},
+    ),
+    pol_basis: Literal["linear", "circular"] = Field("linear", description="Polarization basis for the simulation."),
+    pixel_tol: float = Field(
+        1e-7,
+        description="Minimum brightness for a pixel to be considered in direct Fourier transform.",
+        json_schema_extra={"abbreviation": "pt"},
+    ),
+    fits_spectrum: Literal["auto", "flat", "poly", "cube"] = Field(
+        "auto",
+        description="How the FITS sky model varies with frequency.",
+        json_schema_extra={"abbreviation": "fsp"},
+    ),
+    fits_spi: list[str] | None = Field(
+        None,
+        description="Spectral-index (and higher-order) coefficient maps, ordered c1, c2, ... Requires --fits-ref-freq.",
+    ),
+    fits_ref_freq: float | None = Field(
+        None,
+        description="Reference frequency (Hz) of an analytic FITS spectrum. Defaults to the MS band centre.",
+        json_schema_extra={"abbreviation": "frf"},
+    ),
+    fits_spectrum_order: int = Field(
+        2, description="Order of the fitted log-polynomial spectrum. 1 is a plain spectral index."
+    ),
+    predict_backend: Literal["auto", "dft", "fft", "perchan"] = Field(
+        "auto", description="Backend for FITS sky model prediction."
+    ),
+    fft_precision: Literal["single", "double"] = Field("double", description="Precision of the FFT calculation."),
+    do_wstacking: bool = Field(True, description="Whether to use w-stacking for FFT-based visibility prediction."),
+    ascii_delimiter: str | None = Field(
+        None, description="Delimiter used in the ascii-sky.", json_schema_extra={"abbreviation": "ad"}
+    ),
+    column: str = Field("DATA", description="Data column for simulation.", json_schema_extra={"abbreviation": "col"}),
+    nworkers: int = Field(4, description="Number of workers (one per CPU)."),
+    row_chunks: int = Field(
+        10000,
+        description="Number of rows per chunk. Controls the row-wise task/memory granularity.",
+        json_schema_extra={"abbreviation": "rcs"},
+    ),
+    chan_chunks: int | None = Field(
+        None,
+        description="Number of channels per chunk. Defaults to all channels in one chunk.",
+        json_schema_extra={"abbreviation": "ccs"},
+    ),
+    primary_beam: str | None = Field(
+        None,
+        description="Beam-config YAML mapping each ANTENNA telescope name to a beam model. "
+        "Requires a linear pol basis.",
+        json_schema_extra={"abbreviation": "pb"},
+    ),
+    beam_band: Literal["UHF", "L"] = Field(
+        "L", description="Default band for JimBeam entries that omit an explicit model/CSV."
+    ),
+    beam_pa_step: float = Field(
+        1.0, description="Spacing (degrees) of the parallactic-angle grid the beam is sampled on."
+    ),
+    beam_grid_max_gib: float = Field(
+        4.0, description="Hard ceiling (GiB) on the sampled beam grid held in memory for the whole run."
+    ),
+    beam_jones: Literal["diagonal", "full"] = Field(
+        "diagonal", description="Primary-beam application for component skies: per-feed voltage or full 2x2 E-Jones."
+    ),
+    telescope_name_column: str = Field(
+        "TELESCOPE_NAME",
+        description="ANTENNA-table column holding the per-antenna telescope/type label that maps to a beam model.",
+        json_schema_extra={"abbreviation": "tnc"},
+    ),
+    field_id: int = Field(0, description="Field ID.", json_schema_extra={"abbreviation": "fi"}),
+    spw_id: int = Field(0, description="Spectral Window ID."),
+    sefd: float | None = Field(None, description="Add noise using this SEFD value."),
+    seed: int | None = Field(None, description="Random seed for the thermal noise. Omit for a non-reproducible run."),
+    ascii_species: Literal["bdsf_gaul", "aegean", "wsclean"] | None = Field(
+        None, description="Non-simms sky model type.", json_schema_extra={"abbreviation": "asp"}
+    ),
+    input_column: str | None = Field(
+        None, description="Input column (see option --mode).", json_schema_extra={"abbreviation": "ic"}
+    ),
+    mode: Literal["sim", "add", "subtract"] = Field(
+        "sim",
+        description="Simulation mode: 'sim' creates a new column, 'add' adds to it, 'subtract' subtracts from it.",
+    ),
+    source_schema: str | None = Field(
+        None,
+        description="Custom source schema (YAML) mapping columns in a custom sky model to the columns simms expects.",
+    ),
+    log_level: str = Field("INFO", description="Logging verbosity."),
+) -> SimmsOutputs:
+    opts = SimpleNamespace(**locals())
+    runit(opts)
+    return SimmsOutputs(ms=ms)
