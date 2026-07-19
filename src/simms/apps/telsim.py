@@ -1,5 +1,18 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import shinobi
+from pydantic import BaseModel, Field
+
 from simms import BIN, set_logger
 from simms.telescope import generate_ms, layouts
+
+
+class SimmsOutputs(BaseModel):
+    """Passthrough MS path, so telsim/skysim can be wired into a shinobi Recipe or dosho."""
+
+    ms: str | None = None
 
 
 def print_data_database(ctx, param, value):
@@ -21,7 +34,7 @@ def print_data_database(ctx, param, value):
 
 
 def runit(opts):
-    set_logger(BIN.telsim, opts["log_level"])
+    set_logger(BIN.telsim, opts.log_level)
 
     msname = opts.ms
     telescope = opts.telescope
@@ -77,3 +90,119 @@ def runit(opts):
         high_source_limit=h_src_limit,
         telescope_name_column=opts.telescope_name_column,
     )
+
+
+@shinobi.pystep(name=BIN.telsim, info="Create an empty Measurement Set from a telescope layout.")
+def telsim(
+    ms: str = Field(..., description="Observation name/id/label"),
+    telescope: str = Field(
+        ..., description="Name of telescope you are simulating", json_schema_extra={"abbreviation": "tel"}
+    ),
+    subarray_list: list[str] | None = Field(
+        None,
+        description="Custom list of antennas to use, e.g., M000,M005,SKA009. "
+        "Must be a subarray of the given telescope.",
+        json_schema_extra={"abbreviation": "sublist"},
+    ),
+    subarray_range: list[int] | None = Field(
+        None,
+        description="Custom range of antenna indices to use, e.g. start,end,step (step optional). "
+        "Must be a subarray of the given telescope.",
+        json_schema_extra={"abbreviation": "subrange"},
+    ),
+    subarray_file: str | None = Field(
+        None,
+        description="File listing custom antennas to use (antnames key, e.g. [M000,M005,SKA009]). "
+        "Must be a subarray of the given telescope.",
+        json_schema_extra={"abbreviation": "subfile"},
+    ),
+    telescope_name_column: str = Field(
+        "TELESCOPE_NAME",
+        description="Name of the ANTENNA-table column that holds the per-antenna telescope/type label "
+        "(used by skysim to select a primary beam).",
+        json_schema_extra={"abbreviation": "tnc"},
+    ),
+    direction: str = Field(
+        "J2000,1h0m0s,-31d0m0s",
+        description="Direction of field centre for MS, e.g. J2000,0h24m20s,-30d12m33s.",
+        json_schema_extra={"abbreviation": "dir"},
+    ),
+    starttime: str | None = Field(
+        None,
+        description="Observation start time in UTC, e.g. '2024-03-14T06:15:10'. Default is the current machine time.",
+        json_schema_extra={"abbreviation": "st"},
+    ),
+    startha: float | None = Field(
+        None,
+        description="Hour angle at start of observation. Can be used instead of date.",
+        json_schema_extra={"abbreviation": "sha"},
+    ),
+    dtime: float = Field(
+        8, description="Integration/exposure time in seconds.", json_schema_extra={"abbreviation": "dt"}
+    ),
+    ntime: int = Field(10, description="Number of time slots for MS.", json_schema_extra={"abbreviation": "nt"}),
+    startfreq: str | float = Field(
+        "1420MHz",
+        description="Centre of first frequency channel, e.g 0.55GHz. Hertz assumed if no units.",
+        json_schema_extra={"abbreviation": "sf"},
+    ),
+    dfreq: str | float = Field(
+        "1MHz",
+        description="Channel width, e.g 2.4MHz. Hertz assumed if no units.",
+        json_schema_extra={"abbreviation": "df"},
+    ),
+    nchan: int = Field(9, description="Number of frequency channels.", json_schema_extra={"abbreviation": "nc"}),
+    correlations: str = Field(
+        "XX,YY", description="Feed correlations for MS, e.g., 'XX,YY'.", json_schema_extra={"abbreviation": "corr"}
+    ),
+    nworkers: int = Field(4, description="Number of workers (one per CPU)."),
+    rowchunks: int = Field(
+        50000,
+        description="Number of chunks to divide the data into; more chunks improves computation speed.",
+        json_schema_extra={"abbreviation": "rc"},
+    ),
+    column: str = Field(
+        "MODEL_DATA",
+        description="The column in which to corrupt the visibilities with noise.",
+        json_schema_extra={"abbreviation": "col"},
+    ),
+    sefd: float | None = Field(None, description="Antenna SEFD (one value for all frequencies)."),
+    tsys_over_eta: float | None = Field(
+        None,
+        description="Antenna system temperature over aperture efficiency (one value for all frequencies).",
+        json_schema_extra={"abbreviation": "tos"},
+    ),
+    sensitivity_file: str | None = Field(
+        None,
+        description="File with antenna spectral sensitivity info. Keys: 'freq, tsys, sefd, tsys_over_eta'.",
+        json_schema_extra={"abbreviation": "sfile"},
+    ),
+    low_source_limit: float | None = Field(
+        None,
+        description="Minimum reliable source elevation (deg); data below this is flagged.",
+        json_schema_extra={"abbreviation": "lsl"},
+    ),
+    high_source_limit: float | None = Field(
+        None,
+        description="Maximum reliable source elevation (deg); data above this is flagged.",
+        json_schema_extra={"abbreviation": "hsl"},
+    ),
+    freq_range: str | None = Field(
+        None,
+        description="A list of start frequency, end frequency, and number of channels, e.g. startfreq,endfreq,nchan.",
+        json_schema_extra={"abbreviation": "fr"},
+    ),
+    smooth: str | None = Field(
+        None,
+        description="SEFD fitting option when a sensitivity file is given: 'polyn' or 'spline'.",
+    ),
+    fit_order: int | None = Field(
+        None,
+        description="Fitting order used when approximating the MS-frequency SEFDs.",
+        json_schema_extra={"abbreviation": "fo"},
+    ),
+    log_level: str = Field("INFO", description="Logging verbosity."),
+) -> SimmsOutputs:
+    opts = SimpleNamespace(**locals())
+    runit(opts)
+    return SimmsOutputs(ms=ms)

@@ -1,8 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional
 
 import numpy as np
-from scabha.basetypes import EmptyListDefault
 
 from simms.constants import FWHM_scale_fact
 from simms.exceptions import ASCIISourceError
@@ -11,9 +10,9 @@ from simms.exceptions import ASCIISourceError
 @dataclass
 class SourceType:
     name: str
-    required: List[str] = EmptyListDefault()
+    required: List[str] = field(default_factory=list)
     inherit: Any = None
-    surplus: List[str] = EmptyListDefault()
+    surplus: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         parent = getattr(self, "inherit", None)

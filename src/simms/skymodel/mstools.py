@@ -5,7 +5,6 @@ from dataclasses import dataclass, replace
 import dask.array as da
 import numpy as np
 from daskms import xds_from_ms, xds_from_table
-from scabha.basetypes import MS
 
 from simms.constants import FWHM_TO_GAUSS_SCALE
 from simms.skymodel.ascii_skies import ASCIISkymodel
@@ -13,7 +12,7 @@ from simms.skymodel.kernels import is_uniform_grid, predict_vis, predict_vis_bea
 from simms.utilities import radec2lm
 
 
-def vis_noise_from_sefd_and_ms(ms: MS | str, sefd: float, spw_id: int = 0, field_id: int = 0):
+def vis_noise_from_sefd_and_ms(ms: str, sefd: float, spw_id: int = 0, field_id: int = 0):
     """
     Compute per-visibility thermal noise from an SEFD and an MS.
 

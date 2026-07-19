@@ -3,7 +3,6 @@ import os
 from typing import Dict
 
 from omegaconf import OmegaConf
-from scabha.basetypes import File
 
 thisdir = os.path.dirname(__file__)
 
@@ -24,7 +23,7 @@ def simms_telescopes() -> Dict:
     """
     Returns a dictionary of known array layouts
     """
-    lays = map(File, glob.glob(f"{thisdir}/*.geodetic.yaml"))
+    lays = map(str, glob.glob(f"{thisdir}/*.geodetic.yaml"))
     laysdict = {}
     for layout in lays:
         # Array name
@@ -77,7 +76,7 @@ def simms_telescopes() -> Dict:
     return OmegaConf.create(laysdict)
 
 
-def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, subarray_file: File = None) -> Dict:
+def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, subarray_file: str = None) -> Dict:
     """
     Returns a dictionary of a custom array layout.
     """
