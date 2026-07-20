@@ -1099,9 +1099,15 @@ def write_beam_fits(beam: CosineTaperBeam, l_grid, m_grid, freqs_hz, path):
     fits.PrimaryHDU(data=data, header=hdr).writeto(path, overwrite=True)
 
 
+_VALID_AXIS_SIGNS = frozenset({"-X", "X", "-Y", "Y"})
+
+
 def _axis_sign(spec: str) -> float:
     """``"-X"``/``"-Y"`` -> ``-1.0``, ``"X"``/``"Y"`` -> ``1.0`` (DDFacet's FITSLAxis/FITSMAxis)."""
-    return -1.0 if str(spec).strip().startswith("-") else 1.0
+    spec = str(spec).strip()
+    if spec not in _VALID_AXIS_SIGNS:
+        raise ValueError(f"Invalid axis sign convention {spec!r}; expected one of {sorted(_VALID_AXIS_SIGNS)}.")
+    return -1.0 if spec.startswith("-") else 1.0
 
 
 def write_beam_fits_cattery(

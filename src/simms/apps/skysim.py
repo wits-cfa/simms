@@ -546,14 +546,16 @@ def skysim(
     ),
     beam_l_axis: Literal["-X", "X"] = Field(
         "-X",
-        description="Sign convention for a cattery-schema primary-beam FITS file's L axis (--primary-beam "
-        "'cattery' entries, or a .json config), matching DDFacet's --Beam-FITSLAxis.",
+        description="Sign convention for a Cattery/DDFacet .json primary-beam config's L axis; "
+        "ignored for YAML beam configs, which specify their own axis convention. "
+        "Matches DDFacet's --Beam-FITSLAxis.",
         json_schema_extra={"abbreviation": "bla"},
     ),
     beam_m_axis: Literal["Y", "-Y"] = Field(
         "Y",
-        description="Sign convention for a cattery-schema primary-beam FITS file's M axis (--primary-beam "
-        "'cattery' entries, or a .json config), matching DDFacet's --Beam-FITSMAxis.",
+        description="Sign convention for a Cattery/DDFacet .json primary-beam config's M axis; "
+        "ignored for YAML beam configs, which specify their own axis convention. "
+        "Matches DDFacet's --Beam-FITSMAxis.",
         json_schema_extra={"abbreviation": "bma"},
     ),
     field_id: int = Field(0, description="Field ID.", json_schema_extra={"abbreviation": "fi"}),

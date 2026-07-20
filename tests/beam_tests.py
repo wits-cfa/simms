@@ -488,6 +488,7 @@ def test_resolve_antenna_beams_fits_entry(tmp_path):
 # --- Cattery-schema FITS beams (read side) ----------------------------------------
 
 from simms.skymodel.beams import (  # noqa: E402
+    _axis_sign,
     _cattery_substitute,
     load_cattery_beam_json,
     resolve_cattery_antenna_beams,
@@ -503,6 +504,17 @@ def test_cattery_substitute():
     assert _cattery_substitute("beam_$(REALIMAG).fits", reim="im") == "beam_IMAG.fits"
     assert _cattery_substitute("$(stype)_$(corr)_$(reim).fits", stype="ska", corr="yy", reim="im") == "ska_yy_im.fits"
     assert _cattery_substitute("$(STYPE)_beam.fits", stype="ska") == "SKA_beam.fits"
+
+
+@pytest.mark.parametrize("spec, expected", [("-X", -1.0), ("X", 1.0), ("-Y", -1.0), ("Y", 1.0)])
+def test_axis_sign_valid(spec, expected):
+    assert _axis_sign(spec) == expected
+
+
+@pytest.mark.parametrize("spec", ["-x", "x", "foo", "-Z", ""])
+def test_axis_sign_invalid(spec):
+    with pytest.raises(ValueError, match="Invalid axis sign convention"):
+        _axis_sign(spec)
 
 
 @pytest.mark.parametrize("pol_basis", ["linear", "circular"])
