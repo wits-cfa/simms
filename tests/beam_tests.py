@@ -614,6 +614,29 @@ def test_resolve_cattery_antenna_beams_no_match_raises(tmp_path):
         resolve_cattery_antenna_beams(["SKA001"], ["ALT-AZ"], cattery_cfg)
 
 
+def test_fits_provider_from_cattery_reim_placeholder_no_double_suffix(tmp_path):
+    # A pattern that contains $(reim) but no $(corr) placeholder must not have the
+    # default _$(corr)_$(reim).fits suffix appended (the $(reim) token is enough).
+    pattern = str(tmp_path / "beam_$(reim).fits")
+    with pytest.raises(FileNotFoundError, match=r"beam_re\.fits"):
+        FitsBeamProvider.from_cattery(pattern, pol_basis="linear")
+
+
+def test_fits_provider_from_cattery_missing_file(tmp_path):
+    pattern = str(tmp_path / "nowhere_$(corr)_$(reim).fits")
+    with pytest.raises(FileNotFoundError, match="resolved from pattern"):
+        FitsBeamProvider.from_cattery(pattern, pol_basis="linear")
+
+
+def test_load_cattery_beam_json_rejects_non_object(tmp_path):
+    import json
+
+    cfg_path = tmp_path / "bad.json"
+    cfg_path.write_text(json.dumps(["not", "a", "dict"]))
+    with pytest.raises(ValueError, match="top-level JSON object"):
+        load_cattery_beam_json(cfg_path)
+
+
 # --- FITS-image approximate power beam (Phase 5) ---------------------------------
 
 from simms.skymodel.beams import image_power_beam, pa_sample_grid  # noqa: E402

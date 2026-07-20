@@ -523,7 +523,8 @@ def skysim(
         None,
         description="Beam model config: a simms beam-config YAML mapping each ANTENNA telescope "
         "name to a beam model, or a Cattery/DDFacet heterogeneous-beam json (--Beam-FITSFile json "
-        "form, keyed by ANTENNA.NAME) if the path ends in .json. Requires a linear pol basis.",
+        "form, keyed by ANTENNA.NAME) if the path ends in .json. For Cattery/DDFacet beams a "
+        "circular-correlation MS may be used when --beam-jones full is selected.",
         json_schema_extra={"abbreviation": "pb"},
     ),
     beam_band: Literal["UHF", "L"] = Field(

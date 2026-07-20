@@ -486,7 +486,19 @@ class FitsBeamProvider(BeamProvider):
 
         if pol_basis not in ("linear", "circular"):
             raise ValueError(f"pol_basis must be 'linear' or 'circular', got {pol_basis!r}.")
-        has_placeholder = any(tok in pattern for tok in ("$(corr)", "$(xy)", "$(CORR)", "$(XY)"))
+        has_placeholder = any(
+            tok in pattern
+            for tok in (
+                "$(corr)",
+                "$(xy)",
+                "$(CORR)",
+                "$(XY)",
+                "$(reim)",
+                "$(REIM)",
+                "$(realimag)",
+                "$(REALIMAG)",
+            )
+        )
         if not has_placeholder:
             pattern = f"{pattern}_$(corr)_$(reim).fits"
 
@@ -505,6 +517,10 @@ class FitsBeamProvider(BeamProvider):
             reim_data = {}
             for reim in ("re", "im"):
                 path = _cattery_substitute(pattern, corr=corr, reim=reim)
+                if not Path(path).exists():
+                    raise FileNotFoundError(
+                        f"Cattery beam file {path!r} does not exist (resolved from pattern {pattern!r})."
+                    )
                 with fits.open(path) as hdul:
                     hdr = hdul[0].header
                     data = np.asarray(hdul[0].data, dtype=np.float64)
@@ -646,6 +662,9 @@ def load_cattery_beam_json(path) -> dict:
 
     with open(path) as fh:
         cfg = json.load(fh)
+
+    if not isinstance(cfg, dict):
+        raise ValueError(f"Cattery beam json {path!r} must contain a top-level JSON object, got {type(cfg).__name__}.")
 
     stationtypes = []
     patterns = []
