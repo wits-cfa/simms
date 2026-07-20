@@ -48,9 +48,6 @@ include = [
     "/pyproject.toml",
 ]
 
-[tool.uv.sources]
-stimela-ninja = { git = "https://github.com/shinobi-dosho/stimela-ninja", branch = "main" }
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/simms"]
 
