@@ -1,6 +1,7 @@
 """Tests for the `simms primary-beam` utility (to-fits, tag-ms, apply, correct)."""
 
 import logging
+import os
 
 import numpy as np
 import pytest
@@ -23,6 +24,10 @@ def _opts(mode, **over):
         "beam_pattern": "MKAT-EA-L-JIM-2026",
         "beam_band": "L",
         "beam_pa_step": 1.0,
+        "fits_format": "simms",
+        "pol_basis": "linear",
+        "beam_l_axis": "-X",
+        "beam_m_axis": "Y",
         "ms": None,
         "fits_sky": None,
         "ascii_sky": None,
@@ -105,6 +110,133 @@ def test_to_fits_roundtrips_through_provider(fx):
         jim.voltage(ell, emm, freqs, np.array([0.0])),
         atol=3e-3,
     )
+
+
+def _ddfacet_paths(prefix, labels):
+    return {(corr, ri): f"{prefix}_{corr}_{ri}.fits" for corr in labels for ri in ("re", "im")}
+
+
+def test_to_fits_ddfacet_writes_eight_files_and_matches_beam(fx):
+    prefix = os.path.join(fx.random_named_directory(), "beam")
+    beam_pattern = "MKAT-EA-L-JIM-2026"
+
+    primary_beam.runit(
+        _opts(
+            "to-fits",
+            beam_pattern=beam_pattern,
+            fits_format="ddfacet",
+            pixel_size="2arcmin",
+            npix=32,
+            start_freq="1300MHz",
+            chan_width="100MHz",
+            nchan=2,
+            output=prefix,
+        )
+    )
+
+    paths = _ddfacet_paths(prefix, ["xx", "xy", "yx", "yy"])
+    for path in paths.values():
+        assert os.path.exists(path)
+
+    # xy/yx: the cosine-taper model has no leakage.
+    for corr in ("xy", "yx"):
+        for ri in ("re", "im"):
+            assert np.all(fits.getdata(paths[(corr, ri)]) == 0.0)
+
+    # Independent axis/value check: invert the WCS of xx_re/xx_im at a few pixels and
+    # compare against CosineTaperBeam.voltages directly -- not the implementation's own
+    # reshape/transpose.
+    header = fits.getheader(paths[("xx", "re")])
+    assert header["CDELT1"] < 0  # beam_l_axis="-X" default
+    assert header["CDELT2"] > 0  # beam_m_axis="Y" default
+    wcs = WCS(header)
+    data_re = fits.getdata(paths[("xx", "re")])
+    data_im = fits.getdata(paths[("xx", "im")])
+    beam = CosineTaperBeam.from_builtin(beam_pattern)
+
+    for i_l, j_m, k_f in [(5, 20, 0), (16, 16, 1), (30, 2, 1)]:
+        l_axis_val, m_axis_val, freq_hz = wcs.wcs_pix2world([[i_l, j_m, k_f]], 0)[0]
+        l_deg, m_deg = -l_axis_val, m_axis_val  # sign_l=-1 (default "-X"), sign_m=+1 (default "Y")
+        expected = beam.voltages(np.array([l_deg]), np.array([m_deg]), np.array([freq_hz / 1e6]))[0, 0, 0]
+        got = data_re[k_f, j_m, i_l] + 1j * data_im[k_f, j_m, i_l]
+        assert got == pytest.approx(expected, abs=1e-6)
+
+
+def test_to_fits_ddfacet_axis_sign_flags(fx):
+    prefix = os.path.join(fx.random_named_directory(), "beam")
+    primary_beam.runit(
+        _opts(
+            "to-fits",
+            fits_format="ddfacet",
+            npix=16,
+            nchan=1,
+            output=prefix,
+            beam_l_axis="X",
+            beam_m_axis="-Y",
+        )
+    )
+    header = fits.getheader(f"{prefix}_xx_re.fits")
+    assert header["CDELT1"] > 0
+    assert header["CDELT2"] < 0
+
+
+def test_to_fits_ddfacet_circular_basis(fx):
+    prefix = os.path.join(fx.random_named_directory(), "beam")
+    beam_pattern = "MKAT-EA-L-JIM-2026"
+
+    primary_beam.runit(
+        _opts(
+            "to-fits",
+            beam_pattern=beam_pattern,
+            fits_format="ddfacet",
+            pol_basis="circular",
+            npix=16,
+            nchan=1,
+            start_freq="1400MHz",
+            output=prefix,
+        )
+    )
+
+    paths = _ddfacet_paths(prefix, ["rr", "rl", "lr", "ll"])
+    for path in paths.values():
+        assert os.path.exists(path)
+
+    header = fits.getheader(paths[("rr", "re")])
+    wcs = WCS(header)
+    beam = CosineTaperBeam.from_builtin(beam_pattern)
+    i_l, j_m, k_f = 10, 4, 0
+    l_axis_val, m_axis_val, freq_hz = wcs.wcs_pix2world([[i_l, j_m, k_f]], 0)[0]
+    l_deg, m_deg = -l_axis_val, m_axis_val
+    hh, vv = beam.voltages(np.array([l_deg]), np.array([m_deg]), np.array([freq_hz / 1e6]))[0, 0]
+
+    def _plane(corr):
+        re = fits.getdata(paths[(corr, "re")])[k_f, j_m, i_l]
+        im = fits.getdata(paths[(corr, "im")])[k_f, j_m, i_l]
+        return re + 1j * im
+
+    # corr_basis_transform is a single left-multiply E' = S @ diag(hh, vv) (see
+    # build_beam_grid_jones), not the baseline-coherency S @ B @ S^H form.
+    assert _plane("rr") == pytest.approx(hh / np.sqrt(2), abs=1e-6)
+    assert _plane("rl") == pytest.approx(1j * vv / np.sqrt(2), abs=1e-6)
+    assert _plane("lr") == pytest.approx(hh / np.sqrt(2), abs=1e-6)
+    assert _plane("ll") == pytest.approx(-1j * vv / np.sqrt(2), abs=1e-6)
+
+
+def test_to_fits_ddfacet_flags_ignored_warning_for_simms_format(fx, caplog):
+    out = fx.random_named_file(suffix=".fits")
+    with caplog.at_level(logging.WARNING):
+        primary_beam.runit(
+            _opts(
+                "to-fits",
+                fits_format="simms",
+                beam_l_axis="X",
+                npix=8,
+                nchan=1,
+                output=out,
+                log_level="WARNING",
+            )
+        )
+    assert any("only apply to --fits-format ddfacet" in r.message for r in caplog.records)
 
 
 def test_tag_ms_scalar_and_layout_and_map(fx):

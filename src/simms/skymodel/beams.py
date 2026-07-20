@@ -845,3 +845,88 @@ def write_beam_fits(beam: CosineTaperBeam, l_grid, m_grid, freqs_hz, path):
     hdr["CTYPE4"], hdr["CRPIX4"], hdr["CRVAL4"], hdr["CDELT4"] = "FEED", 1, 0, 1
     hdr["BUNIT"] = "1"
     fits.PrimaryHDU(data=data, header=hdr).writeto(path, overwrite=True)
+
+
+def _axis_sign(spec: str) -> float:
+    """``"-X"``/``"-Y"`` -> ``-1.0``, ``"X"``/``"Y"`` -> ``1.0`` (DDFacet's FITSLAxis/FITSMAxis)."""
+    return -1.0 if str(spec).strip().startswith("-") else 1.0
+
+
+def write_beam_fits_ddfacet(
+    beam: CosineTaperBeam,
+    l_grid,
+    m_grid,
+    freqs_hz,
+    prefix,
+    pol_basis: str = "linear",
+    l_axis: str = "-X",
+    m_axis: str = "Y",
+) -> list:
+    """Write a cosine-taper beam as DDFacet's 8-file FITS-beam schema.
+
+    DDFacet's ``[Beam]`` parset (``Beam-Model=FITS``) expects a real/imaginary pair
+    per entry of the 2x2 voltage Jones matrix -- **8 separate files** -- named by its
+    default ``Beam-FITSFile`` pattern ``beam_$(corr)_$(reim).fits``: here,
+    ``f"{prefix}_{corr}_{reim}.fits"`` with ``corr`` in ``xx,xy,yx,yy`` (linear feeds,
+    ``pol_basis="linear"``) or ``rr,rl,lr,ll`` (circular, ``pol_basis="circular"``) and
+    ``reim`` in ``re,im``. Each file is a ``(nfreq, nm, nl)`` cube: CTYPE1/2 are the
+    spatial axes (degrees), CTYPE3 is FREQ (Hz).
+
+    The cosine-taper model has no leakage, so the off-diagonal (xy/yx or rl/lr)
+    planes are the diagonal Jones ``diag(HH, VV)`` with no cross terms, optionally
+    rotated into the circular basis by :func:`corr_basis_transform` (a single
+    left-multiply ``E' = S @ E``, the same transform :func:`build_beam_grid_jones`
+    applies -- not the baseline-coherency ``S @ B @ S^H`` form).
+
+    ``l_axis``/``m_axis`` (``"-X"``/``"X"`` and ``"Y"``/``"-Y"``) mirror DDFacet's own
+    ``--Beam-FITSLAxis``/``--Beam-FITSMAxis`` options and their documented convention
+    ("Minus sign indicates reverse coordinate convention"): passing the same string to
+    this writer and to DDFacet round-trips to the identity, so the defaults here match
+    DDFacet's own defaults.
+    """
+    from astropy.io import fits
+
+    if pol_basis not in ("linear", "circular"):
+        raise ValueError(f"pol_basis must be 'linear' or 'circular', got {pol_basis!r}.")
+
+    l_grid = np.ascontiguousarray(l_grid, dtype=np.float64)
+    m_grid = np.ascontiguousarray(m_grid, dtype=np.float64)
+    freqs_hz = np.atleast_1d(np.asarray(freqs_hz, dtype=np.float64))
+    nl, nm, nf = l_grid.size, m_grid.size, freqs_hz.size
+    if nf > 2 and not np.allclose(np.diff(freqs_hz), freqs_hz[1] - freqs_hz[0]):
+        raise ValueError("write_beam_fits_ddfacet needs uniformly-spaced frequencies for the linear FITS FREQ axis.")
+
+    ll, mm = np.meshgrid(l_grid, m_grid, indexing="ij")
+    v = beam.voltages(np.degrees(ll.ravel()), np.degrees(mm.ravel()), freqs_hz / 1e6)  # (nl*nm, nf, 2)
+    v = v.reshape(nl, nm, nf, 2).transpose(2, 1, 0, 3)  # (nf, nm, nl, 2) = [H, V] voltages
+
+    jones = np.zeros(v.shape[:3] + (2, 2), dtype=np.complex128)  # (nf, nm, nl, 2, 2)
+    jones[..., 0, 0] = v[..., 0]
+    jones[..., 1, 1] = v[..., 1]
+    if pol_basis == "circular":
+        jones = np.einsum("ij,...jk->...ik", corr_basis_transform(True), jones)
+
+    labels = ["xx", "xy", "yx", "yy"] if pol_basis == "linear" else ["rr", "rl", "lr", "ll"]
+
+    sign_l = _axis_sign(l_axis)
+    sign_m = _axis_sign(m_axis)
+    dl = np.degrees(l_grid[1] - l_grid[0]) if nl > 1 else 1.0
+    dm = np.degrees(m_grid[1] - m_grid[0]) if nm > 1 else 1.0
+    df = float(freqs_hz[1] - freqs_hz[0]) if nf > 1 else 1e6
+
+    hdr = fits.Header()
+    hdr["CTYPE1"], hdr["CRPIX1"], hdr["CUNIT1"] = "X", 1, "deg"
+    hdr["CRVAL1"], hdr["CDELT1"] = sign_l * np.degrees(l_grid[0]), sign_l * dl
+    hdr["CTYPE2"], hdr["CRPIX2"], hdr["CUNIT2"] = "Y", 1, "deg"
+    hdr["CRVAL2"], hdr["CDELT2"] = sign_m * np.degrees(m_grid[0]), sign_m * dm
+    hdr["CTYPE3"], hdr["CRPIX3"], hdr["CRVAL3"], hdr["CDELT3"], hdr["CUNIT3"] = "FREQ", 1, float(freqs_hz[0]), df, "Hz"
+    hdr["BUNIT"] = "1"
+
+    paths = []
+    for (i, j), corr in zip([(0, 0), (0, 1), (1, 0), (1, 1)], labels):
+        plane = jones[..., i, j]
+        for part, suffix in ((plane.real, "re"), (plane.imag, "im")):
+            path = f"{prefix}_{corr}_{suffix}.fits"
+            fits.PrimaryHDU(data=part.astype(np.float32), header=hdr).writeto(path, overwrite=True)
+            paths.append(path)
+    return paths
