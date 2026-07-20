@@ -485,6 +485,135 @@ def test_resolve_antenna_beams_fits_entry(tmp_path):
     assert isinstance(providers[0], FitsBeamProvider)
 
 
+# --- DDFacet-schema FITS beams (read side) ----------------------------------------
+
+from simms.skymodel.beams import (  # noqa: E402
+    _ddfacet_substitute,
+    load_ddfacet_beam_json,
+    resolve_ddfacet_antenna_beams,
+    write_beam_fits_ddfacet,
+)
+
+
+def test_ddfacet_substitute():
+    assert _ddfacet_substitute("beam_$(corr)_$(reim).fits", corr="xx", reim="re") == "beam_xx_re.fits"
+    assert _ddfacet_substitute("beam_$(xy)_$(reim).fits", corr="rl", reim="im") == "beam_rl_im.fits"
+    assert _ddfacet_substitute("beam_$(CORR)_$(REIM).fits", corr="xx", reim="re") == "beam_XX_RE.fits"
+    assert _ddfacet_substitute("beam_$(realimag).fits", reim="im") == "beam_imag.fits"
+    assert _ddfacet_substitute("beam_$(REALIMAG).fits", reim="im") == "beam_IMAG.fits"
+    assert _ddfacet_substitute("$(stype)_$(corr)_$(reim).fits", stype="ska", corr="yy", reim="im") == "ska_yy_im.fits"
+    assert _ddfacet_substitute("$(STYPE)_beam.fits", stype="ska") == "SKA_beam.fits"
+
+
+@pytest.mark.parametrize("pol_basis", ["linear", "circular"])
+def test_fits_provider_from_ddfacet_roundtrip(tmp_path, pol_basis):
+    # write_beam_fits_ddfacet -> FitsBeamProvider.from_ddfacet must recover the same
+    # feed-frame voltages as the analytic beam, for both the linear and (un-rotated)
+    # circular on-disk basis.
+    beam = CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026")
+    npix = 33
+    grid = (np.arange(npix) - npix // 2) * np.radians(2.0 / 60.0)
+    freqs = np.array([1.3e9, 1.4e9])
+    prefix = str(tmp_path / "beam")
+
+    write_beam_fits_ddfacet(beam, grid, grid, freqs, prefix, pol_basis=pol_basis)
+    prov = FitsBeamProvider.from_ddfacet(prefix, pol_basis=pol_basis)
+    assert prov.has_leakage
+
+    jim = JimBeamProvider(beam)
+    ell = np.array([0.001, -0.002])
+    emm = np.array([0.0005, 0.0008])
+    got = prov.voltage(ell, emm, freqs, np.array([0.0]))
+    want = jim.voltage(ell, emm, freqs, np.array([0.0]))
+    np.testing.assert_allclose(got, want, atol=2e-3)
+
+    # No leakage in the cosine-taper model.
+    jones = prov.jones(ell, emm, freqs, np.array([0.0]))
+    np.testing.assert_allclose(jones[..., 0, 1], 0.0, atol=1e-9)
+    np.testing.assert_allclose(jones[..., 1, 0], 0.0, atol=1e-9)
+
+
+def test_resolve_antenna_beams_ddfacet_entry(tmp_path):
+    # A {ddfacet: prefix} entry builds a FitsBeamProvider from the 8-file schema.
+    beam = CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026")
+    npix = 17
+    grid = (np.arange(npix) - npix // 2) * np.radians(2.0 / 60.0)
+    freqs = np.array([1.4e9])
+    prefix = str(tmp_path / "beam")
+    write_beam_fits_ddfacet(beam, grid, grid, freqs, prefix, pol_basis="linear")
+
+    _, providers, _ = resolve_antenna_beams(["MKAT-EA"], ["ALT-AZ"], {"MKAT-EA": {"ddfacet": prefix}})
+    assert isinstance(providers[0], FitsBeamProvider)
+
+
+def test_load_ddfacet_beam_json_and_resolve(tmp_path):
+    import json
+
+    beam_meerkat = CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026")
+    beam_ska = CosineTaperBeam.from_builtin("MKAT-AA-L-JIM-2020")
+    npix = 17
+    grid = (np.arange(npix) - npix // 2) * np.radians(2.0 / 60.0)
+    freqs = np.array([1.4e9])
+    write_beam_fits_ddfacet(beam_meerkat, grid, grid, freqs, str(tmp_path / "meerkat"), pol_basis="linear")
+    write_beam_fits_ddfacet(beam_ska, grid, grid, freqs, str(tmp_path / "ska"), pol_basis="linear")
+
+    cfg = {
+        "lband": {
+            "patterns": {"cmd::default": [str(tmp_path / "$(stype)_$(corr)_$(reim).fits")]},
+            "define-stationtypes": {"cmd::default": "meerkat", "~SKA[0-9]{3}": "ska"},
+        }
+    }
+    cfg_path = tmp_path / "beams.json"
+    cfg_path.write_text(json.dumps(cfg))
+
+    ddfacet_cfg = load_ddfacet_beam_json(cfg_path)
+    names = ["M060", "M061", "SKA001", "SKA002"]
+    mount = ["ALT-AZ"] * 4
+    ant_type, providers, is_altaz = resolve_ddfacet_antenna_beams(names, mount, ddfacet_cfg)
+
+    # M060/M061 share a provider (meerkat), SKA001/SKA002 share a different one (ska).
+    assert ant_type[0] == ant_type[1]
+    assert ant_type[2] == ant_type[3]
+    assert ant_type[0] != ant_type[2]
+    assert np.all(is_altaz)
+
+    ell, emm = np.array([0.001]), np.array([0.0005])
+    got_meerkat = providers[ant_type[0]].voltage(ell, emm, freqs, np.array([0.0]))
+    got_ska = providers[ant_type[2]].voltage(ell, emm, freqs, np.array([0.0]))
+    want_meerkat = JimBeamProvider(beam_meerkat).voltage(ell, emm, freqs, np.array([0.0]))
+    want_ska = JimBeamProvider(beam_ska).voltage(ell, emm, freqs, np.array([0.0]))
+    np.testing.assert_allclose(got_meerkat, want_meerkat, atol=2e-3)
+    np.testing.assert_allclose(got_ska, want_ska, atol=2e-3)
+
+
+def test_load_ddfacet_beam_json_rejects_multiple_patterns(tmp_path):
+    import json
+
+    cfg = {
+        "lband": {
+            "patterns": {"a": ["$(stype)_$(corr)_$(reim).fits"], "b": ["other_$(corr)_$(reim).fits"]},
+            "define-stationtypes": {"cmd::default": "meerkat"},
+        }
+    }
+    cfg_path = tmp_path / "beams.json"
+    cfg_path.write_text(json.dumps(cfg))
+    with pytest.raises(ValueError, match="distinct file patterns"):
+        load_ddfacet_beam_json(cfg_path)
+
+
+def test_resolve_ddfacet_antenna_beams_no_match_raises(tmp_path):
+    beam = CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026")
+    npix = 9
+    grid = (np.arange(npix) - npix // 2) * np.radians(2.0 / 60.0)
+    write_beam_fits_ddfacet(beam, grid, grid, np.array([1.4e9]), str(tmp_path / "meerkat"), pol_basis="linear")
+    ddfacet_cfg = {
+        "stationtypes": [("~M0[0-9]{2}", True, "meerkat")],
+        "pattern": str(tmp_path / "$(stype)_$(corr)_$(reim).fits"),
+    }
+    with pytest.raises(RuntimeError, match="No DDFacet station type"):
+        resolve_ddfacet_antenna_beams(["SKA001"], ["ALT-AZ"], ddfacet_cfg)
+
+
 # --- FITS-image approximate power beam (Phase 5) ---------------------------------
 
 from simms.skymodel.beams import image_power_beam, pa_sample_grid  # noqa: E402

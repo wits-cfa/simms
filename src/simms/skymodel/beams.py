@@ -312,6 +312,31 @@ def _ascending(grid, values, axis):
     return grid, values
 
 
+def _ddfacet_substitute(pattern: str, *, stype: str = None, corr: str = None, reim: str = None) -> str:
+    """Apply DDFacet's ``$(...)`` beam-filename substitutions (and their uppercase forms).
+
+    Mirrors the ``--Beam-FITSFile``/heterogeneous-beam-json substitution rules: ``$(stype)``,
+    ``$(corr)``/``$(xy)``, ``$(reim)``, ``$(realimag)``; an uppercase variable name (e.g.
+    ``$(REIM)``) is replaced by the uppercase value.
+    """
+    subs = {}
+    if stype is not None:
+        subs["$(stype)"] = stype
+        subs["$(STYPE)"] = stype.upper()
+    if corr is not None:
+        subs["$(corr)"] = subs["$(xy)"] = corr
+        subs["$(CORR)"] = subs["$(XY)"] = corr.upper()
+    if reim is not None:
+        subs["$(reim)"] = reim
+        subs["$(REIM)"] = reim.upper()
+        realimag = {"re": "real", "im": "imag"}[reim]
+        subs["$(realimag)"] = realimag
+        subs["$(REALIMAG)"] = realimag.upper()
+    for key, val in subs.items():
+        pattern = pattern.replace(key, val)
+    return pattern
+
+
 class FitsBeamProvider(BeamProvider):
     """Per-feed voltage beam interpolated from a gridded FITS cube (measured/eidos beams).
 
@@ -432,6 +457,83 @@ class FitsBeamProvider(BeamProvider):
         values = np.ascontiguousarray(complex_planes.transpose(3, 2, 1, 0))  # (nl, nm, nfreq, nk)
         return cls(l_grid, m_grid, freqs_hz, values, name=name or str(path))
 
+    @classmethod
+    def from_ddfacet(
+        cls,
+        pattern: str,
+        pol_basis: str = "linear",
+        l_axis: str = "-X",
+        m_axis: str = "Y",
+        name: str = "",
+    ) -> "FitsBeamProvider":
+        """Load a DDFacet-schema (``--Beam-Model FITS``) 8-file beam set.
+
+        ``pattern`` is either a bare prefix (as written by :func:`write_beam_fits_ddfacet`,
+        e.g. ``"beam"`` -> ``beam_xx_re.fits`` etc.) or a full DDFacet ``--Beam-FITSFile``
+        pattern containing ``$(corr)``/``$(xy)`` and ``$(reim)``/``$(realimag)`` placeholders
+        (see :func:`_ddfacet_substitute`; any ``$(stype)`` must already be resolved by the
+        caller). ``pol_basis``/``l_axis``/``m_axis`` must match what the files were written
+        with (see :func:`write_beam_fits_ddfacet`).
+
+        The returned provider always stores **feed-frame (linear H/V) voltages**, like every
+        other provider in this module: a ``pol_basis="circular"`` file set is rotated back
+        with the inverse of :func:`corr_basis_transform` (a unitary matrix, so its inverse is
+        its conjugate transpose) immediately after loading, undoing the single left-multiply
+        the writer applied.
+        """
+        from astropy.io import fits
+
+        if pol_basis not in ("linear", "circular"):
+            raise ValueError(f"pol_basis must be 'linear' or 'circular', got {pol_basis!r}.")
+        has_placeholder = any(tok in pattern for tok in ("$(corr)", "$(xy)", "$(CORR)", "$(XY)"))
+        if not has_placeholder:
+            pattern = f"{pattern}_$(corr)_$(reim).fits"
+
+        labels = ["xx", "xy", "yx", "yy"] if pol_basis == "linear" else ["rr", "rl", "lr", "ll"]
+        sign_l, sign_m = _axis_sign(l_axis), _axis_sign(m_axis)
+
+        def _axis(hdr, fits_axis, n):
+            crpix = hdr[f"CRPIX{fits_axis}"]
+            crval = hdr[f"CRVAL{fits_axis}"]
+            cdelt = hdr[f"CDELT{fits_axis}"]
+            return (np.arange(n) - (crpix - 1)) * cdelt + crval
+
+        l_grid = m_grid = freqs_hz = None
+        planes = []
+        for corr in labels:
+            reim_data = {}
+            for reim in ("re", "im"):
+                path = _ddfacet_substitute(pattern, corr=corr, reim=reim)
+                with fits.open(path) as hdul:
+                    hdr = hdul[0].header
+                    data = np.asarray(hdul[0].data, dtype=np.float64)
+                if data.ndim != 3:
+                    raise ValueError(
+                        f"DDFacet beam file {path!r} must be a (nfreq, nm, nl) cube, got shape {data.shape}."
+                    )
+                nf, nm, nl = data.shape
+                this_l = sign_l * np.radians(_axis(hdr, 1, nl))
+                this_m = sign_m * np.radians(_axis(hdr, 2, nm))
+                this_freqs = _axis(hdr, 3, nf)
+                if l_grid is None:
+                    l_grid, m_grid, freqs_hz = this_l, this_m, this_freqs
+                elif not (
+                    np.allclose(l_grid, this_l) and np.allclose(m_grid, this_m) and np.allclose(freqs_hz, this_freqs)
+                ):
+                    raise ValueError(f"DDFacet beam file {path!r} has a different (l, m, freq) grid than the rest.")
+                reim_data[reim] = data
+            planes.append(reim_data["re"] + 1j * reim_data["im"])  # (nf, nm, nl)
+
+        complex_planes = np.stack(planes, axis=0)  # (4, nf, nm, nl) = [pp, pq, qp, qq]
+        values = np.ascontiguousarray(complex_planes.transpose(3, 2, 1, 0))  # (nl, nm, nf, 4)
+
+        if pol_basis == "circular":
+            s_inv = corr_basis_transform(True).conj().T
+            jones = np.einsum("ij,...jk->...ik", s_inv, values.reshape(values.shape[:3] + (2, 2)))
+            values = jones.reshape(values.shape[:3] + (4,))
+
+        return cls(l_grid, m_grid, freqs_hz, values, name=name or pattern)
+
 
 def _build_jimbeam(spec, beam_band: str) -> JimBeamProvider:
     """Build a JimBeam provider from a beam-config spec (band shorthand, built-in name, or CSV path)."""
@@ -456,7 +558,14 @@ def _build_provider(label: str, beam_config, beam_band: str) -> BeamProvider:
         return _build_jimbeam(entry["jimbeam"], beam_band)
     if "fits" in entry:
         return FitsBeamProvider.from_fits(entry["fits"])
-    log.warning("Beam entry for %r has no 'jimbeam' or 'fits' key; using a unity beam.", label)
+    if "ddfacet" in entry:
+        return FitsBeamProvider.from_ddfacet(
+            entry["ddfacet"],
+            pol_basis=entry.get("pol_basis", "linear"),
+            l_axis=entry.get("l_axis", "-X"),
+            m_axis=entry.get("m_axis", "Y"),
+        )
+    log.warning("Beam entry for %r has no 'jimbeam', 'fits' or 'ddfacet' key; using a unity beam.", label)
     return UnityBeamProvider()
 
 
@@ -503,6 +612,127 @@ def resolve_antenna_beams(telescope_names, mount, beam_config, beam_band: str = 
 
     index = {label: i for i, label in enumerate(labels)}
     ant_type = np.array([index[t] for t in telescope_names], dtype=np.int64)
+    return ant_type, providers, np.array(type_is_altaz, dtype=bool)
+
+
+def load_ddfacet_beam_json(path) -> dict:
+    """Load DDFacet's heterogeneous-beam json config (the ``--Beam-FITSFile`` json form).
+
+    The schema is a dict of arbitrarily-named, chained top-level blocks, each holding a
+    ``"define-stationtypes"`` mapping (antenna ``NAME`` -> station-type label; a key
+    prefixed with ``~`` is a regex over antenna names instead of an exact match; the key
+    ``"cmd::default"`` is the fallback type for any antenna no other rule matches) and a
+    ``"patterns"`` mapping (arbitrary key -> list of ``$(stype)``-templated file patterns,
+    normally one list spanning different frequency ranges).
+
+    Returns ``{"stationtypes": [(matcher, is_regex, stype), ...], "pattern": pattern}``:
+    ``stationtypes`` is flattened across every block in file order, with the *first* rule
+    for a given exact name/`"cmd::default"` winning (blocks only *add* rules -- "once a
+    station is type-specialized the type applies to ALL chained blocks"); resolution
+    priority within that list is exact name > regex > ``"cmd::default"``, not strict
+    block order (this loader does not replicate DDFacet's own block-by-block precedence
+    beyond that -- an edge case not documented precisely enough to reproduce without
+    reading DDFacet's source, which is out of scope here).
+
+    Scope: DDFacet allows a station type to list several patterns for different frequency
+    ranges (selected by proximity to the MS's SPW coverage); this loader supports only a
+    single resolved pattern and raises a clear error if the file defines more than one
+    distinct pattern, rather than silently guessing.
+    """
+    import json
+
+    with open(path) as fh:
+        cfg = json.load(fh)
+
+    stationtypes = []
+    patterns = []
+    for block in cfg.values():
+        for matcher, stype in block.get("define-stationtypes", {}).items():
+            is_regex = matcher.startswith("~")
+            stationtypes.append((matcher[1:] if is_regex else matcher, is_regex, stype))
+        for pattern_list in block.get("patterns", {}).values():
+            patterns.extend(pattern_list)
+
+    distinct = list(dict.fromkeys(patterns))
+    if not distinct:
+        raise ValueError(f"DDFacet beam json {path!r} has no 'patterns' entries.")
+    if len(distinct) > 1:
+        raise ValueError(
+            f"DDFacet beam json {path!r} defines {len(distinct)} distinct file patterns "
+            "(multiple frequency-range patterns per station type); only a single pattern is supported."
+        )
+    return {"stationtypes": stationtypes, "pattern": distinct[0]}
+
+
+def resolve_ddfacet_antenna_beams(
+    antenna_names, mount, ddfacet_cfg: dict, pol_basis: str = "linear", l_axis: str = "-X", m_axis: str = "Y"
+):
+    """Map antennas to beam types from a DDFacet heterogeneous-beam json config.
+
+    Like :func:`resolve_antenna_beams`, but keys antenna typing by the raw ``ANTENNA.NAME``
+    (DDFacet's own convention: exact match, ``~regex``, or the ``"cmd::default"`` fallback --
+    see :func:`load_ddfacet_beam_json`) rather than by the ``TELESCOPE_NAME`` column, and
+    loads each type's beam via :meth:`FitsBeamProvider.from_ddfacet` with ``$(stype)``
+    substituted into ``ddfacet_cfg["pattern"]``.
+
+    Parameters
+    ----------
+    antenna_names : sequence of str
+        Per-antenna ``ANTENNA.NAME`` values, length ``nant``.
+    mount : sequence of str
+        Per-antenna ``ANTENNA.MOUNT`` values, length ``nant``.
+    ddfacet_cfg : dict
+        As returned by :func:`load_ddfacet_beam_json`.
+    pol_basis, l_axis, m_axis
+        Passed through to :meth:`FitsBeamProvider.from_ddfacet` (must match how the
+        referenced FITS files were written).
+
+    Returns
+    -------
+    ant_type, providers, type_is_altaz
+        Same shapes/meaning as :func:`resolve_antenna_beams`.
+    """
+    import re
+
+    antenna_names = [str(a) for a in np.asarray(antenna_names).astype(str)]
+    mount = [str(m) for m in np.asarray(mount).astype(str)]
+
+    exact, regexes, default = {}, [], None
+    for matcher, is_regex, stype in ddfacet_cfg["stationtypes"]:
+        if is_regex:
+            regexes.append((matcher, stype))
+        elif matcher == "cmd::default":
+            if default is None:
+                default = stype
+        else:
+            exact.setdefault(matcher, stype)
+
+    def _stype(name):
+        if name in exact:
+            return exact[name]
+        for pat, stype in regexes:
+            if re.fullmatch(pat, name):
+                return stype
+        if default is not None:
+            return default
+        raise RuntimeError(
+            f"No DDFacet station type matches antenna {name!r} (no exact/regex rule and no "
+            "'cmd::default' fallback in the beam json)."
+        )
+
+    types = [_stype(name) for name in antenna_names]
+    labels = list(dict.fromkeys(types))  # unique, insertion-ordered
+
+    providers = []
+    type_is_altaz = []
+    for label in labels:
+        pattern = _ddfacet_substitute(ddfacet_cfg["pattern"], stype=label)
+        providers.append(FitsBeamProvider.from_ddfacet(pattern, pol_basis=pol_basis, l_axis=l_axis, m_axis=m_axis))
+        first = types.index(label)
+        type_is_altaz.append("ALT-AZ" in mount[first].upper())
+
+    index = {label: i for i, label in enumerate(labels)}
+    ant_type = np.array([index[t] for t in types], dtype=np.int64)
     return ant_type, providers, np.array(type_is_altaz, dtype=bool)
 
 

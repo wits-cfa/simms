@@ -232,6 +232,53 @@ def test_fits_image_beam_accepts_circular_ms(e2e):
     assert np.abs(beam).mean() <= np.abs(nobeam).mean()
 
 
+def test_primary_beam_accepts_ddfacet_json(e2e):
+    # A DDFacet heterogeneous-beam json (typed by raw ANTENNA.NAME via a regex rule, not
+    # TELESCOPE_NAME) must attenuate the same way as the equivalent simms beam-config YAML.
+    import json
+
+    from simms.skymodel.beams import CosineTaperBeam, write_beam_fits_ddfacet
+
+    npix = 33
+    grid = (np.arange(npix) - npix // 2) * np.radians(2.0 / 60.0)
+    freqs = np.array([1.412e9, 1.424e9])  # spans the MS's 1420MHz +/- 4MHz channels
+    meerkat_prefix = e2e.random_named_file(suffix="")
+    ska_prefix = e2e.random_named_file(suffix="")
+    write_beam_fits_ddfacet(
+        CosineTaperBeam.from_builtin("MKAT-MA-L-JIM-2026"), grid, grid, freqs, meerkat_prefix, pol_basis="linear"
+    )
+    write_beam_fits_ddfacet(
+        CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026"), grid, grid, freqs, ska_prefix, pol_basis="linear"
+    )
+    for prefix in (meerkat_prefix, ska_prefix):
+        for corr in ("xx", "xy", "yx", "yy"):
+            for reim in ("re", "im"):
+                e2e.test_files.append(f"{prefix}_{corr}_{reim}.fits")
+
+    # define-stationtypes maps antenna NAME (here the skamid fixture's M060.. / SKA00.. split,
+    # via a regex) to a $(stype) value; patterns substitutes it straight into the file prefix,
+    # so the type value can just be the absolute beam-set prefix itself.
+    cfg = {
+        "lband": {
+            "patterns": {"cmd::default": ["$(stype)_$(corr)_$(reim).fits"]},
+            "define-stationtypes": {"cmd::default": meerkat_prefix, "~SKA[0-9]{3}": ska_prefix},
+        }
+    }
+    cfg_json = e2e.random_named_file(suffix=".json")
+    with open(cfg_json, "w") as fh:
+        json.dump(cfg, fh)
+
+    skysim.runit(_opts(e2e.ms, e2e.sky, primary_beam=cfg_json, column="DDFJSON"))
+    skysim.runit(_opts(e2e.ms, e2e.sky, primary_beam=None, column="NOBEAM"))
+
+    ds = xds_from_ms(e2e.ms)[0]
+    beam = ds.DDFJSON.data.compute()
+    nobeam = ds.NOBEAM.data.compute()
+    assert np.all(np.isfinite(beam))
+    assert not np.allclose(beam, nobeam)
+    assert np.abs(beam).mean() < np.abs(nobeam).mean()
+
+
 def test_configurable_telescope_name_column(e2e):
     # telsim writes the label to a custom column; skysim must read the same name, and
     # the default name (absent here) must fail clearly rather than infer the metadata.
