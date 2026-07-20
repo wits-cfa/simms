@@ -65,20 +65,26 @@ class _BeamContext:
     """Everything needed to attach a primary beam to a prepared sky."""
 
     def __init__(self, opts, ms, msds, ra0, dec0, ncorr):
-        beam_config = load_beam_config(opts.primary_beam)
         ant_ds = xds_from_table(f"{ms}::ANTENNA")[0]
         pol_ds = xds_from_table(f"{ms}::POLARIZATION")[0]
-        telescope_col = opts.telescope_name_column
-        if telescope_col not in ant_ds:
-            # The per-antenna telescope name is required and never inferred (a single,
-            # authoritative source). Fail clearly instead of guessing from e.g. dish size.
-            raise RuntimeError(
-                f"The ANTENNA table has no '{telescope_col}' column (the per-antenna telescope "
-                f"name that selects a primary beam). Create the MS with telsim, or point "
-                f"--telescope-name-column at the column that holds it."
-            )
-        tnames, mount, pos, t0, t1, interval, corr_type = dask.compute(
-            ant_ds[telescope_col].data,
+        # A Cattery/DDFacet heterogeneous-beam json types antennas by raw ANTENNA.NAME (its
+        # own convention, exact/regex/cmd::default); simms' own beam-config YAML instead
+        # groups by the TELESCOPE_NAME-column label. Detect which by the config file's extension.
+        is_cattery_json = str(opts.primary_beam).lower().endswith(".json")
+        if is_cattery_json:
+            typing_col = "NAME"
+        else:
+            typing_col = opts.telescope_name_column
+            if typing_col not in ant_ds:
+                # The per-antenna telescope name is required and never inferred (a single,
+                # authoritative source). Fail clearly instead of guessing from e.g. dish size.
+                raise RuntimeError(
+                    f"The ANTENNA table has no '{typing_col}' column (the per-antenna telescope "
+                    f"name that selects a primary beam). Create the MS with telsim, or point "
+                    f"--telescope-name-column at the column that holds it."
+                )
+        type_keys, mount, pos, t0, t1, interval, corr_type = dask.compute(
+            ant_ds[typing_col].data,
             ant_ds.MOUNT.data,
             ant_ds.POSITION.data,
             msds.TIME.data.min(),
@@ -88,9 +94,18 @@ class _BeamContext:
         )
         self.basis = _corr_basis(list(np.asarray(corr_type).ravel()))
         self.full_jones = opts.beam_jones == "full"
-        self.ant_type, self.providers, self.type_is_altaz = resolve_antenna_beams(
-            tnames, mount, beam_config, opts.beam_band
-        )
+        if is_cattery_json:
+            from simms.skymodel.beams import load_cattery_beam_json, resolve_cattery_antenna_beams
+
+            cattery_cfg = load_cattery_beam_json(opts.primary_beam)
+            self.ant_type, self.providers, self.type_is_altaz = resolve_cattery_antenna_beams(
+                type_keys, mount, cattery_cfg, pol_basis=self.basis, l_axis=opts.beam_l_axis, m_axis=opts.beam_m_axis
+            )
+        else:
+            beam_config = load_beam_config(opts.primary_beam)
+            self.ant_type, self.providers, self.type_is_altaz = resolve_antenna_beams(
+                type_keys, mount, beam_config, opts.beam_band
+            )
         self.lon, self.lat = _array_lonlat(pos)
         # The beam is centred on the antenna pointing centre (POINTING.DIRECTION), not the phase
         # centre; source l/m are prepared for the phase centre, so keep it too for reprojection.
@@ -506,8 +521,10 @@ def skysim(
     ),
     primary_beam: str | None = Field(
         None,
-        description="Beam-config YAML mapping each ANTENNA telescope name to a beam model. "
-        "Requires a linear pol basis.",
+        description="Beam model config: a simms beam-config YAML mapping each ANTENNA telescope "
+        "name to a beam model, or a Cattery/DDFacet heterogeneous-beam json (--Beam-FITSFile json "
+        "form, keyed by ANTENNA.NAME) if the path ends in .json. For Cattery/DDFacet beams a "
+        "circular-correlation MS may be used when --beam-jones full is selected.",
         json_schema_extra={"abbreviation": "pb"},
     ),
     beam_band: Literal["UHF", "L"] = Field(
@@ -526,6 +543,20 @@ def skysim(
         "TELESCOPE_NAME",
         description="ANTENNA-table column holding the per-antenna telescope/type label that maps to a beam model.",
         json_schema_extra={"abbreviation": "tnc"},
+    ),
+    beam_l_axis: Literal["-X", "X"] = Field(
+        "-X",
+        description="Sign convention for a Cattery/DDFacet .json primary-beam config's L axis; "
+        "ignored for YAML beam configs, which specify their own axis convention. "
+        "Matches DDFacet's --Beam-FITSLAxis.",
+        json_schema_extra={"abbreviation": "bla"},
+    ),
+    beam_m_axis: Literal["Y", "-Y"] = Field(
+        "Y",
+        description="Sign convention for a Cattery/DDFacet .json primary-beam config's M axis; "
+        "ignored for YAML beam configs, which specify their own axis convention. "
+        "Matches DDFacet's --Beam-FITSMAxis.",
+        json_schema_extra={"abbreviation": "bma"},
     ),
     field_id: int = Field(0, description="Field ID.", json_schema_extra={"abbreviation": "fi"}),
     spw_id: int = Field(0, description="Spectral Window ID."),
