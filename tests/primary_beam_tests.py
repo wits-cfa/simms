@@ -112,11 +112,11 @@ def test_to_fits_roundtrips_through_provider(fx):
     )
 
 
-def _ddfacet_paths(prefix, labels):
+def _cattery_paths(prefix, labels):
     return {(corr, ri): f"{prefix}_{corr}_{ri}.fits" for corr in labels for ri in ("re", "im")}
 
 
-def test_to_fits_ddfacet_writes_eight_files_and_matches_beam(fx):
+def test_to_fits_cattery_writes_eight_files_and_matches_beam(fx):
     prefix = os.path.join(fx.random_named_directory(), "beam")
     beam_pattern = "MKAT-EA-L-JIM-2026"
 
@@ -124,7 +124,7 @@ def test_to_fits_ddfacet_writes_eight_files_and_matches_beam(fx):
         _opts(
             "to-fits",
             beam_pattern=beam_pattern,
-            fits_format="ddfacet",
+            fits_format="cattery",
             pixel_size="2arcmin",
             npix=32,
             start_freq="1300MHz",
@@ -134,7 +134,7 @@ def test_to_fits_ddfacet_writes_eight_files_and_matches_beam(fx):
         )
     )
 
-    paths = _ddfacet_paths(prefix, ["xx", "xy", "yx", "yy"])
+    paths = _cattery_paths(prefix, ["xx", "xy", "yx", "yy"])
     for path in paths.values():
         assert os.path.exists(path)
 
@@ -162,12 +162,12 @@ def test_to_fits_ddfacet_writes_eight_files_and_matches_beam(fx):
         assert got == pytest.approx(expected, abs=1e-6)
 
 
-def test_to_fits_ddfacet_axis_sign_flags(fx):
+def test_to_fits_cattery_axis_sign_flags(fx):
     prefix = os.path.join(fx.random_named_directory(), "beam")
     primary_beam.runit(
         _opts(
             "to-fits",
-            fits_format="ddfacet",
+            fits_format="cattery",
             npix=16,
             nchan=1,
             output=prefix,
@@ -180,7 +180,7 @@ def test_to_fits_ddfacet_axis_sign_flags(fx):
     assert header["CDELT2"] < 0
 
 
-def test_to_fits_ddfacet_circular_basis(fx):
+def test_to_fits_cattery_circular_basis(fx):
     prefix = os.path.join(fx.random_named_directory(), "beam")
     beam_pattern = "MKAT-EA-L-JIM-2026"
 
@@ -188,7 +188,7 @@ def test_to_fits_ddfacet_circular_basis(fx):
         _opts(
             "to-fits",
             beam_pattern=beam_pattern,
-            fits_format="ddfacet",
+            fits_format="cattery",
             pol_basis="circular",
             npix=16,
             nchan=1,
@@ -197,7 +197,7 @@ def test_to_fits_ddfacet_circular_basis(fx):
         )
     )
 
-    paths = _ddfacet_paths(prefix, ["rr", "rl", "lr", "ll"])
+    paths = _cattery_paths(prefix, ["rr", "rl", "lr", "ll"])
     for path in paths.values():
         assert os.path.exists(path)
 
@@ -222,7 +222,7 @@ def test_to_fits_ddfacet_circular_basis(fx):
     assert _plane("ll") == pytest.approx(-1j * vv / np.sqrt(2), abs=1e-6)
 
 
-def test_to_fits_ddfacet_flags_ignored_warning_for_simms_format(fx, caplog):
+def test_to_fits_cattery_flags_ignored_warning_for_simms_format(fx, caplog):
     out = fx.random_named_file(suffix=".fits")
     with caplog.at_level(logging.WARNING):
         primary_beam.runit(
@@ -236,7 +236,7 @@ def test_to_fits_ddfacet_flags_ignored_warning_for_simms_format(fx, caplog):
                 log_level="WARNING",
             )
         )
-    assert any("only apply to --fits-format ddfacet" in r.message for r in caplog.records)
+    assert any("only apply to --fits-format cattery" in r.message for r in caplog.records)
 
 
 def test_tag_ms_scalar_and_layout_and_map(fx):

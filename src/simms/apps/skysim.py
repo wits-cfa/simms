@@ -67,11 +67,11 @@ class _BeamContext:
     def __init__(self, opts, ms, msds, ra0, dec0, ncorr):
         ant_ds = xds_from_table(f"{ms}::ANTENNA")[0]
         pol_ds = xds_from_table(f"{ms}::POLARIZATION")[0]
-        # A DDFacet heterogeneous-beam json types antennas by raw ANTENNA.NAME (its own
-        # convention, exact/regex/cmd::default); simms' own beam-config YAML instead groups
-        # by the TELESCOPE_NAME-column label. Detect which by the config file's extension.
-        is_ddfacet_json = str(opts.primary_beam).lower().endswith(".json")
-        if is_ddfacet_json:
+        # A Cattery/DDFacet heterogeneous-beam json types antennas by raw ANTENNA.NAME (its
+        # own convention, exact/regex/cmd::default); simms' own beam-config YAML instead
+        # groups by the TELESCOPE_NAME-column label. Detect which by the config file's extension.
+        is_cattery_json = str(opts.primary_beam).lower().endswith(".json")
+        if is_cattery_json:
             typing_col = "NAME"
         else:
             typing_col = opts.telescope_name_column
@@ -94,12 +94,12 @@ class _BeamContext:
         )
         self.basis = _corr_basis(list(np.asarray(corr_type).ravel()))
         self.full_jones = opts.beam_jones == "full"
-        if is_ddfacet_json:
-            from simms.skymodel.beams import load_ddfacet_beam_json, resolve_ddfacet_antenna_beams
+        if is_cattery_json:
+            from simms.skymodel.beams import load_cattery_beam_json, resolve_cattery_antenna_beams
 
-            ddfacet_cfg = load_ddfacet_beam_json(opts.primary_beam)
-            self.ant_type, self.providers, self.type_is_altaz = resolve_ddfacet_antenna_beams(
-                type_keys, mount, ddfacet_cfg, pol_basis=self.basis, l_axis=opts.beam_l_axis, m_axis=opts.beam_m_axis
+            cattery_cfg = load_cattery_beam_json(opts.primary_beam)
+            self.ant_type, self.providers, self.type_is_altaz = resolve_cattery_antenna_beams(
+                type_keys, mount, cattery_cfg, pol_basis=self.basis, l_axis=opts.beam_l_axis, m_axis=opts.beam_m_axis
             )
         else:
             beam_config = load_beam_config(opts.primary_beam)
@@ -522,8 +522,8 @@ def skysim(
     primary_beam: str | None = Field(
         None,
         description="Beam model config: a simms beam-config YAML mapping each ANTENNA telescope "
-        "name to a beam model, or a DDFacet heterogeneous-beam json (--Beam-FITSFile json form, "
-        "keyed by ANTENNA.NAME) if the path ends in .json. Requires a linear pol basis.",
+        "name to a beam model, or a Cattery/DDFacet heterogeneous-beam json (--Beam-FITSFile json "
+        "form, keyed by ANTENNA.NAME) if the path ends in .json. Requires a linear pol basis.",
         json_schema_extra={"abbreviation": "pb"},
     ),
     beam_band: Literal["UHF", "L"] = Field(
@@ -545,14 +545,14 @@ def skysim(
     ),
     beam_l_axis: Literal["-X", "X"] = Field(
         "-X",
-        description="Sign convention for a ddfacet-schema primary-beam FITS file's L axis (--primary-beam "
-        "'ddfacet' entries, or a .json config), matching DDFacet's --Beam-FITSLAxis.",
+        description="Sign convention for a cattery-schema primary-beam FITS file's L axis (--primary-beam "
+        "'cattery' entries, or a .json config), matching DDFacet's --Beam-FITSLAxis.",
         json_schema_extra={"abbreviation": "bla"},
     ),
     beam_m_axis: Literal["Y", "-Y"] = Field(
         "Y",
-        description="Sign convention for a ddfacet-schema primary-beam FITS file's M axis (--primary-beam "
-        "'ddfacet' entries, or a .json config), matching DDFacet's --Beam-FITSMAxis.",
+        description="Sign convention for a cattery-schema primary-beam FITS file's M axis (--primary-beam "
+        "'cattery' entries, or a .json config), matching DDFacet's --Beam-FITSMAxis.",
         json_schema_extra={"abbreviation": "bma"},
     ),
     field_id: int = Field(0, description="Field ID.", json_schema_extra={"abbreviation": "fi"}),

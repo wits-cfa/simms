@@ -232,22 +232,22 @@ def test_fits_image_beam_accepts_circular_ms(e2e):
     assert np.abs(beam).mean() <= np.abs(nobeam).mean()
 
 
-def test_primary_beam_accepts_ddfacet_json(e2e):
-    # A DDFacet heterogeneous-beam json (typed by raw ANTENNA.NAME via a regex rule, not
+def test_primary_beam_accepts_cattery_json(e2e):
+    # A Cattery/DDFacet heterogeneous-beam json (typed by raw ANTENNA.NAME via a regex rule, not
     # TELESCOPE_NAME) must attenuate the same way as the equivalent simms beam-config YAML.
     import json
 
-    from simms.skymodel.beams import CosineTaperBeam, write_beam_fits_ddfacet
+    from simms.skymodel.beams import CosineTaperBeam, write_beam_fits_cattery
 
     npix = 33
     grid = (np.arange(npix) - npix // 2) * np.radians(2.0 / 60.0)
     freqs = np.array([1.412e9, 1.424e9])  # spans the MS's 1420MHz +/- 4MHz channels
     meerkat_prefix = e2e.random_named_file(suffix="")
     ska_prefix = e2e.random_named_file(suffix="")
-    write_beam_fits_ddfacet(
+    write_beam_fits_cattery(
         CosineTaperBeam.from_builtin("MKAT-MA-L-JIM-2026"), grid, grid, freqs, meerkat_prefix, pol_basis="linear"
     )
-    write_beam_fits_ddfacet(
+    write_beam_fits_cattery(
         CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026"), grid, grid, freqs, ska_prefix, pol_basis="linear"
     )
     for prefix in (meerkat_prefix, ska_prefix):
@@ -268,11 +268,11 @@ def test_primary_beam_accepts_ddfacet_json(e2e):
     with open(cfg_json, "w") as fh:
         json.dump(cfg, fh)
 
-    skysim.runit(_opts(e2e.ms, e2e.sky, primary_beam=cfg_json, column="DDFJSON"))
+    skysim.runit(_opts(e2e.ms, e2e.sky, primary_beam=cfg_json, column="CATTERYJSON"))
     skysim.runit(_opts(e2e.ms, e2e.sky, primary_beam=None, column="NOBEAM"))
 
     ds = xds_from_ms(e2e.ms)[0]
-    beam = ds.DDFJSON.data.compute()
+    beam = ds.CATTERYJSON.data.compute()
     nobeam = ds.NOBEAM.data.compute()
     assert np.all(np.isfinite(beam))
     assert not np.allclose(beam, nobeam)

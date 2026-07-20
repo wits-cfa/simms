@@ -2,7 +2,7 @@
 
 Four modes, none of which run a visibility simulation:
 - ``to_fits``      : sample an analytic cosine-taper beam onto a FITS beam cube, in either
-  simms' own single-file layout or DDFacet's 8-file ``--Beam-Model FITS`` schema.
+  simms' own single-file layout or the Cattery/DDFacet 8-file ``--Beam-Model FITS`` schema.
 - ``tag_ms``       : write the per-antenna telescope-name column onto an existing MS.
 - ``apply``/``correct`` : multiply / divide a sky model (FITS image or ASCII components) by
   the frequency- and parallactic-angle-averaged Stokes-I power beam ``A(l, m)``.
@@ -82,7 +82,7 @@ def _angular_separation(ra1, dec1, ra2, dec2):
 def to_fits(opts):
     from astropy.coordinates import Angle
 
-    from simms.skymodel.beams import JimBeamProvider, resolve_beam, write_beam_fits, write_beam_fits_ddfacet
+    from simms.skymodel.beams import JimBeamProvider, resolve_beam, write_beam_fits, write_beam_fits_cattery
 
     provider = resolve_beam(opts.beam_pattern, opts.beam_band)
     if not isinstance(provider, JimBeamProvider):
@@ -107,15 +107,15 @@ def to_fits(opts):
     else:
         freqs = np.array([start])
 
-    if opts.fits_format == "ddfacet":
+    if opts.fits_format == "cattery":
         prefix = opts.output or "beam"
         if prefix.lower().endswith(".fits"):
             prefix = prefix[: -len(".fits")]
-        paths = write_beam_fits_ddfacet(
+        paths = write_beam_fits_cattery(
             beam, grid, grid, freqs, prefix, pol_basis=opts.pol_basis, l_axis=opts.beam_l_axis, m_axis=opts.beam_m_axis
         )
         log.info(
-            "Wrote DDFacet-schema beam (%d x %d pixels, %d channels, %s basis) -> %s",
+            "Wrote Cattery-schema beam (%d x %d pixels, %d channels, %s basis) -> %s",
             npix,
             npix,
             freqs.size,
@@ -125,7 +125,7 @@ def to_fits(opts):
     else:
         if opts.beam_l_axis != "-X" or opts.beam_m_axis != "Y":
             log.warning(
-                "--beam-l-axis/--beam-m-axis only apply to --fits-format ddfacet; ignored for %r.", opts.fits_format
+                "--beam-l-axis/--beam-m-axis only apply to --fits-format cattery; ignored for %r.", opts.fits_format
             )
         output = opts.output or "beam.fits"
         write_beam_fits(beam, grid, grid, freqs, output)

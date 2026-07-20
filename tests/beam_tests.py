@@ -485,29 +485,29 @@ def test_resolve_antenna_beams_fits_entry(tmp_path):
     assert isinstance(providers[0], FitsBeamProvider)
 
 
-# --- DDFacet-schema FITS beams (read side) ----------------------------------------
+# --- Cattery-schema FITS beams (read side) ----------------------------------------
 
 from simms.skymodel.beams import (  # noqa: E402
-    _ddfacet_substitute,
-    load_ddfacet_beam_json,
-    resolve_ddfacet_antenna_beams,
-    write_beam_fits_ddfacet,
+    _cattery_substitute,
+    load_cattery_beam_json,
+    resolve_cattery_antenna_beams,
+    write_beam_fits_cattery,
 )
 
 
-def test_ddfacet_substitute():
-    assert _ddfacet_substitute("beam_$(corr)_$(reim).fits", corr="xx", reim="re") == "beam_xx_re.fits"
-    assert _ddfacet_substitute("beam_$(xy)_$(reim).fits", corr="rl", reim="im") == "beam_rl_im.fits"
-    assert _ddfacet_substitute("beam_$(CORR)_$(REIM).fits", corr="xx", reim="re") == "beam_XX_RE.fits"
-    assert _ddfacet_substitute("beam_$(realimag).fits", reim="im") == "beam_imag.fits"
-    assert _ddfacet_substitute("beam_$(REALIMAG).fits", reim="im") == "beam_IMAG.fits"
-    assert _ddfacet_substitute("$(stype)_$(corr)_$(reim).fits", stype="ska", corr="yy", reim="im") == "ska_yy_im.fits"
-    assert _ddfacet_substitute("$(STYPE)_beam.fits", stype="ska") == "SKA_beam.fits"
+def test_cattery_substitute():
+    assert _cattery_substitute("beam_$(corr)_$(reim).fits", corr="xx", reim="re") == "beam_xx_re.fits"
+    assert _cattery_substitute("beam_$(xy)_$(reim).fits", corr="rl", reim="im") == "beam_rl_im.fits"
+    assert _cattery_substitute("beam_$(CORR)_$(REIM).fits", corr="xx", reim="re") == "beam_XX_RE.fits"
+    assert _cattery_substitute("beam_$(realimag).fits", reim="im") == "beam_imag.fits"
+    assert _cattery_substitute("beam_$(REALIMAG).fits", reim="im") == "beam_IMAG.fits"
+    assert _cattery_substitute("$(stype)_$(corr)_$(reim).fits", stype="ska", corr="yy", reim="im") == "ska_yy_im.fits"
+    assert _cattery_substitute("$(STYPE)_beam.fits", stype="ska") == "SKA_beam.fits"
 
 
 @pytest.mark.parametrize("pol_basis", ["linear", "circular"])
-def test_fits_provider_from_ddfacet_roundtrip(tmp_path, pol_basis):
-    # write_beam_fits_ddfacet -> FitsBeamProvider.from_ddfacet must recover the same
+def test_fits_provider_from_cattery_roundtrip(tmp_path, pol_basis):
+    # write_beam_fits_cattery -> FitsBeamProvider.from_cattery must recover the same
     # feed-frame voltages as the analytic beam, for both the linear and (un-rotated)
     # circular on-disk basis.
     beam = CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026")
@@ -516,8 +516,8 @@ def test_fits_provider_from_ddfacet_roundtrip(tmp_path, pol_basis):
     freqs = np.array([1.3e9, 1.4e9])
     prefix = str(tmp_path / "beam")
 
-    write_beam_fits_ddfacet(beam, grid, grid, freqs, prefix, pol_basis=pol_basis)
-    prov = FitsBeamProvider.from_ddfacet(prefix, pol_basis=pol_basis)
+    write_beam_fits_cattery(beam, grid, grid, freqs, prefix, pol_basis=pol_basis)
+    prov = FitsBeamProvider.from_cattery(prefix, pol_basis=pol_basis)
     assert prov.has_leakage
 
     jim = JimBeamProvider(beam)
@@ -533,20 +533,20 @@ def test_fits_provider_from_ddfacet_roundtrip(tmp_path, pol_basis):
     np.testing.assert_allclose(jones[..., 1, 0], 0.0, atol=1e-9)
 
 
-def test_resolve_antenna_beams_ddfacet_entry(tmp_path):
-    # A {ddfacet: prefix} entry builds a FitsBeamProvider from the 8-file schema.
+def test_resolve_antenna_beams_cattery_entry(tmp_path):
+    # A {cattery: prefix} entry builds a FitsBeamProvider from the 8-file schema.
     beam = CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026")
     npix = 17
     grid = (np.arange(npix) - npix // 2) * np.radians(2.0 / 60.0)
     freqs = np.array([1.4e9])
     prefix = str(tmp_path / "beam")
-    write_beam_fits_ddfacet(beam, grid, grid, freqs, prefix, pol_basis="linear")
+    write_beam_fits_cattery(beam, grid, grid, freqs, prefix, pol_basis="linear")
 
-    _, providers, _ = resolve_antenna_beams(["MKAT-EA"], ["ALT-AZ"], {"MKAT-EA": {"ddfacet": prefix}})
+    _, providers, _ = resolve_antenna_beams(["MKAT-EA"], ["ALT-AZ"], {"MKAT-EA": {"cattery": prefix}})
     assert isinstance(providers[0], FitsBeamProvider)
 
 
-def test_load_ddfacet_beam_json_and_resolve(tmp_path):
+def test_load_cattery_beam_json_and_resolve(tmp_path):
     import json
 
     beam_meerkat = CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026")
@@ -554,8 +554,8 @@ def test_load_ddfacet_beam_json_and_resolve(tmp_path):
     npix = 17
     grid = (np.arange(npix) - npix // 2) * np.radians(2.0 / 60.0)
     freqs = np.array([1.4e9])
-    write_beam_fits_ddfacet(beam_meerkat, grid, grid, freqs, str(tmp_path / "meerkat"), pol_basis="linear")
-    write_beam_fits_ddfacet(beam_ska, grid, grid, freqs, str(tmp_path / "ska"), pol_basis="linear")
+    write_beam_fits_cattery(beam_meerkat, grid, grid, freqs, str(tmp_path / "meerkat"), pol_basis="linear")
+    write_beam_fits_cattery(beam_ska, grid, grid, freqs, str(tmp_path / "ska"), pol_basis="linear")
 
     cfg = {
         "lband": {
@@ -566,10 +566,10 @@ def test_load_ddfacet_beam_json_and_resolve(tmp_path):
     cfg_path = tmp_path / "beams.json"
     cfg_path.write_text(json.dumps(cfg))
 
-    ddfacet_cfg = load_ddfacet_beam_json(cfg_path)
+    cattery_cfg = load_cattery_beam_json(cfg_path)
     names = ["M060", "M061", "SKA001", "SKA002"]
     mount = ["ALT-AZ"] * 4
-    ant_type, providers, is_altaz = resolve_ddfacet_antenna_beams(names, mount, ddfacet_cfg)
+    ant_type, providers, is_altaz = resolve_cattery_antenna_beams(names, mount, cattery_cfg)
 
     # M060/M061 share a provider (meerkat), SKA001/SKA002 share a different one (ska).
     assert ant_type[0] == ant_type[1]
@@ -586,7 +586,7 @@ def test_load_ddfacet_beam_json_and_resolve(tmp_path):
     np.testing.assert_allclose(got_ska, want_ska, atol=2e-3)
 
 
-def test_load_ddfacet_beam_json_rejects_multiple_patterns(tmp_path):
+def test_load_cattery_beam_json_rejects_multiple_patterns(tmp_path):
     import json
 
     cfg = {
@@ -598,20 +598,20 @@ def test_load_ddfacet_beam_json_rejects_multiple_patterns(tmp_path):
     cfg_path = tmp_path / "beams.json"
     cfg_path.write_text(json.dumps(cfg))
     with pytest.raises(ValueError, match="distinct file patterns"):
-        load_ddfacet_beam_json(cfg_path)
+        load_cattery_beam_json(cfg_path)
 
 
-def test_resolve_ddfacet_antenna_beams_no_match_raises(tmp_path):
+def test_resolve_cattery_antenna_beams_no_match_raises(tmp_path):
     beam = CosineTaperBeam.from_builtin("MKAT-EA-L-JIM-2026")
     npix = 9
     grid = (np.arange(npix) - npix // 2) * np.radians(2.0 / 60.0)
-    write_beam_fits_ddfacet(beam, grid, grid, np.array([1.4e9]), str(tmp_path / "meerkat"), pol_basis="linear")
-    ddfacet_cfg = {
+    write_beam_fits_cattery(beam, grid, grid, np.array([1.4e9]), str(tmp_path / "meerkat"), pol_basis="linear")
+    cattery_cfg = {
         "stationtypes": [("~M0[0-9]{2}", True, "meerkat")],
         "pattern": str(tmp_path / "$(stype)_$(corr)_$(reim).fits"),
     }
-    with pytest.raises(RuntimeError, match="No DDFacet station type"):
-        resolve_ddfacet_antenna_beams(["SKA001"], ["ALT-AZ"], ddfacet_cfg)
+    with pytest.raises(RuntimeError, match="No Cattery station type"):
+        resolve_cattery_antenna_beams(["SKA001"], ["ALT-AZ"], cattery_cfg)
 
 
 # --- FITS-image approximate power beam (Phase 5) ---------------------------------

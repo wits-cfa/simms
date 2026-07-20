@@ -312,12 +312,13 @@ def _ascending(grid, values, axis):
     return grid, values
 
 
-def _ddfacet_substitute(pattern: str, *, stype: str = None, corr: str = None, reim: str = None) -> str:
-    """Apply DDFacet's ``$(...)`` beam-filename substitutions (and their uppercase forms).
+def _cattery_substitute(pattern: str, *, stype: str = None, corr: str = None, reim: str = None) -> str:
+    """Apply the Cattery/DDFacet ``$(...)`` beam-filename substitutions (and uppercase forms).
 
-    Mirrors the ``--Beam-FITSFile``/heterogeneous-beam-json substitution rules: ``$(stype)``,
-    ``$(corr)``/``$(xy)``, ``$(reim)``, ``$(realimag)``; an uppercase variable name (e.g.
-    ``$(REIM)``) is replaced by the uppercase value.
+    Mirrors DDFacet's ``--Beam-FITSFile``/heterogeneous-beam-json substitution rules (the
+    same convention MeqTrees' Cattery beam interpolator uses): ``$(stype)``, ``$(corr)``/
+    ``$(xy)``, ``$(reim)``, ``$(realimag)``; an uppercase variable name (e.g. ``$(REIM)``) is
+    replaced by the uppercase value.
     """
     subs = {}
     if stype is not None:
@@ -458,7 +459,7 @@ class FitsBeamProvider(BeamProvider):
         return cls(l_grid, m_grid, freqs_hz, values, name=name or str(path))
 
     @classmethod
-    def from_ddfacet(
+    def from_cattery(
         cls,
         pattern: str,
         pol_basis: str = "linear",
@@ -466,14 +467,14 @@ class FitsBeamProvider(BeamProvider):
         m_axis: str = "Y",
         name: str = "",
     ) -> "FitsBeamProvider":
-        """Load a DDFacet-schema (``--Beam-Model FITS``) 8-file beam set.
+        """Load a Cattery-schema (MeqTrees Cattery / DDFacet ``--Beam-Model FITS``) 8-file beam set.
 
-        ``pattern`` is either a bare prefix (as written by :func:`write_beam_fits_ddfacet`,
-        e.g. ``"beam"`` -> ``beam_xx_re.fits`` etc.) or a full DDFacet ``--Beam-FITSFile``
+        ``pattern`` is either a bare prefix (as written by :func:`write_beam_fits_cattery`,
+        e.g. ``"beam"`` -> ``beam_xx_re.fits`` etc.) or a full DDFacet-style ``--Beam-FITSFile``
         pattern containing ``$(corr)``/``$(xy)`` and ``$(reim)``/``$(realimag)`` placeholders
-        (see :func:`_ddfacet_substitute`; any ``$(stype)`` must already be resolved by the
+        (see :func:`_cattery_substitute`; any ``$(stype)`` must already be resolved by the
         caller). ``pol_basis``/``l_axis``/``m_axis`` must match what the files were written
-        with (see :func:`write_beam_fits_ddfacet`).
+        with (see :func:`write_beam_fits_cattery`).
 
         The returned provider always stores **feed-frame (linear H/V) voltages**, like every
         other provider in this module: a ``pol_basis="circular"`` file set is rotated back
@@ -503,13 +504,13 @@ class FitsBeamProvider(BeamProvider):
         for corr in labels:
             reim_data = {}
             for reim in ("re", "im"):
-                path = _ddfacet_substitute(pattern, corr=corr, reim=reim)
+                path = _cattery_substitute(pattern, corr=corr, reim=reim)
                 with fits.open(path) as hdul:
                     hdr = hdul[0].header
                     data = np.asarray(hdul[0].data, dtype=np.float64)
                 if data.ndim != 3:
                     raise ValueError(
-                        f"DDFacet beam file {path!r} must be a (nfreq, nm, nl) cube, got shape {data.shape}."
+                        f"Cattery beam file {path!r} must be a (nfreq, nm, nl) cube, got shape {data.shape}."
                     )
                 nf, nm, nl = data.shape
                 this_l = sign_l * np.radians(_axis(hdr, 1, nl))
@@ -520,7 +521,7 @@ class FitsBeamProvider(BeamProvider):
                 elif not (
                     np.allclose(l_grid, this_l) and np.allclose(m_grid, this_m) and np.allclose(freqs_hz, this_freqs)
                 ):
-                    raise ValueError(f"DDFacet beam file {path!r} has a different (l, m, freq) grid than the rest.")
+                    raise ValueError(f"Cattery beam file {path!r} has a different (l, m, freq) grid than the rest.")
                 reim_data[reim] = data
             planes.append(reim_data["re"] + 1j * reim_data["im"])  # (nf, nm, nl)
 
@@ -558,14 +559,14 @@ def _build_provider(label: str, beam_config, beam_band: str) -> BeamProvider:
         return _build_jimbeam(entry["jimbeam"], beam_band)
     if "fits" in entry:
         return FitsBeamProvider.from_fits(entry["fits"])
-    if "ddfacet" in entry:
-        return FitsBeamProvider.from_ddfacet(
-            entry["ddfacet"],
+    if "cattery" in entry:
+        return FitsBeamProvider.from_cattery(
+            entry["cattery"],
             pol_basis=entry.get("pol_basis", "linear"),
             l_axis=entry.get("l_axis", "-X"),
             m_axis=entry.get("m_axis", "Y"),
         )
-    log.warning("Beam entry for %r has no 'jimbeam', 'fits' or 'ddfacet' key; using a unity beam.", label)
+    log.warning("Beam entry for %r has no 'jimbeam', 'fits' or 'cattery' key; using a unity beam.", label)
     return UnityBeamProvider()
 
 
@@ -615,15 +616,17 @@ def resolve_antenna_beams(telescope_names, mount, beam_config, beam_band: str = 
     return ant_type, providers, np.array(type_is_altaz, dtype=bool)
 
 
-def load_ddfacet_beam_json(path) -> dict:
-    """Load DDFacet's heterogeneous-beam json config (the ``--Beam-FITSFile`` json form).
+def load_cattery_beam_json(path) -> dict:
+    """Load a Cattery/DDFacet heterogeneous-beam json config (the ``--Beam-FITSFile`` json form).
 
-    The schema is a dict of arbitrarily-named, chained top-level blocks, each holding a
-    ``"define-stationtypes"`` mapping (antenna ``NAME`` -> station-type label; a key
-    prefixed with ``~`` is a regex over antenna names instead of an exact match; the key
-    ``"cmd::default"`` is the fallback type for any antenna no other rule matches) and a
-    ``"patterns"`` mapping (arbitrary key -> list of ``$(stype)``-templated file patterns,
-    normally one list spanning different frequency ranges).
+    This json-based multi-antenna-type config is DDFacet's own convention layered on top of
+    the underlying Cattery-format beam FITS files it points at. The schema is a dict of
+    arbitrarily-named, chained top-level blocks, each holding a ``"define-stationtypes"``
+    mapping (antenna ``NAME`` -> station-type label; a key prefixed with ``~`` is a regex
+    over antenna names instead of an exact match; the key ``"cmd::default"`` is the fallback
+    type for any antenna no other rule matches) and a ``"patterns"`` mapping (arbitrary key
+    -> list of ``$(stype)``-templated file patterns, normally one list spanning different
+    frequency ranges).
 
     Returns ``{"stationtypes": [(matcher, is_regex, stype), ...], "pattern": pattern}``:
     ``stationtypes`` is flattened across every block in file order, with the *first* rule
@@ -655,25 +658,25 @@ def load_ddfacet_beam_json(path) -> dict:
 
     distinct = list(dict.fromkeys(patterns))
     if not distinct:
-        raise ValueError(f"DDFacet beam json {path!r} has no 'patterns' entries.")
+        raise ValueError(f"Cattery beam json {path!r} has no 'patterns' entries.")
     if len(distinct) > 1:
         raise ValueError(
-            f"DDFacet beam json {path!r} defines {len(distinct)} distinct file patterns "
+            f"Cattery beam json {path!r} defines {len(distinct)} distinct file patterns "
             "(multiple frequency-range patterns per station type); only a single pattern is supported."
         )
     return {"stationtypes": stationtypes, "pattern": distinct[0]}
 
 
-def resolve_ddfacet_antenna_beams(
-    antenna_names, mount, ddfacet_cfg: dict, pol_basis: str = "linear", l_axis: str = "-X", m_axis: str = "Y"
+def resolve_cattery_antenna_beams(
+    antenna_names, mount, cattery_cfg: dict, pol_basis: str = "linear", l_axis: str = "-X", m_axis: str = "Y"
 ):
-    """Map antennas to beam types from a DDFacet heterogeneous-beam json config.
+    """Map antennas to beam types from a Cattery/DDFacet heterogeneous-beam json config.
 
     Like :func:`resolve_antenna_beams`, but keys antenna typing by the raw ``ANTENNA.NAME``
     (DDFacet's own convention: exact match, ``~regex``, or the ``"cmd::default"`` fallback --
-    see :func:`load_ddfacet_beam_json`) rather than by the ``TELESCOPE_NAME`` column, and
-    loads each type's beam via :meth:`FitsBeamProvider.from_ddfacet` with ``$(stype)``
-    substituted into ``ddfacet_cfg["pattern"]``.
+    see :func:`load_cattery_beam_json`) rather than by the ``TELESCOPE_NAME`` column, and
+    loads each type's beam via :meth:`FitsBeamProvider.from_cattery` with ``$(stype)``
+    substituted into ``cattery_cfg["pattern"]``.
 
     Parameters
     ----------
@@ -681,10 +684,10 @@ def resolve_ddfacet_antenna_beams(
         Per-antenna ``ANTENNA.NAME`` values, length ``nant``.
     mount : sequence of str
         Per-antenna ``ANTENNA.MOUNT`` values, length ``nant``.
-    ddfacet_cfg : dict
-        As returned by :func:`load_ddfacet_beam_json`.
+    cattery_cfg : dict
+        As returned by :func:`load_cattery_beam_json`.
     pol_basis, l_axis, m_axis
-        Passed through to :meth:`FitsBeamProvider.from_ddfacet` (must match how the
+        Passed through to :meth:`FitsBeamProvider.from_cattery` (must match how the
         referenced FITS files were written).
 
     Returns
@@ -698,7 +701,7 @@ def resolve_ddfacet_antenna_beams(
     mount = [str(m) for m in np.asarray(mount).astype(str)]
 
     exact, regexes, default = {}, [], None
-    for matcher, is_regex, stype in ddfacet_cfg["stationtypes"]:
+    for matcher, is_regex, stype in cattery_cfg["stationtypes"]:
         if is_regex:
             regexes.append((matcher, stype))
         elif matcher == "cmd::default":
@@ -716,7 +719,7 @@ def resolve_ddfacet_antenna_beams(
         if default is not None:
             return default
         raise RuntimeError(
-            f"No DDFacet station type matches antenna {name!r} (no exact/regex rule and no "
+            f"No Cattery station type matches antenna {name!r} (no exact/regex rule and no "
             "'cmd::default' fallback in the beam json)."
         )
 
@@ -726,8 +729,8 @@ def resolve_ddfacet_antenna_beams(
     providers = []
     type_is_altaz = []
     for label in labels:
-        pattern = _ddfacet_substitute(ddfacet_cfg["pattern"], stype=label)
-        providers.append(FitsBeamProvider.from_ddfacet(pattern, pol_basis=pol_basis, l_axis=l_axis, m_axis=m_axis))
+        pattern = _cattery_substitute(cattery_cfg["pattern"], stype=label)
+        providers.append(FitsBeamProvider.from_cattery(pattern, pol_basis=pol_basis, l_axis=l_axis, m_axis=m_axis))
         first = types.index(label)
         type_is_altaz.append("ALT-AZ" in mount[first].upper())
 
@@ -1082,7 +1085,7 @@ def _axis_sign(spec: str) -> float:
     return -1.0 if str(spec).strip().startswith("-") else 1.0
 
 
-def write_beam_fits_ddfacet(
+def write_beam_fits_cattery(
     beam: CosineTaperBeam,
     l_grid,
     m_grid,
@@ -1092,15 +1095,16 @@ def write_beam_fits_ddfacet(
     l_axis: str = "-X",
     m_axis: str = "Y",
 ) -> list:
-    """Write a cosine-taper beam as DDFacet's 8-file FITS-beam schema.
+    """Write a cosine-taper beam as the Cattery 8-file FITS-beam schema.
 
-    DDFacet's ``[Beam]`` parset (``Beam-Model=FITS``) expects a real/imaginary pair
-    per entry of the 2x2 voltage Jones matrix -- **8 separate files** -- named by its
-    default ``Beam-FITSFile`` pattern ``beam_$(corr)_$(reim).fits``: here,
-    ``f"{prefix}_{corr}_{reim}.fits"`` with ``corr`` in ``xx,xy,yx,yy`` (linear feeds,
-    ``pol_basis="linear"``) or ``rr,rl,lr,ll`` (circular, ``pol_basis="circular"``) and
-    ``reim`` in ``re,im``. Each file is a ``(nfreq, nm, nl)`` cube: CTYPE1/2 are the
-    spatial axes (degrees), CTYPE3 is FREQ (Hz).
+    This is the beam-FITS layout used by MeqTrees' Cattery beam interpolator, and also
+    read by DDFacet (``[Beam]`` parset, ``Beam-Model=FITS``, which inherited the format
+    from Cattery): a real/imaginary pair per entry of the 2x2 voltage Jones matrix --
+    **8 separate files** -- named by DDFacet's default ``Beam-FITSFile`` pattern
+    ``beam_$(corr)_$(reim).fits``: here, ``f"{prefix}_{corr}_{reim}.fits"`` with ``corr``
+    in ``xx,xy,yx,yy`` (linear feeds, ``pol_basis="linear"``) or ``rr,rl,lr,ll`` (circular,
+    ``pol_basis="circular"``) and ``reim`` in ``re,im``. Each file is a ``(nfreq, nm, nl)``
+    cube: CTYPE1/2 are the spatial axes (degrees), CTYPE3 is FREQ (Hz).
 
     The cosine-taper model has no leakage, so the off-diagonal (xy/yx or rl/lr)
     planes are the diagonal Jones ``diag(HH, VV)`` with no cross terms, optionally
@@ -1124,7 +1128,7 @@ def write_beam_fits_ddfacet(
     freqs_hz = np.atleast_1d(np.asarray(freqs_hz, dtype=np.float64))
     nl, nm, nf = l_grid.size, m_grid.size, freqs_hz.size
     if nf > 2 and not np.allclose(np.diff(freqs_hz), freqs_hz[1] - freqs_hz[0]):
-        raise ValueError("write_beam_fits_ddfacet needs uniformly-spaced frequencies for the linear FITS FREQ axis.")
+        raise ValueError("write_beam_fits_cattery needs uniformly-spaced frequencies for the linear FITS FREQ axis.")
 
     ll, mm = np.meshgrid(l_grid, m_grid, indexing="ij")
     v = beam.voltages(np.degrees(ll.ravel()), np.degrees(mm.ravel()), freqs_hz / 1e6)  # (nl*nm, nf, 2)

@@ -61,27 +61,27 @@ def primary_beam(
     beam_pa_step: float = Field(
         1.0, description="Parallactic-angle sampling step (degrees) for the time-averaged beam."
     ),
-    fits_format: Literal["simms", "ddfacet"] = Field(
+    fits_format: Literal["simms", "cattery"] = Field(
         "simms",
         description="to-fits output layout: simms's own single-file 4-plane HH/VV cube, or "
-        "DDFacet's 8-file per-Jones-element schema (--Beam-Model FITS).",
+        "the Cattery/DDFacet 8-file per-Jones-element schema (--Beam-Model FITS).",
         json_schema_extra={"abbreviation": "ff"},
     ),
     pol_basis: Literal["linear", "circular"] = Field(
         "linear",
-        description="Correlation basis for the ddfacet fits-format output (xx/xy/yx/yy vs "
+        description="Correlation basis for the cattery fits-format output (xx/xy/yx/yy vs "
         "rr/rl/lr/ll); must match the target MS's feed basis.",
         json_schema_extra={"abbreviation": "pol"},
     ),
     beam_l_axis: Literal["-X", "X"] = Field(
         "-X",
-        description="Sign convention for the ddfacet fits-format L axis, matching DDFacet's "
+        description="Sign convention for the cattery fits-format L axis, matching DDFacet's "
         "--Beam-FITSLAxis (pass the same value to both).",
         json_schema_extra={"abbreviation": "bla"},
     ),
     beam_m_axis: Literal["Y", "-Y"] = Field(
         "Y",
-        description="Sign convention for the ddfacet fits-format M axis, matching DDFacet's "
+        description="Sign convention for the cattery fits-format M axis, matching DDFacet's "
         "--Beam-FITSMAxis (pass the same value to both).",
         json_schema_extra={"abbreviation": "bma"},
     ),
@@ -109,7 +109,7 @@ def primary_beam(
     ),
     output: str | None = Field(
         None,
-        description="Output path - FITS beam (to-fits, or filename prefix when --fits-format ddfacet) "
+        description="Output path - FITS beam (to-fits, or filename prefix when --fits-format cattery) "
         "or beamed/corrected sky model (apply/correct).",
         json_schema_extra={"abbreviation": "o"},
     ),
