@@ -259,6 +259,15 @@ def test_tag_ms_scalar_and_layout_and_map(fx):
     assert set(tnames) == {f"T{i}" for i in range(len(names))}
 
 
+def test_outputs_declare_both_passthrough_paths():
+    # `tag-ms` mutates the MS in place and produces no new file, so the
+    # echoed-back `ms` is the only handle a dependent step can chain onto;
+    # `output` covers to-fits/apply/correct. Dropping either makes that mode
+    # unwireable in a shinobi Recipe (or in dosho, which transcribes this
+    # model) -- invisible here, a build-time AttributeError downstream.
+    assert set(primary_beam.PrimaryBeamOutputs.model_fields) == {"ms", "output"}
+
+
 def _write_image(fx, npix=256, off=90):
     data = np.zeros((npix, npix), dtype=np.float32)
     data[npix // 2, npix // 2] = 3.0  # centre source

@@ -10,8 +10,12 @@ from simms import BIN, set_logger
 
 
 class PrimaryBeamOutputs(BaseModel):
-    """Passthrough output path of the primary-beam operation (beam FITS or beamed sky model)."""
+    """Passthrough paths of the primary-beam operation, so it can be wired into a
+    shinobi Recipe or dosho: `to-fits`/`apply`/`correct` write `output` (beam FITS
+    or beamed sky model), while `tag-ms` mutates `ms` in place and echoes it back --
+    the only handle a dependent step has to chain onto the tagged MS."""
 
+    ms: str | None = None
     output: str | None = None
 
 
@@ -156,4 +160,4 @@ def primary_beam(
 ) -> PrimaryBeamOutputs:
     opts = SimpleNamespace(**locals())
     runit(opts)
-    return PrimaryBeamOutputs(output=output)
+    return PrimaryBeamOutputs(ms=ms, output=output)
