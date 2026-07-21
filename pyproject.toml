@@ -59,12 +59,6 @@ simms = "simms.apps.main:cli"
 [tool.uv]
 prerelease = "allow"
 
-# shinobi (Stimela 3.0) is not on PyPI yet; resolve the `stimela-ninja`
-# dependency from its git repository.
-[tool.uv.sources]
-stimela-ninja = { git = "https://github.com/shinobi-dosho/stimela-ninja.git" }
-
-
 [project.urls]
 Documentation = "https://simms.readthedocs.io"
 Repository = "https://github.com/wits-cfa/simms.git"
