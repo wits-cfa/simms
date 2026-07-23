@@ -647,7 +647,15 @@ def prepare_fits_sky(
 
     fits_freqs, fits_delta_nu = _fits_frequencies(fds)
     nchan_fits = fits_freqs.size
-    fits_range = (fits_freqs[0] - 0.5 * fits_delta_nu, fits_freqs[-1] + 0.5 * fits_delta_nu)
+    # Widen by a millionth of a channel before the containment test. The most natural
+    # case -- a cube written on the MS's own frequency grid -- has the two band edges
+    # equal in exact arithmetic but differing in the last ulp, because the MS width
+    # comes from CHAN_WIDTH and the FITS width from CDELT3. Without this, such a cube
+    # is rejected over a discrepancy of ~1e-7 Hz at 1.4 GHz, with an error message
+    # that prints the two ranges identically. A genuine mismatch is off by a
+    # meaningful fraction of a channel, far above this.
+    edge_tol = 1e-6 * abs(fits_delta_nu)
+    fits_range = (fits_freqs[0] - 0.5 * fits_delta_nu - edge_tol, fits_freqs[-1] + 0.5 * fits_delta_nu + edge_tol)
     ms_range = (ms_start_freq, ms_end_freq)
     if nchan_fits > 1 and not is_range_in_range(ms_range, fits_range):
         raise FITSSkymodelError(
