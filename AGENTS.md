@@ -51,7 +51,8 @@ other tables ship as ordinary bundled package data.
 ## Git
 
 - Branch off `main` for changes; open PRs against `main` (repo `wits-cfa/simms`).
-- End commit messages with: `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
+- Do not end commit messages with an agent-attribution trailer. Several different agents
+  work on this repo, so naming one is inaccurate, and nothing in a commit backs the claim.
 - `gh pr edit --body` can fail on this repo with a Projects-classic GraphQL error; edit the body
   via `gh api -X PATCH repos/wits-cfa/simms/pulls/<n> -F body=@file` instead (capital `-F`;
   lowercase `-f` sets the body to the literal string `@file`).
