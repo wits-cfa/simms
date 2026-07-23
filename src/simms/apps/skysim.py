@@ -18,7 +18,7 @@ from tqdm.dask import TqdmCallback
 from simms import BIN, SCHEMADIR, set_logger
 from simms.skymodel.ascii_skies import ASCIISkymodel
 from simms.skymodel.beams import load_beam_config, resolve_antenna_beams
-from simms.skymodel.fits_skies import predict_fits_channel_block, prepare_fits_sky
+from simms.skymodel.fits_skies import component_sky_from_fits_dft, predict_fits_channel_block, prepare_fits_sky
 from simms.skymodel.mstools import (
     attach_beam,
     noise_visibilities,
@@ -156,6 +156,40 @@ class _BeamContext:
             phase_dec0=self.phase_dec0,
         )
 
+    def attach_aterm(self, prepared, freq_tol):
+        """Attach exact per-antenna a-terms to a gridder-backend FITS sky (see simms.skymodel.aterms)."""
+        from simms.skymodel.aterms import attach_fits_aterm
+        from simms.skymodel.beams import corr_basis_transform
+
+        if self.full_jones:
+            if self.ncorr != 4:
+                raise RuntimeError("--beam-jones full requires 4 correlations (XX,XY,YX,YY or RR,RL,LR,LL).")
+            basis_transform = corr_basis_transform(self.basis == "circular")
+        else:
+            if self.basis != "linear":
+                # Callers fall back to the scalar power beam before reaching here.
+                raise RuntimeError("Diagonal per-feed a-terms require linear correlations.")
+            basis_transform = None
+        return attach_fits_aterm(
+            prepared,
+            ant_type=self.ant_type,
+            providers=self.providers,
+            type_is_altaz=self.type_is_altaz,
+            ra0=self.ra0,
+            dec0=self.dec0,
+            lon=self.lon,
+            lat=self.lat,
+            t_start=self.t_start,
+            duration=self.duration,
+            pa_step=self.pa_step,
+            freq_tol=freq_tol,
+            full_jones=self.full_jones,
+            basis_transform=basis_transform,
+            phase_ra0=self.phase_ra0,
+            phase_dec0=self.phase_dec0,
+            max_gib=self.beam_grid_max_gib,
+        )
+
     def attach(self, prepared):
         """Force full-correlation brightness and attach the beam grid (diagonal or full Jones)."""
         from simms.skymodel.beams import corr_basis_transform
@@ -237,8 +271,20 @@ def runit(opts):
     if opts.primary_beam and not has_sky:
         log.warning("--primary-beam is set but no sky model was given; the primary beam is ignored.")
     beam_ctx = _BeamContext(opts, ms, msds, ra0, dec0, ncorr) if opts.primary_beam and has_sky else None
-    if beam_ctx and fs and opts.beam_jones == "full":
-        log.warning("--beam-jones full is ignored on the FITS-image path (an approximate power beam is used).")
+
+    # Primary-beam handling for the FITS-image path. The default ('aterm') applies exact
+    # per-antenna a-terms; diagonal per-feed beams cannot represent circular correlations,
+    # so that combination falls back to the basis-independent scalar power beam.
+    fits_beam_mode = opts.fits_beam_mode if (beam_ctx and fs) else None
+    if fits_beam_mode == "aterm" and not beam_ctx.full_jones and beam_ctx.basis != "linear":
+        log.warning(
+            "Diagonal per-feed a-terms need linear correlations but this MS is circular; falling "
+            "back to the PA-averaged power beam (--fits-beam-mode average). Use --beam-jones full "
+            "for exact a-terms on a circular-correlation MS."
+        )
+        fits_beam_mode = "average"
+    if fits_beam_mode == "average" and opts.beam_jones == "full":
+        log.warning("--beam-jones full is ignored with --fits-beam-mode average (a scalar power beam is applied).")
 
     # Channel chunking. A channel-index array carries the chan dimension into
     # da.blockwise; each predict task restricts the model to its own channels.
@@ -357,7 +403,8 @@ def runit(opts):
         else:
             raise FileNotFoundError("FITS file/directory does not exist")
 
-        # Prepared once and shared by every row block.
+        # Prepared once and shared by every row block. Under a-term beams the DFT
+        # backend consumes a feed-linear-basis brightness (like the ASCII path).
         prepared = prepare_fits_sky(
             fs,
             ra0,
@@ -366,7 +413,7 @@ def runit(opts):
             dfreq,
             ncorr,
             nrow=msds.UVW.data.shape[0],
-            linear_basis=linear_basis,
+            linear_basis=True if fits_beam_mode == "aterm" else linear_basis,
             polarisation=opts.polarisation,
             tol=opts.pixel_tol,
             backend=opts.predict_backend,
@@ -376,28 +423,62 @@ def runit(opts):
             spectrum_order=opts.fits_spectrum_order,
             interpolation=opts.fits_sky_interp,
         )
-        if beam_ctx:
+
+        use_component_path = False
+        if fits_beam_mode == "average":
             # Approximate: one PA-averaged power beam on the apparent sky (see attach_image).
             prepared = beam_ctx.attach_image(prepared, freqs)
+        elif fits_beam_mode == "aterm":
+            if prepared.backend == "dft":
+                # Few bright pixels: bridge to the component kernels, which apply
+                # per-antenna beams exactly (same machinery as the ASCII path).
+                log.info("FITS DFT backend with a primary beam: using the exact per-component beam kernels.")
+                prepared = beam_ctx.attach(component_sky_from_fits_dft(prepared))
+                use_component_path = True
+            else:
+                prepared = beam_ctx.attach_aterm(prepared, opts.aterm_freq_tol)
 
         epsilon = 1e-7 if opts.fft_precision == "double" else 1e-6
 
-        simvis = da.blockwise(
-            predict_fits_channel_block,
-            ("row", "chan", "corr"),
-            prepared,
-            None,
-            msds.UVW.data,
-            ("row", "uvw"),
-            chan_ids,
-            ("chan",),
-            out_dtype=vis_dtype,
-            epsilon=epsilon,
-            do_wgridding=opts.do_wstacking,
-            new_axes={"corr": ncorr},
-            dtype=vis_dtype,
-            concatenate=True,
-        )
+        if use_component_path:
+            simvis = da.blockwise(
+                predict_channel_block,
+                ("row", "chan", "corr"),
+                prepared,
+                None,
+                msds.UVW.data,
+                ("row", "uvw"),
+                chan_ids,
+                ("chan",),
+                msds.TIME.data,
+                ("row",),
+                *_beam_row_args(msds, beam_ctx),
+                out_dtype=vis_dtype,
+                new_axes={"corr": ncorr},
+                dtype=vis_dtype,
+                concatenate=True,
+            )
+        else:
+            aterm_on = prepared.aterm is not None
+            time_args = (msds.TIME.data, ("row",)) if aterm_on else (None, None)
+            simvis = da.blockwise(
+                predict_fits_channel_block,
+                ("row", "chan", "corr"),
+                prepared,
+                None,
+                msds.UVW.data,
+                ("row", "uvw"),
+                chan_ids,
+                ("chan",),
+                *time_args,
+                *_beam_row_args(msds, beam_ctx if aterm_on else None),
+                out_dtype=vis_dtype,
+                epsilon=epsilon,
+                do_wgridding=opts.do_wstacking,
+                new_axes={"corr": ncorr},
+                dtype=vis_dtype,
+                concatenate=True,
+            )
 
     # Thermal noise, added once for every path. With --seed the draw is
     # reproducible across runs at a given chunking; changing the chunking changes
@@ -537,7 +618,21 @@ def skysim(
         4.0, description="Hard ceiling (GiB) on the sampled beam grid held in memory for the whole run."
     ),
     beam_jones: Literal["diagonal", "full"] = Field(
-        "diagonal", description="Primary-beam application for component skies: per-feed voltage or full 2x2 E-Jones."
+        "diagonal", description="Primary-beam application: per-feed voltage or full 2x2 E-Jones."
+    ),
+    fits_beam_mode: Literal["aterm", "average"] = Field(
+        "aterm",
+        description="Primary-beam handling for the FITS-image path: 'aterm' applies exact per-antenna "
+        "a-terms in the image domain (time- and frequency-interpolated, heterogeneity-aware); 'average' "
+        "multiplies the sky by a single PA-averaged power beam (legacy approximation).",
+        json_schema_extra={"abbreviation": "fbm"},
+    ),
+    aterm_freq_tol: float = Field(
+        1e-3,
+        description="Largest allowed error (in voltage-beam units, beam peak ~1) of the a-term's "
+        "linear-in-frequency interpolation between knot channels. Smaller means more frequency knots; "
+        "0 or negative samples the beam at every channel.",
+        json_schema_extra={"abbreviation": "aft"},
     ),
     telescope_name_column: str = Field(
         "TELESCOPE_NAME",

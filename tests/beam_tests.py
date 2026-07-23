@@ -771,7 +771,7 @@ def test_build_beam_grid_warns_in_soft_band(caplog):
     providers, type_is_altaz, ell, emm, freqs, chi_grid = _small_grid_args()
     # 1 x 4 x 3 x 2 x 2 x 8 B = 384 B; a ceiling just above it puts us over half.
     max_gib = 5e-7
-    with caplog.at_level("WARNING", logger="simms.skysim"):
+    with caplog.at_level("WARNING", logger="skysim"):
         grid = build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid, max_gib=max_gib)
     assert grid.shape == (1, 4, 3, 2, 2)
     assert any("half" in r.message for r in caplog.records)
@@ -779,7 +779,7 @@ def test_build_beam_grid_warns_in_soft_band(caplog):
 
 def test_build_beam_grid_default_limit_passes_quietly(caplog):
     providers, type_is_altaz, ell, emm, freqs, chi_grid = _small_grid_args()
-    with caplog.at_level("WARNING", logger="simms.skysim"):
+    with caplog.at_level("WARNING", logger="skysim"):
         grid = build_beam_grid(providers, type_is_altaz, ell, emm, freqs, chi_grid, max_gib=BEAM_GRID_MAX_GIB_DEFAULT)
     assert grid.shape == (1, 4, 3, 2, 2)
     assert not caplog.records
@@ -1037,7 +1037,7 @@ def test_read_pointing_centre_warns_on_nonstandard_equatorial(caplog):
     pytest.importorskip("casacore")
     it = InitTest()
     ms = _write_pointing_ms(it.random_named_directory(), 0.5, -0.7, "B1950")
-    with caplog.at_level("WARNING", logger="simms.skysim"):
+    with caplog.at_level("WARNING", logger="skysim"):
         centre = read_pointing_centre(ms, 1.0, 1.0)
     assert centre == pytest.approx((0.5, -0.7))
     assert any("B1950" in r.message for r in caplog.records)

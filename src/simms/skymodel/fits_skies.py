@@ -138,6 +138,13 @@ class PreparedFitsSky:
     bmat: Optional[np.ndarray] = None
     uniform_freqs: bool = True
 
+    # A-term correction (gridder backends): per-antenna primary beams applied in
+    # the image domain (see simms.skymodel.aterms). ``chan_ids`` are the global
+    # channel indices of a channel-chunked block, which the a-term model needs
+    # to place the block's channels on its frequency-knot grid.
+    aterm: Optional[object] = None
+    chan_ids: Optional[np.ndarray] = None
+
     @property
     def nspec(self) -> int:
         return self.ncorr if self.polarisation else 1
@@ -155,6 +162,10 @@ class PreparedFitsSky:
         per-channel planes, and the DFT brightness matrix its channel axis.
         """
         updates = {"chan_freqs": self.chan_freqs[chan_ids]}
+        # Track the selected channels' *global* indices across (possibly chained)
+        # selections, for the a-term frequency-knot bookkeeping.
+        base_ids = np.arange(self.chan_freqs.size) if self.chan_ids is None else self.chan_ids
+        updates["chan_ids"] = base_ids[chan_ids]
         if self.backend == "dft":
             updates["bmat"] = self.bmat[:, :, chan_ids]
             updates["uniform_freqs"] = is_uniform_grid(self.chan_freqs[chan_ids])
@@ -875,6 +886,35 @@ def _resolve_spectrum(
     return cube, FitsSpectrum(kind=SpectralKind.CUBE, ref_freq=ref_freq), np.abs(cube).max(axis=(0, 3))
 
 
+def component_sky_from_fits_dft(prepared: PreparedFitsSky):
+    """Re-express a DFT-backend FITS model as a component :class:`~simms.skymodel.mstools.PreparedSky`.
+
+    The DFT backend already holds per-component ``lmn`` and a brightness matrix,
+    which is exactly what the component-sky kernels consume. Bridging to a
+    ``PreparedSky`` lets a FITS model with few bright pixels use the *exact*
+    per-antenna beam kernels (``predict_vis_beam``/``predict_vis_jones``) via
+    :func:`~simms.skymodel.mstools.attach_beam`, instead of an approximate
+    image-domain beam.
+    """
+    from simms.skymodel.mstools import PreparedSky
+
+    if prepared.backend != "dft":
+        raise ValueError(f"component-sky bridging needs the dft backend, not {prepared.backend!r}")
+    ncomp = prepared.ncomp
+    return PreparedSky(
+        lmn=prepared.lmn if ncomp else np.zeros((0, 3)),
+        gauss_shape=np.zeros((ncomp, 3)),
+        is_gauss=np.zeros(ncomp, dtype=np.bool_),
+        bmat=prepared.bmat if ncomp else np.zeros((0, prepared.nspec, prepared.chan_freqs.size), dtype=np.complex128),
+        lightcurve=np.ones((ncomp, 1)),
+        unique_times=None,
+        freqs=prepared.chan_freqs,
+        uniform_freqs=prepared.uniform_freqs,
+        ncorr=prepared.ncorr,
+        polarisation=prepared.polarisation,
+    )
+
+
 # --------------------------------------------------------------------------- prediction
 
 
@@ -984,6 +1024,9 @@ def predict_fits_channel_block(
     prepared: PreparedFitsSky,
     uvw: np.ndarray,
     chan_ids: np.ndarray,
+    times: np.ndarray = None,
+    antenna1: np.ndarray = None,
+    antenna2: np.ndarray = None,
     out_dtype: np.dtype = None,
     epsilon: float = 1e-7,
     do_wgridding: bool = True,
@@ -993,6 +1036,9 @@ def predict_fits_channel_block(
     return predict_fits_block(
         prepared.select_channels(chan_ids),
         uvw,
+        times=times,
+        antenna1=antenna1,
+        antenna2=antenna2,
         out_dtype=out_dtype,
         epsilon=epsilon,
         do_wgridding=do_wgridding,
@@ -1003,6 +1049,9 @@ def predict_fits_channel_block(
 def predict_fits_block(
     prepared: PreparedFitsSky,
     uvw: np.ndarray,
+    times: np.ndarray = None,
+    antenna1: np.ndarray = None,
+    antenna2: np.ndarray = None,
     noise_vis: float | None = None,
     out_dtype: np.dtype = None,
     epsilon: float = 1e-7,
@@ -1018,6 +1067,9 @@ def predict_fits_block(
         Sky model from :func:`prepare_fits_sky`.
     uvw : numpy.ndarray
         UVW coordinates of shape ``(nrow, 3)``, in metres.
+    times, antenna1, antenna2 : numpy.ndarray, optional
+        Per-row timestamp and antenna indices. Required when the model carries
+        an a-term (``prepared.aterm``); ignored otherwise.
     noise_vis : float, optional
         RMS noise per visibility (Jy).
     out_dtype : numpy.dtype, optional
@@ -1038,7 +1090,11 @@ def predict_fits_block(
     uvw = np.ascontiguousarray(uvw, dtype=np.float64)
     nrow, nchan, ncorr = uvw.shape[0], prepared.chan_freqs.size, prepared.ncorr
 
-    if prepared.backend == "dft":
+    if prepared.aterm is not None:
+        from simms.skymodel.aterms import predict_aterm_block
+
+        vis = predict_aterm_block(prepared, uvw, times, antenna1, antenna2, epsilon, do_wgridding, nthreads)
+    elif prepared.backend == "dft":
         vis = np.zeros((nrow, nchan, prepared.nspec), dtype=np.complex128)
         if prepared.ncomp:
             ncomp = prepared.ncomp
