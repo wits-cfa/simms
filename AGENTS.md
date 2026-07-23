@@ -51,6 +51,6 @@ other tables ship as ordinary bundled package data.
 ## Git
 
 - Branch off `main` for changes; open PRs against `main` (repo `wits-cfa/simms`).
-- End commit messages with: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
+- End commit messages with: `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
 - `gh pr edit --body` can fail on this repo with a Projects-classic GraphQL error; edit the body
   via `gh api -X PATCH repos/wits-cfa/simms/pulls/<n> -f body=@file` instead.
