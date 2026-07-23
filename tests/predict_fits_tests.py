@@ -263,6 +263,27 @@ def test_ms_band_outside_fits_band_raises(params, uvw):
         prepare_fits_sky(path, RA0, DEC0, np.array([2.0e9, 2.1e9]), 1e6, 2, nrow=uvw.shape[0])
 
 
+def test_exactly_matching_band_is_accepted(params, uvw):
+    """A cube on the MS's own frequency grid must not be rejected by float noise.
+
+    The MS channel width comes from CHAN_WIDTH and the FITS one from CDELT3, so
+    the two band edges agree in exact arithmetic but can differ in the last ulp.
+    Before the edge tolerance this raised over ~1e-7 Hz at 1.4 GHz, with an error
+    that printed both ranges identically.
+    """
+    npix, nchan = 32, 64
+    f0, f1 = 1.4180e9, 1.4220e9
+    fits_freqs = np.linspace(f0, f1, nchan)
+    header = make_header(npix, nchan=nchan, freqs=fits_freqs)
+    path = write_image(params, np.zeros((nchan, npix, npix)), header)
+    # Computed a different (but mathematically equal) way than CDELT3, as a caller
+    # reading CHAN_WIDTH from an MS would.
+    ms_delta_nu = (f1 - f0) / (nchan - 1)
+    assert ms_delta_nu != fits_freqs[1] - fits_freqs[0]  # the ulp difference is real
+    prepared = prepare_fits_sky(path, RA0, DEC0, fits_freqs, ms_delta_nu, 2, nrow=uvw.shape[0])
+    assert prepared.chan_freqs.size == nchan
+
+
 # --------------------------------------------------------------------------- geometry
 
 

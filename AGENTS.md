@@ -51,6 +51,13 @@ other tables ship as ordinary bundled package data.
 ## Git
 
 - Branch off `main` for changes; open PRs against `main` (repo `wits-cfa/simms`).
-- End commit messages with: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
+- Do **not** add agent-attribution trailers (`Co-Authored-By: Claude`, `Generated with ...`).
+  Several different agents work on this repo, so a trailer naming one of them is both
+  inaccurate and unverifiable — nothing in the commit backs the claim. Provenance comes
+  from the signature instead: sign commits with your SSH key
+  (`git config gpg.format ssh`, `git config user.signingkey ~/.ssh/id_ed25519.pub`,
+  `git config commit.gpgsign true`), which attests that *you* authorised the change,
+  whoever or whatever drafted it.
 - `gh pr edit --body` can fail on this repo with a Projects-classic GraphQL error; edit the body
-  via `gh api -X PATCH repos/wits-cfa/simms/pulls/<n> -f body=@file` instead.
+  via `gh api -X PATCH repos/wits-cfa/simms/pulls/<n> -F body=@file` instead (capital `-F`;
+  lowercase `-f` sets the body to the literal string `@file`).
