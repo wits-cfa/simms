@@ -900,6 +900,14 @@ def component_sky_from_fits_dft(prepared: PreparedFitsSky):
 
     if prepared.backend != "dft":
         raise ValueError(f"component-sky bridging needs the dft backend, not {prepared.backend!r}")
+    if not prepared.linear_basis:
+        # The bridge exists to attach a beam, and the beam kernels consume a
+        # linear-feed-basis coherency (to_full_corr: "beams refuse circular").
+        # A circular-basis model would silently produce wrong cross-hands.
+        raise ValueError(
+            "component-sky bridging is for attaching a primary beam, which needs a linear-feed-basis "
+            "model; prepare the FITS sky with linear_basis=True."
+        )
     ncomp = prepared.ncomp
     return PreparedSky(
         lmn=prepared.lmn if ncomp else np.zeros((0, 3)),

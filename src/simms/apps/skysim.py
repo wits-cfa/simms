@@ -405,15 +405,8 @@ def runit(opts):
 
         # Prepared once and shared by every row block. Under a-term beams the DFT
         # backend consumes a feed-linear-basis brightness (like the ASCII path).
-        prepared = prepare_fits_sky(
-            fs,
-            ra0,
-            dec0,
-            freqs,
-            dfreq,
-            ncorr,
+        prepare_kw = dict(
             nrow=msds.UVW.data.shape[0],
-            linear_basis=True if fits_beam_mode == "aterm" else linear_basis,
             polarisation=opts.polarisation,
             tol=opts.pixel_tol,
             backend=opts.predict_backend,
@@ -423,6 +416,45 @@ def runit(opts):
             spectrum_order=opts.fits_spectrum_order,
             interpolation=opts.fits_sky_interp,
         )
+        prepared = prepare_fits_sky(
+            fs,
+            ra0,
+            dec0,
+            freqs,
+            dfreq,
+            ncorr,
+            linear_basis=True if fits_beam_mode == "aterm" else linear_basis,
+            **prepare_kw,
+        )
+
+        # A-terms hold per-antenna-type voltage maps over the whole image, so a large
+        # enough image cannot be served within --beam-grid-max-gib. Degrade to the
+        # legacy PA-averaged power beam (3.0.1 behaviour) rather than failing a run
+        # that the previous release completed. Checked here, not before preparing,
+        # because a non-SIN image is reprojected during preparation and only then has
+        # its final size.
+        if fits_beam_mode == "aterm" and prepared.backend != "dft":
+            from simms.skymodel.aterms import aterm_cache_min_gib
+
+            needed = aterm_cache_min_gib(prepared.npix_l, prepared.npix_m, beam_ctx.full_jones)
+            if needed > opts.beam_grid_max_gib:
+                log.warning(
+                    "A-term beams need a %.2f GiB voltage-map cache for this %dx%d image, above the "
+                    "%.2f GiB --beam-grid-max-gib ceiling; falling back to the PA-averaged power beam "
+                    "(--fits-beam-mode average). Raise --beam-grid-max-gib to keep exact per-antenna beams.",
+                    needed,
+                    prepared.npix_l,
+                    prepared.npix_m,
+                    opts.beam_grid_max_gib,
+                )
+                fits_beam_mode = "average"
+                if not linear_basis:
+                    # The model was built in the linear feed basis only for the a-term
+                    # path; the scalar power beam is basis-independent, so honour
+                    # --pol-basis again rather than silently returning linear correlations.
+                    prepared = prepare_fits_sky(
+                        fs, ra0, dec0, freqs, dfreq, ncorr, linear_basis=linear_basis, **prepare_kw
+                    )
 
         use_component_path = False
         if fits_beam_mode == "average":

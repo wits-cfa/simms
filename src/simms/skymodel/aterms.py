@@ -97,6 +97,17 @@ each degridding only its own rows/channels, versus one pass with no beam and
 ``O(nrow * nchan * npix_support * ncorr)`` for the exact DFT. For a 4k-channel,
 8h MeerKAT-like observation with a 1-degree PA step and default ``freq_tol``,
 that is tens of image FFTs -- orders of magnitude below the DFT.
+
+**That formula holds for a FLAT sky only.** A per-channel model (spectral CUBE,
+or a per-pixel log-polynomial) pays those passes *per channel* rather than per
+channel-segment, since its image changes with frequency: the frequency-knot
+saving in (3) buys nothing there, and only the negligible-pass skip in (5) keeps
+empty line channels free. Such a model also gives up the per-channel backend
+choice ``_perchan_visibilities`` makes without a beam, where a channel holding a
+handful of bright pixels is predicted by DFT instead of gridded. A spectral-line
+cube under a beam can therefore cost far more than "tens of image FFTs"; the
+planned pass count is logged at DEBUG before the first pass so the bill is
+visible up front.
 """
 
 from __future__ import annotations
@@ -129,6 +140,27 @@ FREQ_PROBE_SIDE = 17
 # Hard ceiling on frequency knots (beyond this the greedy split degenerates
 # toward per-channel knots anyway, which callers get exactly with freq_tol<=0).
 MAX_FREQ_KNOTS = 257
+
+# Voltage maps touched by a single prediction pass: two antenna types x two time
+# knots x two frequency knots. The cache must hold at least this many or it
+# thrashes on every pass.
+MAPS_PER_PASS = 8
+
+# Fraction of the map-cache budget lent to the per-segment cache of apparent-beam
+# products in the per-channel path (see _predict_segment_perchan). Bounded so the
+# hoist cannot reintroduce unbounded transient growth on large images.
+PRODUCT_CACHE_FRACTION = 0.25
+
+
+def aterm_cache_min_gib(npix_l: int, npix_m: int, full_jones: bool) -> float:
+    """GiB the voltage-map cache must hold for one prediction pass at this image size.
+
+    Public so callers can pre-flight the ceiling and degrade gracefully (as
+    ``skysim`` does, falling back to the PA-averaged power beam) rather than
+    meeting :class:`MemoryError` from :func:`attach_fits_aterm` mid-run.
+    """
+    fold = 4 if full_jones else 2
+    return MAPS_PER_PASS * npix_l * npix_m * fold * 8 / 2**30  # complex64 == 8 B
 
 
 class _MapCache:
@@ -370,6 +402,19 @@ def attach_fits_aterm(
     """
     if prepared.backend not in ("fft", "perchan"):
         raise ValueError(f"a-terms attach to a gridder backend, not {prepared.backend!r}")
+    if prepared.planes is None:
+        # A gridder backend always carries planes; None here is a caller bug, not
+        # an empty sky (which is a planes array of zeros and predicts zeros).
+        raise ValueError("a-terms need a gridder-backend model with image planes, but 'planes' is None")
+    if not prepared.linear_basis:
+        # _corr_planes builds the coherency in the linear feed basis, which is what
+        # the per-feed/Jones beam maps multiply. A circular-basis model would get
+        # silently wrong cross-hands.
+        raise ValueError(
+            "a-terms require a sky prepared in the linear feed basis (prepare_fits_sky(linear_basis=True)); "
+            "for a circular-correlation MS use --beam-jones full, which folds the basis transform into the "
+            "beam Jones, or --fits-beam-mode average."
+        )
 
     npix_l, npix_m = prepared.npix_l, prepared.npix_m
     i_pix, j_pix = (
@@ -379,8 +424,12 @@ def attach_fits_aterm(
     ell, emm = lmn[:, 0].copy(), lmn[:, 1].copy()
     if phase_ra0 is not None:
         ell, emm = reproject_lm(ell, emm, phase_ra0, phase_dec0, ra0, dec0)
-    ell = np.ascontiguousarray(ell, dtype=np.float64)
-    emm = np.ascontiguousarray(emm, dtype=np.float64)
+    # Stored float32: these are two npix arrays living on a long-lived object (1 GiB
+    # at 8k^2 in float64). Direction cosines are O(0.1) and the beam varies on degree
+    # scales, so float32 (~1e-8 rad here) is far finer than any beam model resolves;
+    # the providers upcast to float64 for their own arithmetic anyway.
+    ell = np.ascontiguousarray(ell, dtype=np.float32)
+    emm = np.ascontiguousarray(emm, dtype=np.float32)
 
     if np.any(type_is_altaz):
         tgrid, chi_grid = pa_sample_grid(t_start, duration, ra0, dec0, lon, lat, pa_step)
@@ -401,16 +450,14 @@ def attach_fits_aterm(
         freqs.size,
     )
 
-    fold = 4 if full_jones else 2
-    map_bytes = npix_l * npix_m * fold * 8  # complex64
     max_bytes = int(max_gib * 2**30)
-    # The tightest loop touches maps for two types at two time knots and two
-    # frequency knots; below that the cache would thrash on every pass.
-    if 8 * map_bytes > max_bytes:
+    needed_gib = aterm_cache_min_gib(npix_l, npix_m, full_jones)
+    if needed_gib > max_gib:
         raise MemoryError(
-            f"A-term voltage-map cache of {max_gib:.2f} GiB cannot hold the 8 maps "
-            f"({8 * map_bytes / 2**30:.2f} GiB) one prediction pass touches for a "
-            f"{npix_l}x{npix_m} image. Raise --beam-grid-max-gib or shrink the image."
+            f"A-term voltage-map cache of {max_gib:.2f} GiB cannot hold the {MAPS_PER_PASS} maps "
+            f"({needed_gib:.2f} GiB) one prediction pass touches for a {npix_l}x{npix_m} image. "
+            f"Raise --beam-grid-max-gib, shrink the image, or use --fits-beam-mode average "
+            f"(the PA-averaged power beam, which has no such ceiling)."
         )
 
     if full_jones:
@@ -425,7 +472,7 @@ def attach_fits_aterm(
 
     # Bound on |B_c| anywhere: correlations are +/-1, +/-i combinations of the
     # Stokes planes, so the pixelwise sum of |Stokes| bounds every correlation.
-    peak = float(np.abs(prepared.planes).sum(axis=0).max()) if prepared.planes is not None else 0.0
+    peak = float(np.abs(prepared.planes).sum(axis=0).max())
 
     aterm = ATermModel(
         ant_type=np.ascontiguousarray(ant_type, dtype=np.int64),
@@ -470,51 +517,52 @@ def _corr_planes(prepared, chan: int | None):
 
 
 def _diag_products(at: ATermModel, gp_a, gq_a, gp_b=None, gq_b=None):
-    """Pixelwise per-correlation beam products for the diagonal (per-feed) model.
+    """Yield pixelwise per-correlation beam products for the diagonal (per-feed) model.
 
     With one map pair: ``G_p[fp(c)] conj(G_q[fq(c)])``. With two (the cross
     term of the quadratic time blend): the symmetrised sum
-    ``G_p^a conj(G_q^b) + G_p^b conj(G_q^a)``. Returns ``ncorr`` flat complex128
-    arrays.
+    ``G_p^a conj(G_q^b) + G_p^b conj(G_q^a)``. Yields ``ncorr`` flat complex128
+    arrays one at a time -- each is consumed by one gridder pass, so
+    materialising the whole list only multiplies the transient footprint by
+    ``ncorr``.
     """
-    out = []
     for c in range(at.ncorr):
         fp, fq = at.corr_feed_p[c], at.corr_feed_q[c]
         if gp_b is None:
-            prod = gp_a[:, fp].astype(np.complex128) * np.conj(gq_a[:, fq]).astype(np.complex128)
+            yield gp_a[:, fp].astype(np.complex128) * np.conj(gq_a[:, fq])
         else:
-            prod = gp_a[:, fp].astype(np.complex128) * np.conj(gq_b[:, fq]) + gp_b[:, fp].astype(
+            yield gp_a[:, fp].astype(np.complex128) * np.conj(gq_b[:, fq]) + gp_b[:, fp].astype(
                 np.complex128
             ) * np.conj(gq_a[:, fq])
-        out.append(prod)
-    return out
 
 
 def _jones_products(bmats, ep, eq):
-    """Per-correlation images of ``E_p B E_q^H`` for pixelwise 2x2 maps.
+    """Yield per-correlation images of ``E_p B E_q^H`` for pixelwise 2x2 maps.
 
     ``bmats`` is ``(b00, b01, b10, b11)`` flat coherency images; ``ep``/``eq``
-    are ``(npix, 2, 2)`` voltage maps. Returns 4 flat images ordered
+    are ``(npix, 2, 2)`` voltage maps. Yields 4 flat images ordered
     (0,0), (0,1), (1,0), (1,1) -- the MS correlation order once the basis
     transform has been folded into the maps.
+
+    One row of ``m = E_p B`` at a time, and the ``E_q^H`` entries indexed
+    individually rather than upcasting the whole ``(npix, 2, 2)`` map: peak is
+    ~5 pixel images instead of the 12 a fully-materialised list needs.
     """
     b00, b01, b10, b11 = bmats
-    ep = ep.astype(np.complex128, copy=False)
-    m00 = ep[:, 0, 0] * b00 + ep[:, 0, 1] * b10
-    m01 = ep[:, 0, 0] * b01 + ep[:, 0, 1] * b11
-    m10 = ep[:, 1, 0] * b00 + ep[:, 1, 1] * b10
-    m11 = ep[:, 1, 0] * b01 + ep[:, 1, 1] * b11
-    cq = np.conj(eq.astype(np.complex128, copy=False))
-    return [
-        m00 * cq[:, 0, 0] + m01 * cq[:, 0, 1],
-        m00 * cq[:, 1, 0] + m01 * cq[:, 1, 1],
-        m10 * cq[:, 0, 0] + m11 * cq[:, 0, 1],
-        m10 * cq[:, 1, 0] + m11 * cq[:, 1, 1],
-    ]
+    for row in (0, 1):
+        e0 = ep[:, row, 0].astype(np.complex128)
+        e1 = ep[:, row, 1].astype(np.complex128)
+        m0 = e0 * b00 + e1 * b10
+        m1 = e0 * b01 + e1 * b11
+        del e0, e1
+        for col in (0, 1):
+            cq0 = np.conj(eq[:, col, 0].astype(np.complex128))
+            cq1 = np.conj(eq[:, col, 1].astype(np.complex128))
+            yield m0 * cq0 + m1 * cq1
 
 
 def _beam_products(at: ATermModel, tp: int, tq: int, t_a: int, f_idx: int, bmats, t_b: int | None = None):
-    """The ``ncorr`` apparent-beam-product images for one pass.
+    """Yield the ``ncorr`` apparent-beam-product images for one pass, one at a time.
 
     Diagonal mode ignores ``bmats`` (the sky is multiplied in later, once per
     correlation); full-Jones mode folds the coherency here because the matrix
@@ -524,19 +572,21 @@ def _beam_products(at: ATermModel, tp: int, tq: int, t_a: int, f_idx: int, bmats
         ep_a = at.voltage_map(tp, t_a, f_idx)
         eq_a = at.voltage_map(tq, t_a, f_idx)
         if t_b is None:
-            return _jones_products(bmats, ep_a, eq_a)
+            yield from _jones_products(bmats, ep_a, eq_a)
+            return
         ep_b = at.voltage_map(tp, t_b, f_idx)
         eq_b = at.voltage_map(tq, t_b, f_idx)
-        first = _jones_products(bmats, ep_a, eq_b)
-        second = _jones_products(bmats, ep_b, eq_a)
-        return [x + y for x, y in zip(first, second)]
+        for first, second in zip(_jones_products(bmats, ep_a, eq_b), _jones_products(bmats, ep_b, eq_a)):
+            yield first + second
+        return
     gp_a = at.voltage_map(tp, t_a, f_idx)
     gq_a = at.voltage_map(tq, t_a, f_idx)
     if t_b is None:
-        return _diag_products(at, gp_a, gq_a)
+        yield from _diag_products(at, gp_a, gq_a)
+        return
     gp_b = at.voltage_map(tp, t_b, f_idx)
     gq_b = at.voltage_map(tq, t_b, f_idx)
-    return _diag_products(at, gp_a, gq_a, gp_b, gq_b)
+    yield from _diag_products(at, gp_a, gq_a, gp_b, gq_b)
 
 
 # --------------------------------------------------------------------------- prediction
@@ -612,6 +662,12 @@ def predict_aterm_block(prepared, uvw, times, antenna1, antenna2, epsilon, do_wg
 
     # Diagonal-knot passes serve the two adjacent bins; collect each knot's rows
     # and their squared blend weights once.
+    #
+    # Load-bearing invariant: no row index may repeat within a group's row array,
+    # because _accumulate writes through fancy indexing, which drops duplicates
+    # instead of summing them. It holds because `bins` partitions the rows, and a
+    # given (t_knot, tp, tq) entry merges only bins t_knot-1 and t_knot (a row's
+    # bin is unique), which are disjoint. Preserve it in any regrouping.
     diag_groups = {}  # (t_knot, tp, tq) -> (rows, weights)
     for (k, tp, tq), rows in bins.items():
         w = wt[rows]
@@ -634,6 +690,21 @@ def predict_aterm_block(prepared, uvw, times, antenna1, antenna2, epsilon, do_wg
         seg_of_chan = np.clip(np.searchsorted(at.fknot_chan, chan_gids, side="right") - 1, 0, n_f - 2)
 
     per_channel_sky = prepared.spectrum.kind is not SpectralKind.FLAT
+
+    # Quote the bill before a long run rather than after: a per-channel sky costs
+    # this many passes per channel, not per segment (see the module docstring).
+    if log.isEnabledFor(logging.DEBUG):
+        ngroup = len(diag_groups) + (0 if single_knot else len(bins))
+        nseg = np.unique(seg_of_chan).size
+        npass = ngroup * ncorr * (nchan if per_channel_sky else nseg)
+        log.debug(
+            "A-term block: %d row group(s) x %d corr x %s -> up to %d gridder pass(es) "
+            "(each x2 for a complex apparent image, minus negligible-pass skips).",
+            ngroup,
+            ncorr,
+            f"{nchan} channel(s)" if per_channel_sky else f"{nseg} channel segment(s)",
+            npass,
+        )
 
     for seg in np.unique(seg_of_chan):
         chs = np.nonzero(seg_of_chan == seg)[0]
@@ -685,7 +756,39 @@ def predict_aterm_block(prepared, uvw, times, antenna1, antenna2, epsilon, do_wg
     return vis
 
 
+def _knot_products(at, tp, tq, t_a, t_b, f_idx, bmats, cache):
+    """Yield one knot's apparent-beam products, memoised in ``cache`` when given.
+
+    ``cache`` is only ever passed in diagonal mode, where the products are
+    independent of both the channel and the sky; the entry is stored stacked so
+    the LRU can weigh it, and the yielded rows are read-only views into it.
+    """
+    if cache is None:
+        yield from _beam_products(at, tp, tq, t_a, f_idx, bmats, t_b=t_b)
+        return
+    key = (tp, tq, t_a, -1 if t_b is None else t_b, f_idx)
+    hit = cache.get(key)
+    if hit is None:
+        hit = np.stack(list(_beam_products(at, tp, tq, t_a, f_idx, bmats, t_b=t_b)))
+        cache.put(key, hit)
+    yield from hit
+
+
+def _lerped_products(at, tp, tq, t_a, t_b, j0, j1, w, bmats, cache):
+    """Yield the frequency-lerped apparent-beam product for each correlation."""
+    lo = _knot_products(at, tp, tq, t_a, t_b, j0, bmats, cache)
+    if not (j1 > j0 and w > 0):
+        yield from lo
+        return
+    hi = _knot_products(at, tp, tq, t_a, t_b, j1, bmats, cache)
+    for lo_c, hi_c in zip(lo, hi):
+        yield (1.0 - w) * lo_c + w * hi_c
+
+
 def _accumulate(vis, rows, chs, c, w_row, w_chan, pass_vis):
+    # ``+=`` through fancy indexing does NOT accumulate over repeated indices, so
+    # this relies on ``rows`` holding each row index at most once. That invariant
+    # is established where the groups are built (see predict_aterm_block).
     vis[rows[:, None], chs[None, :], c] += (w_row[:, None] * w_chan[None, :]) * pass_vis
 
 
@@ -697,22 +800,21 @@ def _predict_segment_flat(
     Channel weights implement the linear-in-frequency blend between the two
     knot images (visibility-domain, exact by linearity of the prediction).
     """
-    bmats_corrs = _corr_planes(prepared, None)
-    bmats_flat = [np.ascontiguousarray(b).ravel() for b in bmats_corrs]
-    ncorr = at.ncorr
+    bmats_flat = [np.ascontiguousarray(b).ravel() for b in _corr_planes(prepared, None)]
+    single_knot = at.tgrid.size < 2
 
     f_edges = [(j0, 1.0 - wf)]
     if j1 > j0:
         f_edges.append((j1, wf))
 
     def run(rows, w_row, tp, tq, t_a, t_b):
+        sub_uvw = np.ascontiguousarray(uvw[rows])
         for f_idx, w_chan in f_edges:
             if not np.any(w_chan):
                 continue
             products = _beam_products(at, tp, tq, t_a, f_idx, bmats_flat, t_b=t_b)
-            sub_uvw = np.ascontiguousarray(uvw[rows])
-            for c in range(ncorr):
-                image = products[c] if at.full_jones else products[c] * bmats_flat[c]
+            for c, product in enumerate(products):
+                image = product if at.full_jones else product * bmats_flat[c]
                 image = image.reshape(shape)
                 if np.abs(image.real).max() <= skip_below and np.abs(image.imag).max() <= skip_below:
                     continue
@@ -722,13 +824,12 @@ def _predict_segment_flat(
 
     for (t_knot, tp, tq), (rows, w_sq) in diag_groups.items():
         run(rows, w_sq, tp, tq, t_knot, None)
-    for (k, tp, tq), rows in bins.items():
-        if at.tgrid.size < 2:
-            continue
-        w_cross = wt[rows] * (1.0 - wt[rows])
-        if not np.any(w_cross):
-            continue
-        run(rows, w_cross, tp, tq, k, k + 1)
+    if not single_knot:
+        for (k, tp, tq), rows in bins.items():
+            w_cross = wt[rows] * (1.0 - wt[rows])
+            if not np.any(w_cross):
+                continue
+            run(rows, w_cross, tp, tq, k, k + 1)
 
 
 def _predict_segment_perchan(
@@ -742,44 +843,51 @@ def _predict_segment_perchan(
     skipped outright.
     """
     is_poly = prepared.spectrum.kind is SpectralKind.POLY
-    ncorr = at.ncorr
+    single_knot = at.tgrid.size < 2
+
+    # POLY's reference-plane correlation images are channel-independent -- only the
+    # per-pixel spectral scale varies -- so build them once for the whole segment.
+    poly_base = [np.ascontiguousarray(b).ravel() for b in _corr_planes(prepared, None)] if is_poly else None
+
+    # In diagonal mode the apparent-beam product depends on neither the channel nor
+    # the sky, so one build per (group, knot) serves every channel of the segment
+    # instead of being rebuilt per (channel x group). Full Jones folds the sky into
+    # the product, so there it genuinely varies per channel and is not cached.
+    product_cache = None
+    if not at.full_jones:
+        budget = int(PRODUCT_CACHE_FRACTION * at.cache.max_bytes)
+        if budget >= at.ncorr * at.ell.size * 16:  # complex128
+            product_cache = _MapCache(budget)
 
     for local, (ch, freq, w) in enumerate(zip(chs, seg_freqs, wf)):
         if is_poly:
-            scale = evaluate_scale(prepared.spectrum.coeffs, np.array([freq]), prepared.spectrum.ref_freq)[0]
-            bmats_corrs = [np.ascontiguousarray(b * scale).ravel() for b in _corr_planes(prepared, None)]
+            scale = evaluate_scale(prepared.spectrum.coeffs, np.array([freq]), prepared.spectrum.ref_freq)[0].ravel()
+            bmats_corrs = [b * scale for b in poly_base]
         else:
             bmats_corrs = [np.ascontiguousarray(b).ravel() for b in _corr_planes(prepared, int(ch))]
         if max(np.abs(b).max() for b in bmats_corrs) <= skip_below:
             continue
         chan_freq = np.ascontiguousarray(seg_freqs[local : local + 1])
         one = np.ones(1)
+        chan_idx = np.array([ch])
 
-        def lerped_products(tp, tq, t_a, t_b):
-            prods = _beam_products(at, tp, tq, t_a, j0, bmats_corrs, t_b=t_b)
-            if j1 > j0 and w > 0:
-                hi = _beam_products(at, tp, tq, t_a, j1, bmats_corrs, t_b=t_b)
-                prods = [(1.0 - w) * lo + w * up for lo, up in zip(prods, hi)]
-            return prods
-
-        def run(rows, w_row, tp, tq, t_a, t_b):
-            products = lerped_products(tp, tq, t_a, t_b)
+        def run(rows, w_row, tp, tq, t_a, t_b, w=w, bmats_corrs=bmats_corrs, chan_freq=chan_freq, chan_idx=chan_idx):
             sub_uvw = np.ascontiguousarray(uvw[rows])
-            for c in range(ncorr):
-                image = products[c] if at.full_jones else products[c] * bmats_corrs[c]
+            products = _lerped_products(at, tp, tq, t_a, t_b, j0, j1, w, bmats_corrs, product_cache)
+            for c, product in enumerate(products):
+                image = product if at.full_jones else product * bmats_corrs[c]
                 image = image.reshape(shape)
                 if np.abs(image.real).max() <= skip_below and np.abs(image.imag).max() <= skip_below:
                     continue
                 pass_vis = _grid_pass(image, sub_uvw, chan_freq, ducc_kwargs, skip_below)
                 if pass_vis is not None:
-                    _accumulate(vis, rows, np.array([ch]), c, w_row, one, pass_vis)
+                    _accumulate(vis, rows, chan_idx, c, w_row, one, pass_vis)
 
         for (t_knot, tp, tq), (rows, w_sq) in diag_groups.items():
             run(rows, w_sq, tp, tq, t_knot, None)
-        for (k, tp, tq), rows in bins.items():
-            if at.tgrid.size < 2:
-                continue
-            w_cross = wt[rows] * (1.0 - wt[rows])
-            if not np.any(w_cross):
-                continue
-            run(rows, w_cross, tp, tq, k, k + 1)
+        if not single_knot:
+            for (k, tp, tq), rows in bins.items():
+                w_cross = wt[rows] * (1.0 - wt[rows])
+                if not np.any(w_cross):
+                    continue
+                run(rows, w_cross, tp, tq, k, k + 1)

@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from astropy.io import fits
 
-from simms.skymodel.aterms import ATermModel, attach_fits_aterm, select_freq_knots
+from simms.skymodel.aterms import _MapCache, aterm_cache_min_gib, attach_fits_aterm, select_freq_knots
 from simms.skymodel.beams import BeamProvider, CosineTaperBeam, FitsBeamProvider, JimBeamProvider
 from simms.skymodel.fits_skies import component_sky_from_fits_dft, predict_fits_block, prepare_fits_sky
 from simms.skymodel.kernels import is_uniform_grid
@@ -165,7 +165,6 @@ def test_full_jones_leakage_matches_exact_jones_kernel(params):
 
     # Two smooth, complex, leakage-carrying beam cubes on an (l, m, freq) grid
     # comfortably covering the (rotated) image.
-    rng = np.random.default_rng(5)
     grid = np.linspace(-0.06, 0.06, 41)
     bfreqs = np.array([1.35e9, 1.45e9])
     ll, mm = np.meshgrid(grid, grid, indexing="ij")
@@ -187,7 +186,6 @@ def test_full_jones_leakage_matches_exact_jones_kernel(params):
     ]
     ant_type = np.array([0, 1, 0, 1], dtype=np.int64)
     type_is_altaz = np.array([True, True])
-    del rng
 
     stokes_values = [(1.0, 0.2, -0.1, 0.05), (2.0, -0.3, 0.15, 0.0), (0.5, 0.1, 0.05, -0.02)]
     path = write_flat_image(params, nstokes=4, stokes_values=stokes_values)
@@ -582,12 +580,187 @@ def test_e2e_average_mode_remains_available(e2e_ms):
     assert np.abs(avg).mean() < np.abs(nobeam).mean()
 
 
+def test_product_cache_is_neutral(params, monkeypatch):
+    """The per-segment apparent-beam-product cache must not change the answer.
+
+    It memoises knot products across a segment's channels in diagonal mode;
+    disabling it (budget 0) must give bit-comparable visibilities.
+    """
+    import simms.skymodel.aterms as aterms_mod
+
+    times, antenna1, antenna2, uvw, duration = observation(seed=41)
+    providers, ant_type, type_is_altaz = hetero_beams()
+    freqs = np.linspace(1.38e9, 1.44e9, 4)
+
+    data = np.zeros((freqs.size, NPIX, NPIX), dtype=np.float64)
+    for ira, idec, flux in PIXELS:
+        data[:, idec, ira] = [flux * (1.0 + 0.1 * k) for k in range(freqs.size)]
+    header = make_header(NPIX, nchan=freqs.size, cell=CELL_DEG, freqs=freqs)
+    path = params.random_named_file(suffix=".fits")
+    fits.PrimaryHDU(data, header=header).writeto(path, overwrite=True)
+
+    def run():
+        prepared = prepare_fits_sky(
+            path, RA0, DEC0, freqs, 2e7, ncorr=2, nrow=uvw.shape[0], backend="perchan", spectrum="cube"
+        )
+        # A coarse tolerance so a segment spans several channels and the cache is reused.
+        prepared = attach_fits_aterm(
+            prepared, freq_tol=1e-2, **attach_kwargs(duration, providers, ant_type, type_is_altaz)
+        )
+        return predict_fits_block(prepared, uvw, times=times, antenna1=antenna1, antenna2=antenna2, epsilon=1e-11)
+
+    with_cache = run()
+    monkeypatch.setattr(aterms_mod, "PRODUCT_CACHE_FRACTION", 0.0)
+    without_cache = run()
+    assert np.abs(with_cache).max() > 0.1
+    np.testing.assert_allclose(with_cache, without_cache, rtol=0, atol=1e-12 * np.abs(without_cache).max())
+
+
+def test_memory_ceiling_raises_and_names_the_escape(params):
+    """The voltage-map cache ceiling fails loudly, naming the mode that has none."""
+    times, antenna1, antenna2, uvw, duration = observation(seed=29)
+    providers, ant_type, type_is_altaz = hetero_beams()
+    freqs = np.array([1.40e9, 1.42e9])
+    path = write_flat_image(params)
+    prepared = prepare_fits_sky(path, RA0, DEC0, freqs, 2e7, ncorr=2, nrow=uvw.shape[0], backend="fft")
+
+    with pytest.raises(MemoryError, match="fits-beam-mode average"):
+        attach_fits_aterm(
+            prepared, freq_tol=0.0, max_gib=1e-9, **attach_kwargs(duration, providers, ant_type, type_is_altaz)
+        )
+
+    # The sizing helper skysim pre-flights with must agree with the guard.
+    needed = aterm_cache_min_gib(prepared.npix_l, prepared.npix_m, False)
+    assert needed > 1e-9
+    attach_fits_aterm(
+        prepared, freq_tol=0.0, max_gib=needed, **attach_kwargs(duration, providers, ant_type, type_is_altaz)
+    )
+
+
+def test_aterm_rejects_circular_basis_model(params):
+    """A circular-basis sky must be refused, not silently given wrong cross-hands."""
+    times, antenna1, antenna2, uvw, duration = observation(seed=31)
+    providers, ant_type, type_is_altaz = hetero_beams()
+    freqs = np.array([1.40e9, 1.42e9])
+    path = write_flat_image(params)
+    prepared = prepare_fits_sky(
+        path, RA0, DEC0, freqs, 2e7, ncorr=2, nrow=uvw.shape[0], backend="fft", linear_basis=False
+    )
+    with pytest.raises(ValueError, match="linear feed basis"):
+        attach_fits_aterm(prepared, freq_tol=0.0, **attach_kwargs(duration, providers, ant_type, type_is_altaz))
+
+
+def test_component_bridge_rejects_circular_basis(params):
+    """The DFT bridge exists to attach a beam, so it refuses a circular-basis model."""
+    _, _, _, uvw, _ = observation(seed=33)
+    freqs = np.array([1.40e9, 1.42e9])
+    path = write_flat_image(params)
+    prepared = prepare_fits_sky(
+        path, RA0, DEC0, freqs, 2e7, ncorr=2, nrow=uvw.shape[0], backend="dft", linear_basis=False
+    )
+    with pytest.raises(ValueError, match="linear-feed-basis"):
+        component_sky_from_fits_dft(prepared)
+
+
+def test_e2e_memory_ceiling_falls_back_instead_of_crashing(e2e_ms):
+    """An image too large for the cache degrades to the power beam, it does not crash.
+
+    Guards the user-facing regression: `aterm` is the FITS-path default, so a run
+    that produced output before must not start raising MemoryError.
+    """
+    from daskms import xds_from_ms
+
+    from simms.apps import skysim
+
+    from . import skysim_opts
+
+    holder, ms = e2e_ms
+    img, _, beams = _e2e_sky(holder)
+
+    # Far below what any real image needs, so the ceiling is certain to bite.
+    opts = skysim_opts(
+        ms,
+        fits_sky=img,
+        primary_beam=beams,
+        column="TOOBIG",
+        predict_backend="fft",
+        beam_grid_max_gib=1e-7,
+    )
+    skysim.runit(opts)  # must not raise
+    got = xds_from_ms(ms)[0].TOOBIG.data.compute()
+    assert np.all(np.isfinite(got))
+    assert np.abs(got).max() > 0
+
+    # It fell back to `average`, so it must match an explicit average run -- on the
+    # same backend, since `average` applies a per-channel beam on the DFT path but a
+    # single mid-band beam on the gridder path.
+    skysim.runit(
+        skysim_opts(
+            ms,
+            fits_sky=img,
+            primary_beam=beams,
+            column="AVGREF",
+            fits_beam_mode="average",
+            predict_backend="fft",
+        )
+    )
+    ref = xds_from_ms(ms)[0].AVGREF.data.compute()
+    np.testing.assert_allclose(got, ref, rtol=0, atol=1e-6 * np.abs(ref).max())
+
+
+def test_e2e_circular_ms_falls_back_to_average(e2e_ms):
+    """Diagonal a-terms on a circular MS degrade to the basis-independent power beam."""
+    from daskms import xds_from_ms
+
+    from simms.apps import skysim
+    from simms.telescope.generate_ms import create_ms
+
+    from . import skysim_opts
+
+    holder, _ = e2e_ms
+    img, _, beams = _e2e_sky(holder)
+    ms = holder.random_named_directory(suffix=".ms")
+    create_ms(
+        ms,
+        telescope_name="skamid",
+        pointing_direction=["J2000", "1h0m0s", "-31deg"],
+        dtime=600,
+        ntimes=2,
+        start_freq="1420MHz",
+        dfreq="4MHz",
+        nchan=2,
+        correlations=["RR", "LL"],
+        row_chunks=100000,
+        sefd=None,
+        column="DATA",
+        start_time="2025-03-06T20:00:00",
+        smooth=None,
+        fit_order=None,
+        subarray_range=[60, 68],
+    )
+    opts = skysim_opts(ms, fits_sky=img, primary_beam=beams, column="CIRC", pol_basis="circular")
+    skysim.runit(opts)  # must not raise
+    got = xds_from_ms(ms)[0].CIRC.data.compute()
+    assert np.all(np.isfinite(got))
+    assert np.abs(got).max() > 0
+
+
+def test_e2e_full_jones_requires_four_correlations(e2e_ms):
+    """--beam-jones full on the FITS path is honoured, so it must reject a 2-corr MS."""
+    from simms.apps import skysim
+
+    from . import skysim_opts
+
+    holder, ms = e2e_ms  # the fixture MS is XX, YY
+    img, _, beams = _e2e_sky(holder)
+    opts = skysim_opts(ms, fits_sky=img, primary_beam=beams, column="FJ", beam_jones="full", predict_backend="fft")
+    with pytest.raises(RuntimeError, match="4 correlations"):
+        skysim.runit(opts)
+
+
 def test_map_cache_survives_pickling():
     """The prepared model must remain picklable (process-based schedulers)."""
     import pickle
-
-    cache = ATermModel.__dataclass_fields__  # noqa: F841 - touch the dataclass
-    from simms.skymodel.aterms import _MapCache
 
     original = _MapCache(1 << 20)
     original.put(("k",), np.ones(4))

@@ -14,6 +14,14 @@
   FITS-image path. When the DFT backend wins the FITS cost model under a beam,
   the model is bridged to the exact per-component beam kernels instead of the
   approximate image beam.
+- A-term review follow-ups: an image too large for the voltage-map cache now
+  degrades to `--fits-beam-mode average` with a warning instead of raising
+  `MemoryError` (the ceiling is still enforced for direct API callers, and its
+  message names that escape); apparent-beam products are yielded one correlation
+  at a time rather than materialised per pass, and memoised across a channel
+  segment in diagonal mode; `attach_fits_aterm` and `component_sky_from_fits_dft`
+  reject a circular-basis model rather than silently producing wrong cross-hands;
+  the planned gridder-pass count is logged at DEBUG.
 
 ### 3.0.0 -> 3.0.1
 
