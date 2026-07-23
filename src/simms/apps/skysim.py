@@ -21,6 +21,7 @@ from simms.skymodel.beams import load_beam_config, resolve_antenna_beams
 from simms.skymodel.fits_skies import predict_fits_channel_block, prepare_fits_sky
 from simms.skymodel.mstools import (
     attach_beam,
+    auto_row_chunks,
     noise_visibilities,
     predict_channel_block,
     prepare_skymodel,
@@ -206,12 +207,24 @@ def runit(opts):
     if sum(bool(x) for x in (ascii_sky, fs, wsclean_sky)) > 1:
         raise RuntimeError("Choose a single sky model: one of --ascii-sky, --fits-sky, or --wsclean-sky.")
 
-    msds = xds_from_ms(
-        ms,
+    # --row-chunks is an upper bound, not a fixed size: a fixed size ties the task
+    # count to the length of the MS, so a short track can produce fewer chunks than
+    # there are workers and leave most of them idle. Probe the row count first (a
+    # metadata-only open) and size the chunks against --nworkers.
+    ms_open = dict(
         group_cols=["DATA_DESC_ID"],
         taql_where=f"FIELD_ID=={opts.field_id}",
-        chunks=dict(row=opts.row_chunks),
-    )[opts.spw_id]
+    )
+    nrows = xds_from_ms(ms, **ms_open, chunks=dict(row=opts.row_chunks))[opts.spw_id].UVW.data.shape[0]
+    row_chunks = auto_row_chunks(nrows, opts.nworkers, cap=opts.row_chunks)
+    if row_chunks != opts.row_chunks:
+        log.info(
+            f"Using {row_chunks} rows/chunk ({-(-nrows // row_chunks)} chunks over "
+            f"{opts.nworkers} workers); --row-chunks {opts.row_chunks} would have given "
+            f"{-(-nrows // opts.row_chunks)}."
+        )
+
+    msds = xds_from_ms(ms, **ms_open, chunks=dict(row=row_chunks))[opts.spw_id]
 
     if opts.sefd:
         vis_noise = vis_noise_from_sefd_and_ms(ms, opts.sefd, opts.spw_id, opts.field_id)
@@ -511,7 +524,9 @@ def skysim(
     nworkers: int = Field(4, description="Number of workers (one per CPU)."),
     row_chunks: int = Field(
         10000,
-        description="Number of rows per chunk. Controls the row-wise task/memory granularity.",
+        description="Maximum number of rows per chunk. Controls the row-wise task/memory "
+        "granularity; the effective size is reduced when needed so every worker gets "
+        "several chunks.",
         json_schema_extra={"abbreviation": "rcs"},
     ),
     chan_chunks: int | None = Field(

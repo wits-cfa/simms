@@ -11,6 +11,62 @@ from simms.skymodel.ascii_skies import ASCIISkymodel
 from simms.skymodel.kernels import is_uniform_grid, predict_vis, predict_vis_beam, predict_vis_jones
 from simms.utilities import radec2lm
 
+DEFAULT_ROW_CHUNK_CAP = 10000
+"""Default upper bound on rows per chunk (the ``--row-chunks`` default)."""
+
+ROW_TASKS_PER_WORKER = 4
+"""Row chunks aimed for per worker, so the pool stays fed and load stays even."""
+
+MIN_ROW_CHUNK = 256
+"""Never chunk finer than this; below it dask's per-task overhead starts to dominate."""
+
+
+def auto_row_chunks(
+    nrows: int,
+    nworkers: int,
+    cap: int = DEFAULT_ROW_CHUNK_CAP,
+    tasks_per_worker: int = ROW_TASKS_PER_WORKER,
+    min_chunk: int = MIN_ROW_CHUNK,
+) -> int:
+    """Rows per chunk, sized so that every worker has several chunks to work on.
+
+    A *fixed* chunk size makes the task count depend only on the length of the MS,
+    so a short observation yields fewer chunks than there are workers and most of
+    them sit idle: 76608 rows (a 5-minute MeerKAT track) at the 10000-row default
+    is 8 chunks, which pins a ``--nworkers 32`` run to ~8 cores however many are
+    asked for.
+
+    `cap` (the ``--row-chunks`` value) is therefore treated as an *upper* bound:
+    the size is reduced until each worker has roughly `tasks_per_worker` chunks,
+    but never below `min_chunk` rows, so a small MS is not shattered into tasks
+    whose overhead outweighs the work they do. The chunk size is never increased
+    beyond `cap`, so this can only add parallelism, never memory per task.
+
+    Parameters
+    ----------
+    nrows : int
+        Number of rows the prediction will run over.
+    nworkers : int
+        Worker count the graph will be scheduled on (``--nworkers``).
+    cap : int, optional
+        Upper bound on rows per chunk.
+    tasks_per_worker : int, optional
+        Chunks aimed for per worker.
+    min_chunk : int, optional
+        Lower bound on rows per chunk.
+
+    Returns
+    -------
+    int
+        Rows per chunk to hand to ``xds_from_ms``.
+    """
+    if cap <= 0:
+        cap = DEFAULT_ROW_CHUNK_CAP
+    if nrows <= 0 or nworkers <= 1:
+        return cap
+    target = -(-nrows // (tasks_per_worker * nworkers))  # ceil division
+    return max(min_chunk, min(cap, target))
+
 
 def vis_noise_from_sefd_and_ms(ms: str, sefd: float, spw_id: int = 0, field_id: int = 0):
     """
