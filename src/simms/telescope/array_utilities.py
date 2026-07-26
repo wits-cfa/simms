@@ -379,6 +379,10 @@ class Array:
                 "uvw": uvw,
                 "freqs": freqs,
                 "times": time_table,
+                # The ntimes distinct timestamps, before the per-baseline repeat above.
+                # Subtables indexed by (antenna, time) -- POINTING -- need these, not the
+                # main-table row times.
+                "time_entries": time_entries,
                 "source_elevations": source_elevations,
                 "ra0": ra0,
                 "dec0": dec0,

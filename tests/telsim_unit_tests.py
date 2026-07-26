@@ -154,15 +154,6 @@ def test_visdata_configuration_info(params):
     tel_nbl = params.nant * (params.nant - 1) // 2
     assert np.isclose(nbl, tel_nbl)
 
-    ds_point = xds_from_table(f"{params.ms}::POINTING")[0]
-    direction = ds_point.DIRECTION.values[0][0]
-
-    orig_direction = SkyCoord(*params.direction[1:])
-    ra0 = orig_direction.ra.to("rad").value
-    dec0 = orig_direction.dec.to("rad").value
-    assert np.isclose(direction[0], ra0)
-    assert np.isclose(direction[1], dec0)
-
     ds_pol = xds_from_table(f"{params.ms}::POLARIZATION")[0]
     corr = ds_pol.CORR_TYPE.values[0]
     assert np.isclose(corr[0], 9)
@@ -173,6 +164,37 @@ def test_visdata_configuration_info(params):
     size = ds_ant.DISH_DIAMETER.values[0]
     assert mount == "ALT-AZ"
     assert np.isclose(size, 12)
+
+
+def test_pointing_table_is_per_antenna_per_time(params):
+    # POINTING is keyed by (ANTENNA_ID, TIME): nant x ntime rows, not one row per
+    # main-table row. Getting this wrong repeats each pointing nbl/nant times and leaves
+    # every antenna but the first without a pointing record, so the beam centre that
+    # skysim reads from POINTING.DIRECTION is only defined for antenna 0.
+    ds = xds_from_table(params.ms)[0]
+    ds_point = xds_from_table(f"{params.ms}::POINTING")[0]
+
+    main_times = np.unique(ds.TIME.values)
+    ntime = main_times.shape[0]
+    assert ds_point.sizes["row"] == params.nant * ntime
+
+    ant_ids = np.asarray(ds_point.ANTENNA_ID.values)
+    assert set(ant_ids.tolist()) == set(range(params.nant))
+
+    # Exactly one record per (antenna, timestamp) pair, over the main table's timestamps.
+    pnt_times = np.asarray(ds_point.TIME.values)
+    assert np.array_equal(np.unique(pnt_times), main_times)
+    keys = set(zip(ant_ids.tolist(), pnt_times.tolist()))
+    assert len(keys) == ds_point.sizes["row"]
+
+    # Every antenna points at the field centre, and TARGET (required by MSv2) agrees.
+    orig_direction = SkyCoord(*params.direction[1:])
+    ra0 = orig_direction.ra.to("rad").value
+    dec0 = orig_direction.dec.to("rad").value
+    directions = np.asarray(ds_point.DIRECTION.values)[:, 0, :]
+    assert np.allclose(directions[:, 0], ra0)
+    assert np.allclose(directions[:, 1], dec0)
+    assert np.allclose(np.asarray(ds_point.TARGET.values), np.asarray(ds_point.DIRECTION.values))
 
 
 def test_antenna_telescope_name(params):

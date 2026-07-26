@@ -468,14 +468,27 @@ def create_ms(
     with TqdmCallback(desc=f"Writing the POLARIZATION table to {ms}"):
         dask.compute(write_pol)
 
+    # POINTING is keyed by (ANTENNA_ID, TIME) -- one row per antenna per timeslot, not one
+    # row per main-table row. Writing num_rows rows would repeat each pointing nbl/nant times
+    # over and drop every antenna but the first, which is what makes the beam centre in
+    # POINTING.DIRECTION readable for antenna 0 alone.
+    num_pntng_rows = num_ants * ntimes
+    pntng_chunks = min(row_chunks, num_pntng_rows)
+    # Time-major, matching the main table: all antennas at t0, then all antennas at t1, ...
+    pntng_ant_id = np.tile(np.arange(num_ants), ntimes)
+    pntng_times = np.repeat(uvcoverage_data.time_entries, num_ants)
+
     phase_dir_small = da.from_array(phase_dir, chunks=-1)
-    phase_arr = da.broadcast_to(phase_dir_small, (num_rows, 1, 2), chunks=(row_chunks, 1, 2))
+    phase_arr = da.broadcast_to(phase_dir_small, (num_pntng_rows, 1, 2), chunks=(pntng_chunks, 1, 2))
 
     pntng_ds = {
-        "TIME": (("row",), da.from_array(uvcoverage_data.times, chunks=row_chunks)),
-        "INTERVAL": (("row",), da.full(num_rows, dtime, chunks=row_chunks)),
-        "TRACKING": (("row",), da.full(num_rows, True, chunks=row_chunks, dtype=bool)),
+        "ANTENNA_ID": (("row",), da.from_array(pntng_ant_id, chunks=pntng_chunks)),
+        "TIME": (("row",), da.from_array(pntng_times, chunks=pntng_chunks)),
+        "INTERVAL": (("row",), da.full(num_pntng_rows, dtime, chunks=pntng_chunks)),
+        "TRACKING": (("row",), da.full(num_pntng_rows, True, chunks=pntng_chunks, dtype=bool)),
         "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
+        # TARGET is a required MSv2 column; with no pointing offsets it equals DIRECTION.
+        "TARGET": (("row", "point-poly", "radec"), phase_arr),
     }
 
     pntng_table = daskms.Dataset(pntng_ds)
