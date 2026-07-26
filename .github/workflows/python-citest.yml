@@ -41,9 +41,9 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
     - name: Install uv
-      uses: astral-sh/setup-uv@v9
+      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       with:
         version: ${{ env.UV_VERSION }}
         python-version: ${{ matrix.python-version }}
@@ -87,9 +87,9 @@ jobs:
     # The image has no git, so checkout falls back to the REST API tarball. That is fine --
     # nothing here needs history, and fitstoolz is pinned as an archive URL rather than a
     # git source precisely so `uv sync` needs no git binary either (see [tool.uv.sources]).
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
     - name: Install uv
-      uses: astral-sh/setup-uv@v9
+      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       with:
         version: ${{ env.UV_VERSION }}
         python-version: ${{ env.PYTHON_VERSION }}
