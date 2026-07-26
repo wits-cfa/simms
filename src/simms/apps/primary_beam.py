@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Literal
 
 import shinobi
+from dask import config as dask_config
 from pydantic import BaseModel, Field
 
 from simms import BIN, set_logger
@@ -27,6 +28,10 @@ def _require(opts, field):
 def runit(opts):
     set_logger(BIN.primary_beam, opts.log_level)
     from simms.skymodel import pb_ops
+
+    # pb_ops builds and computes dask graphs, so --nworkers has to reach the scheduler the
+    # same way skysim sets it; without this the option was accepted and silently ignored.
+    dask_config.set(scheduler="threads", num_workers=opts.nworkers)
 
     mode = opts.mode
     if mode == "to-fits":

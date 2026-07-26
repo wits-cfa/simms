@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import shinobi
+from dask import config as dask_config
 from pydantic import BaseModel, Field
 
 from simms import BIN, set_logger
@@ -52,6 +53,11 @@ def _antenna_selection(values, cast=str):
 
 def runit(opts):
     set_logger(BIN.telsim, opts.log_level)
+
+    # The table writes in generate_ms are dask graphs, so --nworkers has to reach the
+    # scheduler the same way skysim sets it; without this the option was accepted,
+    # documented and silently ignored.
+    dask_config.set(scheduler="threads", num_workers=opts.nworkers)
 
     msname = opts.ms
     telescope = opts.telescope
