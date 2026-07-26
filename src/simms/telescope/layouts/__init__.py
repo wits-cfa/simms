@@ -1,7 +1,7 @@
 import glob
 import os
 
-from simms.utilities import AttrDict, load_yaml
+from simms.utilities import load_yaml
 
 thisdir = os.path.dirname(__file__)
 
@@ -27,12 +27,12 @@ def simms_telescopes() -> dict:
     for layout in lays:
         # Array name
         arrayinfo = load_yaml(layout)
-        allants = list(arrayinfo.antnames)
-        all_locations = list(arrayinfo.antlocations)
+        allants = list(arrayinfo["antnames"])
+        all_locations = list(arrayinfo["antlocations"])
         anant = len(all_locations)
         ant_to_idx = {name: i for i, name in enumerate(allants)}
 
-        allsizes = arrayinfo.size
+        allsizes = arrayinfo["size"]
         allsizes = [allsizes] * anant if isinstance(allsizes, float | int) else list(allsizes)
 
         alltelnames = _per_antenna_telescope_names(arrayinfo, anant)
@@ -40,7 +40,7 @@ def simms_telescopes() -> dict:
         subarrays = arrayinfo.get("subarray", [])
         # add sub-arrays to database
         for subarray in subarrays:
-            antnames = arrayinfo.subarray[subarray]
+            antnames = arrayinfo["subarray"][subarray]
             antlocations = []
             antsizes = []
             anttelnames = []
@@ -51,13 +51,13 @@ def simms_telescopes() -> dict:
                 anttelnames.append(alltelnames[idx])
 
             laysdict[subarray] = dict(
-                centre=arrayinfo.centre,
+                centre=arrayinfo["centre"],
                 antlocations=antlocations,
                 antnames=antnames,
                 size=antsizes,
                 telescope_name=anttelnames,
-                coord_sys=arrayinfo.coord_sys,
-                mount=arrayinfo.mount,
+                coord_sys=arrayinfo["coord_sys"],
+                mount=arrayinfo["mount"],
                 issubarray=True,
             )
 
@@ -65,7 +65,7 @@ def simms_telescopes() -> dict:
         lname = arrayinfo.get("name") or os.path.basename(layout).split(".")[0]
         laysdict[lname] = arrayinfo
 
-    return AttrDict(laysdict)
+    return laysdict
 
 
 def resolve_layout(layout: str):
@@ -101,11 +101,11 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
     laysdict = {}
 
     arrayinfo, _ = resolve_layout(layout)
-    allants = list(arrayinfo.antnames)
-    all_locations = list(arrayinfo.antlocations)
+    allants = list(arrayinfo["antnames"])
+    all_locations = list(arrayinfo["antlocations"])
     anant = len(all_locations)
 
-    allsizes = arrayinfo.size
+    allsizes = arrayinfo["size"]
     allsizes = [allsizes] * anant if isinstance(allsizes, float | int) else list(allsizes)
 
     alltelnames = _per_antenna_telescope_names(arrayinfo, anant)
@@ -169,17 +169,17 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
                 anttelnames.append(alltelnames[idx])
 
     laysdict = dict(
-        centre=arrayinfo.centre,
+        centre=arrayinfo["centre"],
         antlocations=antlocations,
         antnames=antnames,
         size=antsizes,
         telescope_name=anttelnames,
-        coord_sys=arrayinfo.coord_sys,
-        mount=arrayinfo.mount,
+        coord_sys=arrayinfo["coord_sys"],
+        mount=arrayinfo["mount"],
         issubarray=True,
     )
 
-    return AttrDict(laysdict)
+    return laysdict
 
 
 SIMMS_TELESCOPES = simms_telescopes()

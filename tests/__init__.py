@@ -2,8 +2,7 @@ import os.path
 import shutil
 import sys
 import tempfile
-
-from simms.utilities import AttrDict
+from types import SimpleNamespace
 
 TESTDIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -56,7 +55,7 @@ def skysim_opts(ms, ascii_sky=None, column="DATA", **overrides):
         "do_wstacking": True,
     }
     opts.update(overrides)
-    return AttrDict(opts)
+    return SimpleNamespace(**opts)
 
 
 def simms_executable() -> str:

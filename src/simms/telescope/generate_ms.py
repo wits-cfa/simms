@@ -16,7 +16,7 @@ from simms.constants import PI
 from simms.telescope import array_utilities as autils
 from simms.utilities import get_noise, load_yaml
 
-CORR_TYPES = load_yaml(f"{PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
+CORR_TYPES = load_yaml(f"{PCKGDIR}/telescope/ms_corr_types.yaml")["CORR_TYPES"]
 dm = measures()
 
 

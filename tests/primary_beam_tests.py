@@ -2,6 +2,7 @@
 
 import logging
 import os
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -12,7 +13,6 @@ from daskms import xds_from_table
 from simms.apps import primary_beam
 from simms.skymodel.beams import CosineTaperBeam, FitsBeamProvider, JimBeamProvider
 from simms.telescope.generate_ms import create_ms
-from simms.utilities import AttrDict
 
 from . import InitTest
 from .predict_fits_tests import DEC0_DEG, RA0_DEG, make_header
@@ -50,7 +50,7 @@ def _opts(mode, **over):
         "log_level": "CRITICAL",
     }
     base.update(over)
-    return AttrDict(base)
+    return SimpleNamespace(**base)
 
 
 class _Fixtures(InitTest):

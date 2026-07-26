@@ -65,9 +65,9 @@ class Array:
         # A user-supplied layout file need not declare the array centre; derive it and cache it
         # back into the file. Built-in entries resolve to layout_file=None and are left alone.
         if layout_file is not None and "centre" not in self.layout:
-            centre = calculate_array_centre(self.layout.antlocations)
+            centre = calculate_array_centre(self.layout["antlocations"])
             write_centre_to_array_config(layout_file, centre)
-            self.layout.centre = centre
+            self.layout["centre"] = centre
 
         if subarray_list:
             self.layout = custom_telescopes(layout=layout, subarray_list=subarray_list)
@@ -82,7 +82,7 @@ class Array:
         self.noise_freqs = None
 
         self._set_arrayinfo()
-        if self.layout.coord_sys == "geodetic":
+        if self.layout["coord_sys"] == "geodetic":
             self.set_itrf()
 
     def _set_arrayinfo(self):
@@ -91,14 +91,14 @@ class Array:
         - Set values to SI units
         """
 
-        centre = self.layout.centre
-        xyz = np.array(self.layout.antlocations)
+        centre = self.layout["centre"]
+        xyz = np.array(self.layout["antlocations"])
         nant, ndim = xyz.shape
         self.nant = nant
 
         self.alt0 = 0 if len(centre) == 2 else centre[2]
 
-        if self.layout.coord_sys == "geodetic":
+        if self.layout["coord_sys"] == "geodetic":
             if ndim == 2:
                 xyz = np.hstack(xyz, np.zeros(nant))
             if self.degrees:
@@ -113,7 +113,7 @@ class Array:
 
             self.geodtic_antennas = xyz
 
-        elif self.layout.coord_sys == "itrf":
+        elif self.layout["coord_sys"] == "itrf":
             if ndim == 2:
                 raise RuntimeError("Input antenna ITRF coordinates have 2 coordinates. Three (X,Y,Z) are required.")
             self.lon0, self.lat0, self.alt0 = self.global2geodetic(*centre)

@@ -244,7 +244,7 @@ def test_subarray_range_accepts_comma_separated_indices():
 )
 def test_subarray_selection_on_named_subarrays(layout, kwargs, expect):
     array = array_utilities.Array(layout=layout, **kwargs)
-    assert len(array.layout.antnames) == expect
+    assert len(array.layout["antnames"]) == expect
 
 
 def test_layout_accepts_a_user_supplied_file(params):
@@ -254,10 +254,10 @@ def test_layout_accepts_a_user_supplied_file(params):
     shutil.copy(os.path.join(os.path.dirname(layouts.__file__), "kat-7.geodetic.yaml"), path)
 
     array = array_utilities.Array(layout=path)
-    assert len(array.layout.antnames) == params.nant
+    assert len(array.layout["antnames"]) == params.nant
 
     array = array_utilities.Array(layout=path, subarray_range=[0, 2])
-    assert len(array.layout.antnames) == 3
+    assert len(array.layout["antnames"]) == 3
 
 
 def test_unknown_layout_names_the_known_telescopes():
