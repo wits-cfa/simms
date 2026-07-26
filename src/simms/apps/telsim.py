@@ -33,6 +33,23 @@ def print_data_database(ctx, param, value):
     raise SystemExit()
 
 
+def _antenna_selection(values, cast=str):
+    """Flatten a repeatable antenna-selection option into a plain list, or None if unset.
+
+    shinobi renders the list-typed fields as click ``multiple=True`` options, so the repeated
+    form (``-sublist M000 -sublist M005``) arrives as a tuple of separate values, while the
+    comma form the help text documents (``-sublist M000,M005``) arrives as one string. Accept
+    both. A recipe or cab passing a real YAML list lands here as a list and passes straight
+    through.
+    """
+    if not values:
+        return None
+    items = []
+    for value in values:
+        items.extend(part.strip() for part in str(value).split(","))
+    return [cast(item) for item in items if item] or None
+
+
 def runit(opts):
     set_logger(BIN.telsim, opts.log_level)
 
@@ -57,8 +74,8 @@ def runit(opts):
     sfile = opts.sensitivity_file
     if freq_range is not None:
         freq_range = freq_range.split(",")
-    subarray_list = opts.subarray_list
-    subarray_range = opts.subarray_range
+    subarray_list = _antenna_selection(opts.subarray_list)
+    subarray_range = _antenna_selection(opts.subarray_range, cast=int)
     subarray_file = opts.subarray_file
     smooth = opts.smooth
     fit_order = opts.fit_order
@@ -104,10 +121,17 @@ def telsim(
         "Must be a subarray of the given telescope.",
         json_schema_extra={"abbreviation": "sublist"},
     ),
-    subarray_range: list[int] | None = Field(
+    # `str` deliberately leads the union: shinobi picks the click type from the first
+    # int/float/bool/str leaf, so a bare `list[int]` renders as `INTEGER` and click rejects
+    # the documented comma form ("'0,64' is not a valid integer") before the value ever
+    # reaches us. Leading with `str` gives a STRING option that takes both `0,64` and
+    # `-subrange 0 -subrange 64`, while the `int` arm still accepts a YAML list of ints from
+    # a recipe. `_antenna_selection` casts to int. Narrowing this to `list[int]` re-breaks
+    # the CLI -- see test_subarray_range_accepts_comma_separated_indices.
+    subarray_range: list[str | int] | None = Field(
         None,
-        description="Custom range of antenna indices to use, e.g. start,end,step (step optional). "
-        "Must be a subarray of the given telescope.",
+        description="Custom range of antenna indices to use, e.g. start,end,step (step optional; "
+        "end is inclusive when no step is given). Must be a subarray of the given telescope.",
         json_schema_extra={"abbreviation": "subrange"},
     ),
     subarray_file: str | None = Field(

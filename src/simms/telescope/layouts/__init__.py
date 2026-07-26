@@ -102,6 +102,15 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
         antlocations = []
         antsizes = []
         anttelnames = []
+        unknown = [ant for ant in antnames if ant not in ant_to_idx]
+        if unknown:
+            # A named subarray (meerkat, skamid-aa1, ...) is registered as a telescope in its
+            # own right, so it belongs to --telescope, not here; users reach for -sublist first.
+            raise ValueError(
+                f"Unknown antenna(s) {', '.join(unknown)} for layout '{layout}'. "
+                f"-sublist takes antenna names, e.g. {', '.join(allants[:3])}. "
+                f"To use a named subarray, pass it as --telescope instead."
+            )
         for ant in antnames:
             idx = ant_to_idx[ant]
             antlocations.append(all_locations[idx])
@@ -114,7 +123,16 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
         elif len(subarray_range) == 3:
             user_idx = list(range(subarray_range[0], subarray_range[1], subarray_range[2]))
         else:
-            raise ValueError("Subarray_range must be a list of length 2 or 3.")
+            raise ValueError(f"--subarray-range takes start,end or start,end,step; got {len(subarray_range)} value(s).")
+
+        out_of_range = [i for i in user_idx if not 0 <= i < len(allants)]
+        if out_of_range:
+            # Report the span, not every index: a typo like 0,9999 otherwise prints thousands.
+            raise ValueError(
+                f"--subarray-range selects antenna indices {min(out_of_range)}-{max(out_of_range)} "
+                f"outside layout '{layout}', which has {len(allants)} antennas "
+                f"(valid indices 0-{len(allants) - 1})."
+            )
 
         antnames = [allants[i] for i in user_idx]
         antlocations = [all_locations[i] for i in user_idx]

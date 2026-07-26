@@ -1,11 +1,15 @@
+import click
 import numpy as np
 import pytest
 from astropy.coordinates import SkyCoord
 from daskms import xds_from_table
 from scipy.optimize import least_squares
+from shinobi.clickutil import build_options
 
+from simms.apps.telsim import _antenna_selection, telsim
 from simms.telescope import array_utilities
 from simms.telescope.generate_ms import create_ms
+from simms.telescope.layouts import custom_telescopes
 
 from . import InitTest
 
@@ -195,6 +199,48 @@ def test_pointing_table_is_per_antenna_per_time(params):
     assert np.allclose(directions[:, 0], ra0)
     assert np.allclose(directions[:, 1], dec0)
     assert np.allclose(np.asarray(ds_point.TARGET.values), np.asarray(ds_point.DIRECTION.values))
+
+
+def test_subarray_options_accept_comma_separated_and_repeated_forms():
+    # Both antenna-selection options document a comma-separated syntax, and shinobi renders
+    # them as click `multiple=True` options, so the repeated form arrives as a tuple. Accept
+    # both, and flatten to the plain list the layout code expects.
+    assert _antenna_selection(("M000,M005,M010",)) == ["M000", "M005", "M010"]
+    assert _antenna_selection(("M000", "M005")) == ["M000", "M005"]
+    assert _antenna_selection(("0,9",), cast=int) == [0, 9]
+    assert _antenna_selection(("0", "9"), cast=int) == [0, 9]
+    assert _antenna_selection(("0, 9, 2",), cast=int) == [0, 9, 2]
+    # A recipe/cab passing a real YAML list of ints reaches the same place.
+    assert _antenna_selection([0, 9], cast=int) == [0, 9]
+    # Unset (click's empty tuple, or None) stays None so the layout falls back to all antennas.
+    assert _antenna_selection(()) is None
+    assert _antenna_selection(None) is None
+
+
+def test_subarray_range_accepts_comma_separated_indices():
+    # Guards the `list[str | int]` annotation on subarray_range: shinobi picks the click type
+    # from the first int/float/bool/str leaf, so narrowing this to `list[int]` renders an
+    # INTEGER option and click rejects "0,9" before the value reaches _antenna_selection.
+    option = next(opt for opt in build_options(telsim.step.inputs_model) if opt.name == "subarray_range")
+    assert option.multiple
+    assert option.type is click.STRING
+    assert option.type.convert("0,9", None, None) == "0,9"
+
+
+def test_subarray_list_rejects_unknown_antenna_by_name():
+    # A named subarray belongs to --telescope; passing it to -sublist used to raise a bare
+    # KeyError naming only the offending string.
+    with pytest.raises(ValueError, match="Unknown antenna"):
+        custom_telescopes(layout="skamid", subarray_list=["meerkat"])
+    with pytest.raises(ValueError, match="M999"):
+        custom_telescopes(layout="skamid", subarray_list=["M000", "M999"])
+
+
+def test_subarray_range_rejects_out_of_range_indices():
+    with pytest.raises(ValueError, match="outside layout"):
+        custom_telescopes(layout="skamid", subarray_range=[0, 9999])
+    with pytest.raises(ValueError, match="start,end"):
+        custom_telescopes(layout="skamid", subarray_range=[5])
 
 
 def test_antenna_telescope_name(params):
