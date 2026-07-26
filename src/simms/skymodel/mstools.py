@@ -99,9 +99,11 @@ def vis_noise_from_sefd_and_ms(ms: str, sefd: float, spw_id: int = 0, field_id: 
     return noise_vis
 
 
-def sim_noise(dshape: list | tuple, vis_noise: float, dtype: np.dtype = np.complex128) -> np.ndarray:
+def sim_noise(dshape: list | tuple, vis_noise: float, dtype: np.dtype = np.complex128, seed=None) -> np.ndarray:
     """
     Simulate complex Gaussian visibility noise.
+
+    Each of the real and imaginary parts has RMS ``vis_noise``.
 
     Parameters
     ----------
@@ -111,13 +113,23 @@ def sim_noise(dshape: list | tuple, vis_noise: float, dtype: np.dtype = np.compl
         RMS per visibility (Jy).
     dtype : numpy.dtype, optional
         Complex dtype of the output. Default complex128.
+    seed : int, numpy.random.SeedSequence, numpy.random.Generator or None, optional
+        Anything :func:`numpy.random.default_rng` accepts. ``None`` (the default) draws
+        fresh entropy, so the result is **not** reproducible.
+
+        Calling this once per block with the *same integer* seed gives every block an
+        identical noise realisation, which is not what block-wise noise should look like.
+        To get noise that is both reproducible and independent across blocks, build one
+        ``numpy.random.default_rng(seed)`` and pass that same Generator to every call:
+        ``default_rng`` returns a Generator unchanged, so its state advances from block
+        to block.
 
     Returns
     -------
     numpy.ndarray
         Complex noise array of shape ``dshape``.
     """
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed)
     real_dtype = np.finfo(dtype).dtype
     # Draw the real and imaginary parts as one array and reinterpret it as
     # complex, so the noise costs a single allocation of the output size.
@@ -130,9 +142,12 @@ def noise_visibilities(shape, chunks, vis_noise: float, dtype: np.dtype, seed=No
     """
     A lazy array of complex Gaussian visibility noise.
 
-    Reproducible for a given ``seed`` and independent of how ``shape`` is chunked,
-    because it draws through ``dask.array.random``. Each of the real and imaginary
-    parts has RMS ``vis_noise``.
+    Reproducible for a given ``seed`` **at a given chunking**. ``dask.array.random``
+    spawns an independent bit generator per chunk, keyed to that chunk's position in the
+    grid, so rechunking ``shape`` re-keys every block and changes the whole realisation --
+    it is not merely offset. Pin `chunks` alongside `seed` if you need to reproduce a run.
+
+    Each of the real and imaginary parts has RMS ``vis_noise``.
 
     Parameters
     ----------
@@ -157,7 +172,7 @@ def noise_visibilities(shape, chunks, vis_noise: float, dtype: np.dtype, seed=No
     return ((real + 1j * imag) * vis_noise).astype(dtype)
 
 
-def add_noise(vis: np.ndarray, vis_noise: float):
+def add_noise(vis: np.ndarray, vis_noise: float, seed=None):
     """
     Add complex Gaussian noise to visibilities in place.
 
@@ -167,13 +182,16 @@ def add_noise(vis: np.ndarray, vis_noise: float):
         Visibility data.
     vis_noise : float
         RMS per visibility (Jy).
+    seed : optional
+        Passed to :func:`sim_noise`; see the reproducibility note there. ``None`` (the
+        default) draws fresh entropy.
 
     Returns
     -------
     numpy.ndarray
         `vis`, with noise added.
     """
-    vis += sim_noise(vis.shape, vis_noise, dtype=vis.dtype)
+    vis += sim_noise(vis.shape, vis_noise, dtype=vis.dtype, seed=seed)
     return vis
 
 
@@ -240,7 +258,7 @@ class PreparedSky:
         """Number of correlations actually carried through the kernel."""
         return self.bmat.shape[1]
 
-    def select_channels(self, chan_ids: np.ndarray) -> "PreparedSky":
+    def select_channels(self, chan_ids: np.ndarray) -> PreparedSky:
         """Restrict the model to a subset of channels, for channel-chunked prediction."""
         freqs = self.freqs[chan_ids]
         # Advanced-index the chan axis (3); trailing feed/Jones axes are kept as-is, so this
@@ -471,6 +489,7 @@ def predict_block(
     antenna2: np.ndarray = None,
     noise_vis: float | None = None,
     out_dtype: np.dtype = None,
+    seed=None,
 ) -> np.ndarray:
     """
     Predict visibilities for one block of rows.
@@ -485,6 +504,10 @@ def predict_block(
         Time stamp per row. Required if the model contains transient sources.
     noise_vis : float, optional
         RMS noise per visibility (Jy). If provided, noise is added.
+    seed : optional
+        Seed for that noise; see :func:`sim_noise`. ``None`` draws fresh entropy. When
+        looping over blocks, pass one shared ``numpy.random.Generator`` rather than a
+        repeated integer, or every block gets the same realisation.
     out_dtype : numpy.dtype, optional
         Complex dtype to cast the result to. Sources are summed in the (higher)
         precision of ``prepared.bmat``, so a single-precision output column does
@@ -565,7 +588,7 @@ def predict_block(
         vis = stack_unpolarised_vis(vis[..., 0], ncorr)
 
     if noise_vis:
-        vis = add_noise(vis, noise_vis)
+        vis = add_noise(vis, noise_vis, seed=seed)
 
     if out_dtype is not None:
         vis = vis.astype(out_dtype, copy=False)
@@ -585,6 +608,7 @@ def compute_vis(
     noise_vis: float | None = None,
     unique_times: np.ndarray = None,
     dtype: np.dtype = np.complex128,
+    seed=None,
 ):
     """
     Compute model visibilities for an ASCII sky model.
@@ -617,6 +641,8 @@ def compute_vis(
         Phase centre declination (radians).
     noise_vis : float, optional
         RMS noise per visibility (Jy). If provided, noise is added.
+    seed : optional
+        Seed for that noise; see :func:`sim_noise`. ``None`` draws fresh entropy.
     unique_times : numpy.ndarray, optional
         Sorted unique time stamps of the whole observation. Defaults to the
         unique values of `times`, which is only correct when `uvw` covers every
@@ -642,4 +668,4 @@ def compute_vis(
         unique_times=unique_times,
         dtype=dtype,
     )
-    return predict_block(prepared, uvw, times=times, noise_vis=noise_vis)
+    return predict_block(prepared, uvw, times=times, noise_vis=noise_vis, seed=seed)

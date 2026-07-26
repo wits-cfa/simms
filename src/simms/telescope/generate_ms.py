@@ -1,7 +1,6 @@
 import logging
 import os
 import shutil
-from typing import List, Union
 
 import dask
 import dask.array as da
@@ -9,16 +8,15 @@ import daskms
 import numpy as np
 from casacore.measures import measures
 from daskms import xds_to_table
-from omegaconf import OmegaConf
 from scipy import interpolate
 from tqdm.dask import TqdmCallback
 
 from simms import BIN, PCKGDIR
 from simms.constants import PI
 from simms.telescope import array_utilities as autils
-from simms.utilities import get_noise
+from simms.utilities import get_noise, load_yaml
 
-CORR_TYPES = OmegaConf.load(f"{PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
+CORR_TYPES = load_yaml(f"{PCKGDIR}/telescope/ms_corr_types.yaml")["CORR_TYPES"]
 dm = measures()
 
 
@@ -46,25 +44,25 @@ def create_ms(
     pointing_direction: str,
     dtime: int,
     ntimes: int,
-    start_freq: Union[str, float],
-    dfreq: Union[str, float],
+    start_freq: str | float,
+    dfreq: str | float,
     nchan: int,
     correlations: str,
     row_chunks: int,
     sefd: float,
     column: str,
-    smooth: str = None,
-    fit_order: int = None,
-    start_time: Union[str, List[str]] = None,
-    start_ha: float = None,
-    freq_range: str = None,
-    sfile: str = None,
-    tsys_over_eta: float = None,
-    subarray_list: List[str] = None,
-    subarray_range: List[int] = None,
-    subarray_file: str = None,
-    low_source_limit: Union[float, str] = None,
-    high_source_limit: Union[float, str] = None,
+    smooth: str | None = None,
+    fit_order: int | None = None,
+    start_time: str | list[str] | None = None,
+    start_ha: float | None = None,
+    freq_range: str | None = None,
+    sfile: str | None = None,
+    tsys_over_eta: float | None = None,
+    subarray_list: list[str] | None = None,
+    subarray_range: list[int] | None = None,
+    subarray_file: str | None = None,
+    low_source_limit: float | str | None = None,
+    high_source_limit: float | str | None = None,
     telescope_name_column: str = "TELESCOPE_NAME",
 ):
     """Generate a CASA Measurement Set (MS) for a simulated observation.
@@ -172,10 +170,7 @@ def create_ms(
     num_corr = len(correlations)
     corr_types = np.array([[CORR_TYPES[x] for x in correlations]])
     # TODO(sphe) use casacore to determine this
-    if num_corr == 2:
-        corr_products = np.array([([0, 0], [1, 1])])
-    else:
-        corr_products = np.array([([0, 0], [0, 1], [1, 0], [1, 1])])
+    corr_products = np.array([([0, 0], [1, 1])]) if num_corr == 2 else np.array([([0, 0], [0, 1], [1, 0], [1, 1])])
 
     num_ants = antlocation.shape[0]
     ant1 = uvcoverage_data.antenna1 * ntimes
@@ -281,7 +276,7 @@ def create_ms(
                 fit_parms = np.polyfit(x, y, fit_order)
                 fit_func = np.poly1d(fit_parms)
             elif smooth == "spline":
-                sorted_x, sorted_y = zip(*sorted(zip(x, y)))
+                sorted_x, sorted_y = zip(*sorted(zip(x, y, strict=True)), strict=True)
                 fit_parms = interpolate.splrep(sorted_x, sorted_y, s=fit_order)
 
                 def fit_func(freqs):
@@ -296,7 +291,7 @@ def create_ms(
         elif not noise_freqs:
             noise = get_noise(sefd, dtime, dfreq)
 
-            if isinstance(noise, (float, int)):
+            if isinstance(noise, float | int):
                 noisy_data = da.array(dummy_data * noise, like=data).rechunk(chunks=data.chunks)
 
             else:
@@ -385,15 +380,9 @@ def create_ms(
     with TqdmCallback(desc=f"Writing the SPECTRAL_WINDOW table to {ms}"):
         dask.compute(write_spw)
 
-    if isinstance(size, (int, float)):
-        dish_diameter = [size] * num_ants
-    else:
-        dish_diameter = np.array(size)
+    dish_diameter = [size] * num_ants if isinstance(size, int | float) else np.array(size)
 
-    if isinstance(mount, str):
-        ant_mount = [mount] * num_ants
-    else:
-        ant_mount = np.array(mount)
+    ant_mount = [mount] * num_ants if isinstance(mount, str) else np.array(mount)
 
     names = np.array(antnames)
     teltype = ["GROUND_BASED"] * num_ants
@@ -468,14 +457,27 @@ def create_ms(
     with TqdmCallback(desc=f"Writing the POLARIZATION table to {ms}"):
         dask.compute(write_pol)
 
+    # POINTING is keyed by (ANTENNA_ID, TIME) -- one row per antenna per timeslot, not one
+    # row per main-table row. Writing num_rows rows would repeat each pointing nbl/nant times
+    # over and drop every antenna but the first, which is what makes the beam centre in
+    # POINTING.DIRECTION readable for antenna 0 alone.
+    num_pntng_rows = num_ants * ntimes
+    pntng_chunks = min(row_chunks, num_pntng_rows)
+    # Time-major, matching the main table: all antennas at t0, then all antennas at t1, ...
+    pntng_ant_id = np.tile(np.arange(num_ants), ntimes)
+    pntng_times = np.repeat(uvcoverage_data.time_entries, num_ants)
+
     phase_dir_small = da.from_array(phase_dir, chunks=-1)
-    phase_arr = da.broadcast_to(phase_dir_small, (num_rows, 1, 2), chunks=(row_chunks, 1, 2))
+    phase_arr = da.broadcast_to(phase_dir_small, (num_pntng_rows, 1, 2), chunks=(pntng_chunks, 1, 2))
 
     pntng_ds = {
-        "TIME": (("row",), da.from_array(uvcoverage_data.times, chunks=row_chunks)),
-        "INTERVAL": (("row",), da.full(num_rows, dtime, chunks=row_chunks)),
-        "TRACKING": (("row",), da.full(num_rows, True, chunks=row_chunks, dtype=bool)),
+        "ANTENNA_ID": (("row",), da.from_array(pntng_ant_id, chunks=pntng_chunks)),
+        "TIME": (("row",), da.from_array(pntng_times, chunks=pntng_chunks)),
+        "INTERVAL": (("row",), da.full(num_pntng_rows, dtime, chunks=pntng_chunks)),
+        "TRACKING": (("row",), da.full(num_pntng_rows, True, chunks=pntng_chunks, dtype=bool)),
         "DIRECTION": (("row", "point-poly", "radec"), phase_arr),
+        # TARGET is a required MSv2 column; with no pointing offsets it equals DIRECTION.
+        "TARGET": (("row", "point-poly", "radec"), phase_arr),
     }
 
     pntng_table = daskms.Dataset(pntng_ds)

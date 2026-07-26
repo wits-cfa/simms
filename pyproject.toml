@@ -20,14 +20,17 @@ dependencies = [
     "scipy",
     "astropy",
     "tqdm",
-    "click>=8.1.3,<9.0",
+    # 8.3.3 fixes the `click.edit()` advisory; simms never calls it, but the floor is
+    # what a downstream resolver sees, and fitstoolz already requires it.
+    "click>=8.3.3,<9.0",
     "dask-ms[xarray]>=0.2.18,<1.0",
     "ephem>=4.1,<5.0",
     "pydantic>=2.6",
+    "pyyaml>=6.0",
     "stimela-ninja",
     "codex-africanus[complete]>=0.3.7,<1.0",
     "ducc0",
-    "fitstoolz>=0.1.0b3",
+    "fitstoolz>=0.1.0b4",
 ]
 
 [build-system]
@@ -54,10 +57,22 @@ packages = ["src/simms"]
 [project.scripts]
 simms = "simms.apps.main:cli"
 
-# fitstoolz pulls scabha as a transitive pre-release; allow pre-releases so
-# the resolver can pick it (simms no longer depends on scabha directly).
 [tool.uv]
-prerelease = "allow"
+# Pre-releases are allowed only where a requirement explicitly asks for one
+# (fitstoolz>=0.1.0b4, stimela-ninja) or where a package publishes nothing else -- uv's
+# own default, stated here so it is not widened back to "allow". A blanket "allow" put
+# pydantic on a 2.14 alpha and omegaconf on a dev build, at runtime.
+prerelease = "if-necessary-or-explicit"
+
+[tool.uv.sources]
+# The shinobi port of fitstoolz, which drops scabha for stimela-ninja/pydantic -- the same
+# move simms itself made. Not on PyPI yet, so pinned to a commit here.
+#
+# Sourced as a GitHub archive rather than `git = ...` on purpose: uv shells out to the git
+# binary for a git source, and the casa6 image used by the CASA CI job has no git and a
+# broken apt (its KERN PPA has no ca-certificates). A tarball is fetched over plain HTTP,
+# and pins the same commit just as immutably.
+fitstoolz = { url = "https://github.com/shinobi-dosho/fitstoolz/archive/4158d262a5d4f2dc61efa7453f5f2cfea40a1374.tar.gz" }
 
 [project.urls]
 Documentation = "https://simms.readthedocs.io"
@@ -69,7 +84,7 @@ Changelog = "https://github.com/wits-cfa/simms/blob/main/CHANGES.md"
 
 ruff = [
     "pre-commit>=4.3.0",
-    "ruff>=0.12.9",
+    "ruff>=0.15.22,<0.16",  # keep in step with .pre-commit-config.yaml
 ]
 
 tests = [

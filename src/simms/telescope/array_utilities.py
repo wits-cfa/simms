@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from typing import List, Union
 
 import astropy.units as u
 import numpy as np
@@ -8,11 +7,10 @@ import yaml
 from astropy.constants import k_B
 from astropy.time import Time
 from casacore.measures import measures
-from omegaconf import OmegaConf
 
 from simms import BIN, constants
-from simms.telescope.layouts import SIMMS_TELESCOPES, custom_telescopes
-from simms.utilities import ObjDict
+from simms.telescope.layouts import custom_telescopes, resolve_layout
+from simms.utilities import ObjDict, load_yaml
 
 log = logging.getLogger(BIN.telsim)
 
@@ -26,12 +24,12 @@ class Array:
         self,
         layout: str,
         degrees: bool = True,
-        sefd: Union[int, float, List[Union[int, float]]] = None,
-        tsys_over_eta: Union[int, float, List[Union[int, float]]] = None,
-        sensitivity_file: str = None,
-        subarray_list: List[str] = None,
-        subarray_range: List[int] = None,
-        subarray_file: str = None,
+        sefd: int | float | list[int | float] | None = None,
+        tsys_over_eta: int | float | list[int | float] | None = None,
+        sensitivity_file: str | None = None,
+        subarray_list: list[str] | None = None,
+        subarray_range: list[int] | None = None,
+        subarray_file: str | None = None,
     ):
         """
         Initialize the Array.
@@ -63,18 +61,13 @@ class Array:
             log.warning("VLA configuration not specified. Will default to the C configuration (vla-c).")
             layout = "vla-c"
 
-        if layout not in SIMMS_TELESCOPES:
-            fname = str(layout)
-            if fname.EXISTS:
-                self.layout = OmegaConf.load(fname)
-                if "centre" not in self.layout:
-                    centre = calculate_array_centre(self.layout.antlocations)
-                    write_centre_to_array_config(fname, centre)
-                    self.layout.centre = centre
-            else:
-                raise FileNotFoundError(f"Layout file {fname} not found.")
-        else:
-            self.layout = SIMMS_TELESCOPES[layout]
+        self.layout, layout_file = resolve_layout(layout)
+        # A user-supplied layout file need not declare the array centre; derive it and cache it
+        # back into the file. Built-in entries resolve to layout_file=None and are left alone.
+        if layout_file is not None and "centre" not in self.layout:
+            centre = calculate_array_centre(self.layout["antlocations"])
+            write_centre_to_array_config(layout_file, centre)
+            self.layout["centre"] = centre
 
         if subarray_list:
             self.layout = custom_telescopes(layout=layout, subarray_list=subarray_list)
@@ -89,7 +82,7 @@ class Array:
         self.noise_freqs = None
 
         self._set_arrayinfo()
-        if self.layout.coord_sys == "geodetic":
+        if self.layout["coord_sys"] == "geodetic":
             self.set_itrf()
 
     def _set_arrayinfo(self):
@@ -98,14 +91,14 @@ class Array:
         - Set values to SI units
         """
 
-        centre = self.layout.centre
-        xyz = np.array(self.layout.antlocations)
+        centre = self.layout["centre"]
+        xyz = np.array(self.layout["antlocations"])
         nant, ndim = xyz.shape
         self.nant = nant
 
         self.alt0 = 0 if len(centre) == 2 else centre[2]
 
-        if self.layout.coord_sys == "geodetic":
+        if self.layout["coord_sys"] == "geodetic":
             if ndim == 2:
                 xyz = np.hstack(xyz, np.zeros(nant))
             if self.degrees:
@@ -120,7 +113,7 @@ class Array:
 
             self.geodtic_antennas = xyz
 
-        elif self.layout.coord_sys == "itrf":
+        elif self.layout["coord_sys"] == "itrf":
             if ndim == 2:
                 raise RuntimeError("Input antenna ITRF coordinates have 2 coordinates. Three (X,Y,Z) are required.")
             self.lon0, self.lat0, self.alt0 = self.global2geodetic(*centre)
@@ -146,7 +139,7 @@ class Array:
             sefd = self.layout.get("sefd", None)
             self.sefd = sefd
             if self.sensitivity_file:
-                sensitivity_data = OmegaConf.load(self.sensitivity_file)
+                sensitivity_data = load_yaml(self.sensitivity_file)
                 if "sefd" in sensitivity_data:
                     self.sefd = sensitivity_data["sefd"]
 
@@ -155,7 +148,7 @@ class Array:
                 if "freqs" in sensitivity_data:
                     self.noise_freqs = sensitivity_data["freqs"]
 
-            if isinstance(sefd, (float, int)):
+            if isinstance(sefd, float | int):
                 self.sefd = [sefd]
             elif (not isinstance(sefd, str)) and isinstance(sefd, list):
                 self.sefd = sefd
@@ -166,12 +159,11 @@ class Array:
         elif self.tsys_over_eta is None and self.sefd is None:
             tsys_over_eta = self.layout.get("tsys_over_eta", None)
             self.tsys_over_eta = tsys_over_eta
-            if self.sensitivity_file:
-                if "tsys_over_eta" in sensitivity_data and "sefd" not in sensitivity_data:
-                    self.tsys_over_eta = sensitivity_data["tsys_over_eta"]
-                    self.sefd = list(2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
+            if self.sensitivity_file and "tsys_over_eta" in sensitivity_data and "sefd" not in sensitivity_data:
+                self.tsys_over_eta = sensitivity_data["tsys_over_eta"]
+                self.sefd = list(2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
 
-            if isinstance(sefd, (float, int)):
+            if isinstance(sefd, float | int):
                 self.sefd = [sefd]
             elif (not isinstance(sefd, str)) and isinstance(sefd, list):
                 self.sefd = sefd
@@ -379,6 +371,10 @@ class Array:
                 "uvw": uvw,
                 "freqs": freqs,
                 "times": time_table,
+                # The ntimes distinct timestamps, before the per-baseline repeat above.
+                # Subtables indexed by (antenna, time) -- POINTING -- need these, not the
+                # main-table row times.
+                "time_entries": time_entries,
                 "source_elevations": source_elevations,
                 "ra0": ra0,
                 "dec0": dec0,
@@ -387,7 +383,7 @@ class Array:
 
         return uvcoverage
 
-    def get_source_elevation(self, latitude: float, declination: float, hour_angles: List[float]) -> List[float]:
+    def get_source_elevation(self, latitude: float, declination: float, hour_angles: list[float]) -> list[float]:
         """
         Track the source during the observation and get its elevation.
 
@@ -415,7 +411,7 @@ class Array:
         return elevation
 
 
-def calculate_array_centre(ant_locations: List[List[float]]) -> List[float]:
+def calculate_array_centre(ant_locations: list[list[float]]) -> list[float]:
     """
     Calculate the geometric centre of an array given the antenna locations.
 
@@ -436,7 +432,7 @@ def calculate_array_centre(ant_locations: List[List[float]]) -> List[float]:
     return centre.tolist()
 
 
-def write_centre_to_array_config(array_config_path: str, centre: List[float]) -> None:
+def write_centre_to_array_config(array_config_path: str, centre: list[float]) -> None:
     """
     Write the calculated centre to the array configuration YAML file.
 
@@ -447,7 +443,7 @@ def write_centre_to_array_config(array_config_path: str, centre: List[float]) ->
     centre : List[float]
         The [X, Y, Z] coordinates of the geometric centre to write.
     """
-    with open(array_config_path, "r") as f:
+    with open(array_config_path) as f:
         array_info = yaml.safe_load(f)
 
     array_info["centre"] = centre

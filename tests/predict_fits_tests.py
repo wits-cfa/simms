@@ -85,7 +85,7 @@ def brute_force_vis(image, header, uvw, chan_freqs, ncorr, polarisation, linear_
     ``image`` has shape (nstokes, npix_l, npix_m, nchan_model).
     """
     wcs = WCS(header).celestial
-    nstokes, npix_l, npix_m, nchan_model = image.shape
+    _nstokes, _npix_l, _npix_m, nchan_model = image.shape
     nrow, nchan = uvw.shape[0], chan_freqs.size
 
     support = np.abs(image).max(axis=(0, 3)) > 0
@@ -126,6 +126,27 @@ def scattered_image(npix, nsrc, rng, nchan=1, amp=1.0):
     ii, jj = np.unravel_index(idx, (npix, npix))
     img[ii, jj, :] = amp * rng.uniform(0.3, 1.0, (nsrc, 1))
     return img
+
+
+def test_noise_seed_reaches_predict_fits_block(params, uvw):
+    """The FITS predict path added noise from an unseeded RNG, so a run could not be
+    reproduced. Same contract as the ASCII path.
+    """
+    npix, chan_freqs = 64, 1.4e9 + np.arange(2) * 2e7
+    plane = scattered_image(npix, 6, np.random.default_rng(3))
+    header = make_header(npix)
+    path = write_image(params, np.ascontiguousarray(plane[:, :, 0].T), header)
+    prepared = prepare_fits_sky(path, RA0, DEC0, chan_freqs, 2e7, 2, nrow=uvw.shape[0], backend="dft")
+
+    common = dict(uvw=uvw, noise_vis=0.05, epsilon=1e-11)
+    seeded = predict_fits_block(prepared, seed=2, **common)
+    same = predict_fits_block(prepared, seed=2, **common)
+    other = predict_fits_block(prepared, seed=3, **common)
+    unseeded = [predict_fits_block(prepared, **common) for _ in range(2)]
+
+    assert np.array_equal(seeded, same)
+    assert not np.array_equal(seeded, other)
+    assert not np.array_equal(*unseeded)
 
 
 # --------------------------------------------------------------------------- the core bug

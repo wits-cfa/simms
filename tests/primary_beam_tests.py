@@ -2,13 +2,13 @@
 
 import logging
 import os
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 from daskms import xds_from_table
-from omegaconf import OmegaConf
 
 from simms.apps import primary_beam
 from simms.skymodel.beams import CosineTaperBeam, FitsBeamProvider, JimBeamProvider
@@ -50,7 +50,7 @@ def _opts(mode, **over):
         "log_level": "CRITICAL",
     }
     base.update(over)
-    return OmegaConf.create(base)
+    return SimpleNamespace(**base)
 
 
 class _Fixtures(InitTest):
@@ -380,12 +380,13 @@ def test_apply_then_correct_ascii_is_identity(fx):
 
 def _read_ascii_flux(path, delimiter=None):
     flux = {}
-    for ln in open(path):
-        s = ln.strip()
-        if not s or s.startswith("#"):
-            continue
-        f = s.split(delimiter)
-        flux[f[0]] = float(f[3])  # name ra dec stokes_i
+    with open(path) as fh:
+        for ln in fh:
+            s = ln.strip()
+            if not s or s.startswith("#"):
+                continue
+            f = s.split(delimiter)
+            flux[f[0]] = float(f[3])  # name ra dec stokes_i
     return flux
 
 

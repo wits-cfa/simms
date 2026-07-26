@@ -1,11 +1,18 @@
+import os
+import shutil
+
+import click
 import numpy as np
 import pytest
 from astropy.coordinates import SkyCoord
 from daskms import xds_from_table
 from scipy.optimize import least_squares
+from shinobi.clickutil import build_options
 
-from simms.telescope import array_utilities
+from simms.apps.telsim import _antenna_selection, telsim
+from simms.telescope import array_utilities, layouts
 from simms.telescope.generate_ms import create_ms
+from simms.telescope.layouts import custom_telescopes
 
 from . import InitTest
 
@@ -154,15 +161,6 @@ def test_visdata_configuration_info(params):
     tel_nbl = params.nant * (params.nant - 1) // 2
     assert np.isclose(nbl, tel_nbl)
 
-    ds_point = xds_from_table(f"{params.ms}::POINTING")[0]
-    direction = ds_point.DIRECTION.values[0][0]
-
-    orig_direction = SkyCoord(*params.direction[1:])
-    ra0 = orig_direction.ra.to("rad").value
-    dec0 = orig_direction.dec.to("rad").value
-    assert np.isclose(direction[0], ra0)
-    assert np.isclose(direction[1], dec0)
-
     ds_pol = xds_from_table(f"{params.ms}::POLARIZATION")[0]
     corr = ds_pol.CORR_TYPE.values[0]
     assert np.isclose(corr[0], 9)
@@ -173,6 +171,114 @@ def test_visdata_configuration_info(params):
     size = ds_ant.DISH_DIAMETER.values[0]
     assert mount == "ALT-AZ"
     assert np.isclose(size, 12)
+
+
+def test_pointing_table_is_per_antenna_per_time(params):
+    # POINTING is keyed by (ANTENNA_ID, TIME): nant x ntime rows, not one row per
+    # main-table row. Getting this wrong repeats each pointing nbl/nant times and leaves
+    # every antenna but the first without a pointing record, so the beam centre that
+    # skysim reads from POINTING.DIRECTION is only defined for antenna 0.
+    ds = xds_from_table(params.ms)[0]
+    ds_point = xds_from_table(f"{params.ms}::POINTING")[0]
+
+    main_times = np.unique(ds.TIME.values)
+    ntime = main_times.shape[0]
+    assert ds_point.sizes["row"] == params.nant * ntime
+
+    ant_ids = np.asarray(ds_point.ANTENNA_ID.values)
+    assert set(ant_ids.tolist()) == set(range(params.nant))
+
+    # Exactly one record per (antenna, timestamp) pair, over the main table's timestamps.
+    pnt_times = np.asarray(ds_point.TIME.values)
+    assert np.array_equal(np.unique(pnt_times), main_times)
+    keys = set(zip(ant_ids.tolist(), pnt_times.tolist(), strict=True))
+    assert len(keys) == ds_point.sizes["row"]
+
+    # Every antenna points at the field centre, and TARGET (required by MSv2) agrees.
+    orig_direction = SkyCoord(*params.direction[1:])
+    ra0 = orig_direction.ra.to("rad").value
+    dec0 = orig_direction.dec.to("rad").value
+    directions = np.asarray(ds_point.DIRECTION.values)[:, 0, :]
+    assert np.allclose(directions[:, 0], ra0)
+    assert np.allclose(directions[:, 1], dec0)
+    assert np.allclose(np.asarray(ds_point.TARGET.values), np.asarray(ds_point.DIRECTION.values))
+
+
+def test_subarray_options_accept_comma_separated_and_repeated_forms():
+    # Both antenna-selection options document a comma-separated syntax, and shinobi renders
+    # them as click `multiple=True` options, so the repeated form arrives as a tuple. Accept
+    # both, and flatten to the plain list the layout code expects.
+    assert _antenna_selection(("M000,M005,M010",)) == ["M000", "M005", "M010"]
+    assert _antenna_selection(("M000", "M005")) == ["M000", "M005"]
+    assert _antenna_selection(("0,9",), cast=int) == [0, 9]
+    assert _antenna_selection(("0", "9"), cast=int) == [0, 9]
+    assert _antenna_selection(("0, 9, 2",), cast=int) == [0, 9, 2]
+    # A recipe/cab passing a real YAML list of ints reaches the same place.
+    assert _antenna_selection([0, 9], cast=int) == [0, 9]
+    # Unset (click's empty tuple, or None) stays None so the layout falls back to all antennas.
+    assert _antenna_selection(()) is None
+    assert _antenna_selection(None) is None
+
+
+def test_subarray_range_accepts_comma_separated_indices():
+    # Guards the `list[str | int]` annotation on subarray_range: shinobi picks the click type
+    # from the first int/float/bool/str leaf, so narrowing this to `list[int]` renders an
+    # INTEGER option and click rejects "0,9" before the value reaches _antenna_selection.
+    option = next(opt for opt in build_options(telsim.step.inputs_model) if opt.name == "subarray_range")
+    assert option.multiple
+    assert option.type is click.STRING
+    assert option.type.convert("0,9", None, None) == "0,9"
+
+
+@pytest.mark.parametrize(
+    "layout,kwargs,expect",
+    [
+        # A named subarray has no layout file of its own, so subarray selection on top of one
+        # used to fail with a missing <name>.geodetic.yaml.
+        ("meerkat", {"subarray_range": [0, 9]}, 10),
+        ("meerkat", {"subarray_list": ["M000", "M005"]}, 2),
+        ("skamid-aa1", {"subarray_range": [0, 3]}, 4),
+        # A plain built-in layout keeps working.
+        ("skamid", {"subarray_range": [0, 9]}, 10),
+    ],
+)
+def test_subarray_selection_on_named_subarrays(layout, kwargs, expect):
+    array = array_utilities.Array(layout=layout, **kwargs)
+    assert len(array.layout["antnames"]) == expect
+
+
+def test_layout_accepts_a_user_supplied_file(params):
+    # Layout resolution used to reach for a scabha `File.EXISTS` attribute that a plain str
+    # does not have, so passing a layout by path raised AttributeError before reading anything.
+    path = params.random_named_file(suffix=".yaml")
+    shutil.copy(os.path.join(os.path.dirname(layouts.__file__), "kat-7.geodetic.yaml"), path)
+
+    array = array_utilities.Array(layout=path)
+    assert len(array.layout["antnames"]) == params.nant
+
+    array = array_utilities.Array(layout=path, subarray_range=[0, 2])
+    assert len(array.layout["antnames"]) == 3
+
+
+def test_unknown_layout_names_the_known_telescopes():
+    with pytest.raises(FileNotFoundError, match="neither a known telescope nor an existing layout file"):
+        array_utilities.Array(layout="/no/such/layout.yaml")
+
+
+def test_subarray_list_rejects_unknown_antenna_by_name():
+    # A named subarray belongs to --telescope; passing it to -sublist used to raise a bare
+    # KeyError naming only the offending string.
+    with pytest.raises(ValueError, match="Unknown antenna"):
+        custom_telescopes(layout="skamid", subarray_list=["meerkat"])
+    with pytest.raises(ValueError, match="M999"):
+        custom_telescopes(layout="skamid", subarray_list=["M000", "M999"])
+
+
+def test_subarray_range_rejects_out_of_range_indices():
+    with pytest.raises(ValueError, match="outside layout"):
+        custom_telescopes(layout="skamid", subarray_range=[0, 9999])
+    with pytest.raises(ValueError, match="start,end"):
+        custom_telescopes(layout="skamid", subarray_range=[5])
 
 
 def test_antenna_telescope_name(params):
@@ -235,7 +341,7 @@ def check_circle_or_ellipse(u, v):
 
     initial_guess = [1, 0, 1, 0, 0, -(mean_distance**2)]
     result = least_squares(residuals, initial_guess, args=(u, v))
-    a, b, c, d, e, f = result.x
+    a, b, c, _d, _e, _f = result.x  # conic coefficients; only the quadratic terms are tested
 
     discriminant = b**2 - 4 * a * c
     is_circle = abs(a - c) < 0.01 * abs(a) and abs(b) < 0.01 * abs(a)

@@ -23,6 +23,41 @@ class RemoveMSIfChained(click.Command):
         return super().make_parser(ctx)
 
 
+# Long-flag aliases, keyed by subcommand and field name.
+#
+# telsim predates skysim and primary-beam and spells three shared concepts differently:
+# --rowchunks vs --row-chunks, --startfreq vs --start-freq, --dfreq vs --chan-width. Renaming
+# either side would break existing scripts and Stimela recipes, and telsim's spellings are
+# internally symmetric (--startfreq/--starttime, --dfreq/--dtime), so neither side is simply
+# wrong. Each spelling is instead accepted on both commands and resolves to the same field, so
+# a flag that works on one subcommand is never rejected by another. `--help` lists both.
+FLAG_ALIASES = {
+    "telsim": {
+        "rowchunks": "--row-chunks",
+        "startfreq": "--start-freq",
+        "dfreq": "--chan-width",
+    },
+    "skysim": {
+        "row_chunks": "--rowchunks",
+    },
+    "primary-beam": {
+        "start_freq": "--startfreq",
+        "chan_width": "--dfreq",
+    },
+}
+
+
+def _add_alias(opt, alias):
+    """Add a second long flag to an already-built click Option.
+
+    click's parser reads `Parameter.opts` when the command is invoked, while the callback
+    kwarg name was derived from the primary flag at construction, so appending here adds a
+    spelling without touching the round-trip back to the model field.
+    """
+    if alias not in opt.opts:
+        opt.opts.append(alias)
+
+
 def _make_command(step, *, positional, chained, extra_options=()):
     """Build a `click.Command` for a `@shinobi.pystep` StepRef.
 
@@ -30,11 +65,17 @@ def _make_command(step, *, positional, chained, extra_options=()):
     ``build_options`` (choices, abbreviations, bool/list handling). The
     ``log_level`` field is dropped -- the root group's ``--log-level``
     controls it -- and the ``positional`` field is rendered as a
-    ``click.Argument`` (build_options only emits ``--options``). The
+    ``click.Argument`` (build_options only emits ``--options``), and any
+    field in ``FLAG_ALIASES`` gains a second long flag. The
     callback re-nests the flat kwargs and dispatches the step in-process
     via shinobi, exactly as ``shinobi.cli``'s ``run`` command does.
     """
     options = [opt for opt in build_options(step.step.inputs_model) if opt.name != "log_level"]
+
+    aliases = FLAG_ALIASES.get(step.step.name, {})
+    for opt in options:
+        if opt.name in aliases:
+            _add_alias(opt, aliases[opt.name])
 
     params = list(extra_options)
     for opt in options:

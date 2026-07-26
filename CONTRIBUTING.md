@@ -81,10 +81,10 @@ uv sync --group docs
 uv run sphinx-build -b html docs docs/_build/html
 ```
 
-Please update the docs when you change public API. If you add a
-documentation dependency, keep `docs/requirements.txt` in sync with the
-`docs` dependency group in `pyproject.toml` (Read the Docs installs from the
-former).
+Please update the docs when you change public API. Documentation dependencies
+live in the `docs` dependency group in `pyproject.toml` and nowhere else: Read
+the Docs builds from `uv.lock` via that group, so adding one there is all that
+is needed.
 
 ## Pull requests
 

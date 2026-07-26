@@ -4,7 +4,6 @@ import os
 import numpy as np
 import pytest
 from astropy.coordinates import Angle, Latitude, Longitude
-from omegaconf import OmegaConf
 
 from simms.exceptions import ASCIISkymodelError, ASCIISourceError
 from simms.skymodel.ascii_skies import (
@@ -13,6 +12,7 @@ from simms.skymodel.ascii_skies import (
     ASCIISourceSchema,
 )
 from simms.skymodel.source_factory import SourceType
+from simms.utilities import load_yaml
 
 from . import InitTest
 
@@ -40,7 +40,7 @@ def load_default_schema() -> ASCIISourceSchema:
     from simms import SCHEMADIR
 
     schema_path = os.path.join(SCHEMADIR, "source_schema.yaml")
-    schema = ASCIISourceSchema(**OmegaConf.load(schema_path))
+    schema = ASCIISourceSchema(**load_yaml(schema_path))
     return schema
 
 

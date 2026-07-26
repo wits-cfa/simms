@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -10,9 +11,9 @@ from simms.exceptions import ASCIISourceError
 @dataclass
 class SourceType:
     name: str
-    required: List[str] = field(default_factory=list)
+    required: list[str] = field(default_factory=list)
     inherit: Any = None
-    surplus: List[str] = field(default_factory=list)
+    surplus: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         parent = getattr(self, "inherit", None)
@@ -33,7 +34,7 @@ class SourceType:
         for conds in self.cond_reqs:
             self.cond_req_groups.append(conds.split("|"))
 
-    def is_valid(self, fields: List[str], raise_exception: bool = False, none_or_all: bool = False):
+    def is_valid(self, fields: list[str], raise_exception: bool = False, none_or_all: bool = False):
         # this removes fields that are in abs_reqs
         missing_abs_req = list(set(self.abs_reqs) - set(fields))
         fields_no_abs_reqs = set(fields) - set(self.abs_reqs)
@@ -54,9 +55,7 @@ class SourceType:
             own_fields = set()
             for item in self.required_no_parent + (self.surplus or []):
                 own_fields.update(item.split("|"))
-            if raise_exception:
-                raise ASCIISourceError(error_message)
-            elif none_or_all and own_fields.intersection(fields):
+            if raise_exception or (none_or_all and own_fields.intersection(fields)):
                 raise ASCIISourceError(error_message)
             else:
                 return False
@@ -115,8 +114,8 @@ class StokesData:
         (I, V, Q, U). Default is True.
     """
 
-    data: List[int] | np.ndarray
-    linear_basis: Optional[bool] = True
+    data: list[int] | np.ndarray
+    linear_basis: bool | None = True
 
     def __post_init__(self):
         self.data = np.array(self.data) if not isinstance(self.data, np.ndarray) else self.data
@@ -268,7 +267,7 @@ class StokesData:
         return any([self.Q, self.U, self.V])
 
 
-def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | List, nu_ref: float):
+def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | list, nu_ref: float):
     """
     Continuum (power-law) spectral profile.
 
@@ -299,7 +298,7 @@ def contspec(freqs: np.ndarray, flux: float, coeff: float | np.ndarray | List, n
             # Polynomial at the array gives the exponent per channel.
             poly_pow = np.polynomial.Polynomial(np.asarray(coeff))(np.log(nu_ratio))
         else:
-            poly_pow = np.ravel(coeff)[0] if isinstance(coeff, (list, np.ndarray)) else coeff
+            poly_pow = np.ravel(coeff)[0] if isinstance(coeff, list | np.ndarray) else coeff
         return flux * nu_ratio**poly_pow
     else:
         return flux * np.ones_like(freqs)

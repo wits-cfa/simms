@@ -1,4 +1,4 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# This workflow installs the locked dependency set and runs the tests.
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
 name: CI tests
@@ -12,24 +12,89 @@ on:
 permissions:
   contents: read
 
+env:
+  # Pin the resolver as well as what it resolves: uv itself picks the Python and reads the
+  # lock, so leaving it floating would leave a moving part in a workflow whose whole point
+  # is that it does not move.
+  UV_VERSION: "0.11.21"
+  # The version the lint and the CASA job run on. The test matrix below covers the whole
+  # supported range; linting three times would only report the same findings three times.
+  PYTHON_VERSION: "3.12"
+
+# Both jobs install from uv.lock with `uv sync --locked`, which fails rather than
+# re-resolving if the lock has drifted from pyproject.toml. That is deliberate: simms'
+# numbers must be reproducible, and an unpinned transitive bump (numpy, astropy, ducc0)
+# could otherwise change results silently between two runs of the same commit. A
+# dependency change is therefore only in effect once `uv lock` has been run and the
+# updated lock committed alongside it.
 jobs:
   build:
 
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        # The whole range `requires-python` claims. uv.lock is a universal resolution, so
+        # every version installs the same pinned set -- the matrix tests that simms runs on
+        # each interpreter, not that each resolves differently.
+        python-version: ["3.11", "3.12", "3.13"]
+
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       with:
-        python-version: "3.12"
-    - name: Install dependencies
+        version: ${{ env.UV_VERSION }}
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+    - name: Install locked dependencies
+      run: uv sync --locked --no-default-groups --group tests --python ${{ matrix.python-version }}
+    - name: Lint
+      if: matrix.python-version == '3.12'
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install .
-        python -m pip install --group tests
+        uv run --no-sync ruff check src tests
+        uv run --no-sync ruff format --check src tests
     - name: Unit tests
+      run: uv run --no-sync pytest tests/
+    - name: Smoke test CLI
       run: |
-        pytest tests/
+        uv run --no-sync simms telsim --help
+        uv run --no-sync simms skysim --help
+        uv run --no-sync simms primary-beam --help
 
+  # The CASA round-trip (telsim MS -> tclean PSF -> skysim -> tclean image) is the only
+  # test that checks a simms MS against the tooling users actually run; it is what caught
+  # the undefined SPECTRAL_WINDOW.MEAS_FREQ_REF that made tclean fail. It cannot run in the
+  # job above: casatasks needs CASA's measures/ephemeris tables, and on a bare runner
+  # casaconfig refuses to populate an empty ~/.casa/data ("path must exist as a directory
+  # and it must be owned by the user"), so the test fails rather than skips.
+  #
+  # The dosho casa6 image is used *only* for that baked data: /opt/casa/data, with
+  # measures_auto_update and data_auto_update off via the CASASITECONFIG the image sets.
+  # Every Python dependency still comes from uv.lock, exactly as in the job above, so the
+  # two jobs run the same environment. Installing into uv's own venv also keeps the
+  # image's apt python3-casacore -- built against Debian's numpy 1.26, and a source of
+  # "PycArray: failed to load the numpy API" once a newer numpy shadows it -- off the path
+  # entirely.
+  casa-roundtrip:
 
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/shinobi-dosho/casa6:6.7-d0.1.0
+
+    steps:
+    # The image has no git, so checkout falls back to the REST API tarball. That is fine --
+    # nothing here needs history, and fitstoolz is pinned as an archive URL rather than a
+    # git source precisely so `uv sync` needs no git binary either (see [tool.uv.sources]).
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      with:
+        version: ${{ env.UV_VERSION }}
+        python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+    - name: Install locked dependencies
+      run: uv sync --locked --no-default-groups --group tests --group casa
+    - name: CASA round-trip
+      run: uv run --no-sync pytest tests/casa_roundtrip_tests.py -v

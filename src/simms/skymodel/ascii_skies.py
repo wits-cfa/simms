@@ -1,6 +1,6 @@
 import os.path
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import astropy.units as aunits
 import numpy as np
@@ -10,7 +10,6 @@ from astropy.coordinates import (
     Longitude,
     SpectralCoord,
 )
-from omegaconf import OmegaConf
 
 from simms import SCHEMADIR
 from simms.exceptions import (
@@ -29,7 +28,7 @@ from simms.skymodel.source_factory import (
     point_source,
     polarised_source,
 )
-from simms.utilities import ObjDict, quantity_to_value
+from simms.utilities import ObjDict, load_yaml, quantity_to_value
 
 DEFAULT_SOURCE_SCHEMA = os.path.join(SCHEMADIR, "source_schema.yaml")
 
@@ -48,13 +47,13 @@ PTYPE_MAPPER = {
 
 @dataclass
 class SkymodelParameter:
-    info: Optional[str] = None
-    units: Optional[str] = None
-    alias: Optional[str] = None
-    ptype: Optional[str] = "number"
-    frame: Optional[str] = None
-    required: Optional[bool] = False
-    join: Optional[List[str]] = None
+    info: str | None = None
+    units: str | None = None
+    alias: str | None = None
+    ptype: str | None = "number"
+    frame: str | None = None
+    required: bool | None = False
+    join: list[str] | None = None
     value: Any = None
 
     def set_value(self, value: str | float | int):
@@ -85,17 +84,16 @@ class SkymodelParameter:
 @dataclass
 class ASCIISourceSchema:
     info: str
-    parameters: Dict[str, SkymodelParameter]
+    parameters: dict[str, SkymodelParameter]
 
     def __post_init__(self):
-        # Filling in the dataclass defaults via OmegaConf.merge deep-copies the
-        # whole config, so it is done once for the schema and the resulting
-        # parameters are shared by every source. They are only used as scratch
-        # converters: set_source_param copies the converted value onto the source.
-        param_struct = OmegaConf.structured(SkymodelParameter)
-        self.parameters = ObjDict(
-            {key: SkymodelParameter(**OmegaConf.merge(param_struct, val)) for key, val in self.parameters.items()}
-        )
+        # SkymodelParameter is a dataclass whose every field has a default, so constructing
+        # it from a partial schema entry fills the rest in -- which is all the OmegaConf
+        # structured-merge this replaced was doing, minus a deep copy of the whole config.
+        # An unknown key now raises TypeError here rather than being merged in silently.
+        # These are shared scratch converters: set_source_param copies the converted value
+        # onto the source.
+        self.parameters = ObjDict({key: SkymodelParameter(**val) for key, val in self.parameters.items()})
 
 
 @dataclass
@@ -144,13 +142,13 @@ class ASCIISource:
         self.existing_fields.append(field)
 
     def alias_to_field_mapper(self):
-        mapper = OmegaConf.create({})
+        mapper = {}
         for key, val in self.schema.parameters.items():
             mapper[getattr(val, "alias", None) or key] = key
         return mapper
 
     def field_to_alias_mapper(self):
-        mapper = OmegaConf.create({})
+        mapper = {}
         for key, val in self.schema.parameters.items():
             mapper[key] = getattr(val, "alias", None) or key
         return mapper
@@ -215,7 +213,7 @@ class ASCIISource:
                 except ValueError as exc:
                     raise ASCIISourceError(
                         f"Cannot parse field '{field}' from its components {join_us} (joined as '{sexagesimal}'): {exc}"
-                    )
+                    ) from exc
                 setattr(self, field, joined)
 
     def value_or_default(self, field: str) -> int | float | str:
@@ -314,7 +312,7 @@ class ASCIISource:
 
         return bmatrix
 
-    def continuum_coefficients(self) -> List[float]:
+    def continuum_coefficients(self) -> list[float]:
         """
         Continuum polynomial coefficients, highest unset orders dropped.
 
@@ -380,11 +378,11 @@ class ASCIISkymodel:
     skymodel_file: str
     delimiter: str = None
     source_schema_file: str = None
-    sources: List[ASCIISource] = None
+    sources: list[ASCIISource] = None
 
     def __post_init__(self):
         self.source_schema_file = self.source_schema_file or DEFAULT_SOURCE_SCHEMA
-        schema = OmegaConf.load(self.source_schema_file)
+        schema = load_yaml(self.source_schema_file)
         self.schema = ASCIISourceSchema(**schema)
         sources = []
 
@@ -410,7 +408,7 @@ class ASCIISkymodel:
             try:
                 point_source.is_valid(fields=[alias_to_field[key] for key in header], raise_exception=True)
             except ASCIISourceError as exc:
-                raise ASCIISkymodelError(f"ASCII Sky model file header is missig required fields: {exc}")
+                raise ASCIISkymodelError(f"ASCII Sky model file header is missig required fields: {exc}") from exc
 
             for counter, line in enumerate(stdr.readlines()):
                 # skip lines that are commented
@@ -429,7 +427,7 @@ class ASCIISkymodel:
                     )
 
                 source = ASCIISource(self.schema)
-                for param, value in zip(header, rowdata):
+                for param, value in zip(header, rowdata, strict=True):
                     source.set_source_param(alias_to_field[param], value)
                 # source has been fully set, finalise and add it to rest of the sources
                 source.finalise()

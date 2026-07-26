@@ -10,11 +10,13 @@ Four modes, none of which run a visibility simulation:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 import numpy as np
 
 from simms import BIN
+from simms.utilities import load_yaml
 
 log = logging.getLogger(BIN.primary_beam)
 
@@ -141,9 +143,7 @@ def _resolve_labels(opts, names):
     if opts.label:
         return [str(opts.label)] * nant
     if opts.label_map:
-        from omegaconf import OmegaConf
-
-        mapping = OmegaConf.to_container(OmegaConf.load(opts.label_map), resolve=True)
+        mapping = load_yaml(opts.label_map)
         missing = [n for n in names if n not in mapping]
         if missing:
             raise RuntimeError(f"--label-map has no entry for antennas: {missing[:5]}")
@@ -152,7 +152,7 @@ def _resolve_labels(opts, names):
         from simms.telescope.array_utilities import Array
 
         arr = Array(opts.from_layout)
-        layout = dict(zip([str(x) for x in arr.names], [str(x) for x in arr.telescope_name]))
+        layout = dict(zip([str(x) for x in arr.names], [str(x) for x in arr.telescope_name], strict=True))
         missing = [n for n in names if n not in layout]
         if missing:
             raise RuntimeError(
@@ -226,7 +226,7 @@ def apply_correct_image(opts, invert):
     A = A.reshape(npix_dec, npix_ra)
 
     if invert:
-        safe = np.where(A < opts.pb_cutoff, np.nan, A)  # blank where the beam is negligible
+        safe = np.where(opts.pb_cutoff > A, np.nan, A)  # blank where the beam is negligible
         result = data / safe
     else:
         result = data * A
@@ -252,7 +252,8 @@ def apply_correct_ascii(opts, invert):
     # formatting, comments and unknown columns) rather than reserialising. Each parsed source
     # carries its line index (source.lineno) -- the single source of truth for which line it
     # came from -- so we never re-implement the comment/blank-line skipping here.
-    lines = open(opts.ascii_sky).read().splitlines()
+    with open(opts.ascii_sky) as fh:
+        lines = fh.read().splitlines()
     cols = lines[0].replace("#format:", "").strip().split(sky.delimiter)
     # The header holds column aliases when a custom schema renames them; map each
     # column back to its schema field before looking for the stokes columns.
@@ -270,10 +271,9 @@ def apply_correct_ascii(opts, invert):
         fields = lines[source.lineno].split(sky.delimiter)
         for idx in stokes_idx:
             if idx < len(fields) and fields[idx].lower() not in ("null", "none", ""):
-                try:
+                # A non-numeric Stokes field is left exactly as written.
+                with contextlib.suppress(ValueError):
                     fields[idx] = f"{float(fields[idx]) * factor:.8g}"
-                except ValueError:
-                    pass
         lines[source.lineno] = (sky.delimiter or " ").join(fields)
 
     out_lines = [ln for i, ln in enumerate(lines) if i not in dropped]

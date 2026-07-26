@@ -5,11 +5,29 @@ target-version = "py311"
 [lint]
 extend-select = [
     "E501",  # Line length
-    "I"      # isort - sort imports
+    "I",     # isort - sort imports
+    "UP",    # pyupgrade - modern syntax for the target-version above
+    "B",     # flake8-bugbear - likely bugs, not style
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff's own rules
 ]
 
 [lint.pycodestyle]
 max-line-length = 120
+
+[lint.per-file-ignores]
+# RUF046 reads `int(round(x))` as a redundant cast, which holds only for numpy >= 2:
+# numpy 1.x's float64.__round__ returned a float64, and indexing an array with one
+# raises. Nothing pins numpy below 2 here (numba only asks for >= 1.22), so the cast
+# stays -- it is correct under both majors and costs nothing.
+"tests/primary_beam_tests.py" = ["RUF046"]
+
+[lint.flake8-bugbear]
+# Calling pydantic's `Field()` in a parameter default is the idiom the whole CLI is
+# built on -- every option in apps/*.py is declared that way, and shinobi reads those
+# FieldInfo objects to generate the click options. It is not the mutable-default bug
+# B008 is looking for.
+extend-immutable-calls = ["pydantic.Field"]
 
 [format]
 line-ending = "lf"

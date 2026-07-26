@@ -74,7 +74,7 @@ def write_flat_image(params, pixels=PIXELS, nstokes=1, stokes_values=None):
             data[idec, ira] = flux
     else:
         data = np.zeros((nstokes, NPIX, NPIX), dtype=np.float64)
-        for (ira, idec, _), values in zip(pixels, stokes_values):
+        for (ira, idec, _), values in zip(pixels, stokes_values, strict=True):
             data[:, idec, ira] = values
     header = make_header(NPIX, nstokes=nstokes, nchan=1, cell=CELL_DEG)
     path = params.random_named_file(suffix=".fits")
@@ -618,7 +618,7 @@ def test_product_cache_is_neutral(params, monkeypatch):
 
 def test_memory_ceiling_raises_and_names_the_escape(params):
     """The voltage-map cache ceiling fails loudly, naming the mode that has none."""
-    times, antenna1, antenna2, uvw, duration = observation(seed=29)
+    _times, _antenna1, _antenna2, uvw, duration = observation(seed=29)
     providers, ant_type, type_is_altaz = hetero_beams()
     freqs = np.array([1.40e9, 1.42e9])
     path = write_flat_image(params)
@@ -639,7 +639,7 @@ def test_memory_ceiling_raises_and_names_the_escape(params):
 
 def test_aterm_rejects_circular_basis_model(params):
     """A circular-basis sky must be refused, not silently given wrong cross-hands."""
-    times, antenna1, antenna2, uvw, duration = observation(seed=31)
+    _times, _antenna1, _antenna2, uvw, duration = observation(seed=31)
     providers, ant_type, type_is_altaz = hetero_beams()
     freqs = np.array([1.40e9, 1.42e9])
     path = write_flat_image(params)
