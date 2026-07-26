@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from typing import List, Optional, Union
 
 import numpy as np
 from astropy import units
@@ -128,22 +127,22 @@ class PreparedFitsSky:
     # FFT and perchan backends: real Stokes planes,
     # (nstokes, npix_l, npix_m, nchan_model). FLAT and POLY store one plane, at
     # the reference frequency; CUBE (and hence perchan) stores the whole MS grid.
-    planes: Optional[np.ndarray] = None
-    stokes_names: Optional[List[str]] = None
-    grid: Optional[FitsGrid] = None
+    planes: np.ndarray | None = None
+    stokes_names: list[str] | None = None
+    grid: FitsGrid | None = None
     tol: float = 1e-7  # perchan: per-channel component threshold (Jy)
 
     # DFT backend: brightness per correlation, (ncomp, nspec, nchan)
-    lmn: Optional[np.ndarray] = None
-    bmat: Optional[np.ndarray] = None
+    lmn: np.ndarray | None = None
+    bmat: np.ndarray | None = None
     uniform_freqs: bool = True
 
     # A-term correction (gridder backends): per-antenna primary beams applied in
     # the image domain (see simms.skymodel.aterms). ``chan_ids`` are the global
     # channel indices of a channel-chunked block, which the a-term model needs
     # to place the block's channels on its frequency-knot grid.
-    aterm: Optional[object] = None
-    chan_ids: Optional[np.ndarray] = None
+    aterm: object | None = None
+    chan_ids: np.ndarray | None = None
 
     @property
     def nspec(self) -> int:
@@ -154,7 +153,7 @@ class PreparedFitsSky:
         """True when one image serves every channel, so the gridder runs once."""
         return self.spectrum.kind is SpectralKind.FLAT
 
-    def select_channels(self, chan_ids: np.ndarray) -> "PreparedFitsSky":
+    def select_channels(self, chan_ids: np.ndarray) -> PreparedFitsSky:
         """Restrict the model to a subset of channels, for channel-chunked prediction.
 
         The reference image and the spectral coefficients are channel-independent,
@@ -458,7 +457,7 @@ def stokes_to_correlations(get, ncorr: int, polarisation: bool, linear_basis: bo
     return [corrs[0], corrs[3]] if ncorr == 2 else corrs
 
 
-def _stokes_getter(planes: np.ndarray, names: List[str]):
+def _stokes_getter(planes: np.ndarray, names: list[str]):
     index = {name: k for k, name in enumerate(names)}
 
     def get(name):
@@ -554,7 +553,7 @@ def _interpolate_spectrum(cube, fits_freqs, chan_freqs, method):
 
 
 def prepare_fits_sky(
-    input_fitsimages: Union[str, List[str]],
+    input_fitsimages: str | list[str],
     ra0: float,
     dec0: float,
     chan_freqs: np.ndarray,
@@ -566,8 +565,8 @@ def prepare_fits_sky(
     tol: float = 1e-7,
     backend: str = "auto",
     spectrum: str = "auto",
-    spi_maps: Optional[List[str]] = None,
-    ref_freq: Optional[float] = None,
+    spi_maps: list[str] | None = None,
+    ref_freq: float | None = None,
     spectrum_order: int = 2,
     spectrum_tol: float = DEFAULT_FIT_TOLERANCE,
     interpolation: str = "linear",

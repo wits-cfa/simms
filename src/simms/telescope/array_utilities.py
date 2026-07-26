@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from typing import List, Union
 
 import astropy.units as u
 import numpy as np
@@ -26,12 +25,12 @@ class Array:
         self,
         layout: str,
         degrees: bool = True,
-        sefd: Union[int, float, List[Union[int, float]]] = None,
-        tsys_over_eta: Union[int, float, List[Union[int, float]]] = None,
-        sensitivity_file: str = None,
-        subarray_list: List[str] = None,
-        subarray_range: List[int] = None,
-        subarray_file: str = None,
+        sefd: int | float | list[int | float] | None = None,
+        tsys_over_eta: int | float | list[int | float] | None = None,
+        sensitivity_file: str | None = None,
+        subarray_list: list[str] | None = None,
+        subarray_range: list[int] | None = None,
+        subarray_file: str | None = None,
     ):
         """
         Initialize the Array.
@@ -150,7 +149,7 @@ class Array:
                 if "freqs" in sensitivity_data:
                     self.noise_freqs = sensitivity_data["freqs"]
 
-            if isinstance(sefd, (float, int)):
+            if isinstance(sefd, float | int):
                 self.sefd = [sefd]
             elif (not isinstance(sefd, str)) and isinstance(sefd, list):
                 self.sefd = sefd
@@ -161,12 +160,11 @@ class Array:
         elif self.tsys_over_eta is None and self.sefd is None:
             tsys_over_eta = self.layout.get("tsys_over_eta", None)
             self.tsys_over_eta = tsys_over_eta
-            if self.sensitivity_file:
-                if "tsys_over_eta" in sensitivity_data and "sefd" not in sensitivity_data:
-                    self.tsys_over_eta = sensitivity_data["tsys_over_eta"]
-                    self.sefd = list(2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
+            if self.sensitivity_file and "tsys_over_eta" in sensitivity_data and "sefd" not in sensitivity_data:
+                self.tsys_over_eta = sensitivity_data["tsys_over_eta"]
+                self.sefd = list(2 * k_B.value * self.tsys_over_eta / (np.pi * np.array(self.size) ** 2 / 4))
 
-            if isinstance(sefd, (float, int)):
+            if isinstance(sefd, float | int):
                 self.sefd = [sefd]
             elif (not isinstance(sefd, str)) and isinstance(sefd, list):
                 self.sefd = sefd
@@ -386,7 +384,7 @@ class Array:
 
         return uvcoverage
 
-    def get_source_elevation(self, latitude: float, declination: float, hour_angles: List[float]) -> List[float]:
+    def get_source_elevation(self, latitude: float, declination: float, hour_angles: list[float]) -> list[float]:
         """
         Track the source during the observation and get its elevation.
 
@@ -414,7 +412,7 @@ class Array:
         return elevation
 
 
-def calculate_array_centre(ant_locations: List[List[float]]) -> List[float]:
+def calculate_array_centre(ant_locations: list[list[float]]) -> list[float]:
     """
     Calculate the geometric centre of an array given the antenna locations.
 
@@ -435,7 +433,7 @@ def calculate_array_centre(ant_locations: List[List[float]]) -> List[float]:
     return centre.tolist()
 
 
-def write_centre_to_array_config(array_config_path: str, centre: List[float]) -> None:
+def write_centre_to_array_config(array_config_path: str, centre: list[float]) -> None:
     """
     Write the calculated centre to the array configuration YAML file.
 
@@ -446,7 +444,7 @@ def write_centre_to_array_config(array_config_path: str, centre: List[float]) ->
     centre : List[float]
         The [X, Y, Z] coordinates of the geometric centre to write.
     """
-    with open(array_config_path, "r") as f:
+    with open(array_config_path) as f:
         array_info = yaml.safe_load(f)
 
     array_info["centre"] = centre

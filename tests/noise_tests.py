@@ -77,7 +77,7 @@ def test_sim_noise_shared_generator_gives_independent_blocks():
 
     rng_again = np.random.default_rng(3)
     replay = [sim_noise(shape, 0.5, seed=rng_again) for _ in range(2)]
-    assert all(np.array_equal(x, y) for x, y in zip(blocks, replay))
+    assert all(np.array_equal(x, y) for x, y in zip(blocks, replay, strict=True))
 
 
 def test_add_noise_threads_the_seed():

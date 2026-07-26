@@ -23,8 +23,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
-from typing import List, Optional
+from enum import StrEnum
 
 import numpy as np
 from astropy.io import fits
@@ -42,7 +41,7 @@ CHANNEL_BLOCK = 16
 DEFAULT_FIT_TOLERANCE = 1e-3
 
 
-class SpectralKind(str, Enum):
+class SpectralKind(StrEnum):
     FLAT = "flat"
     POLY = "poly"
     CUBE = "cube"
@@ -53,11 +52,11 @@ class FitsSpectrum:
     """How a FITS sky model varies with frequency."""
 
     kind: SpectralKind
-    ref_freq: Optional[float] = None
+    ref_freq: float | None = None
     # POLY: exponent coefficients c1..c_order, one map per order
-    coeffs: Optional[np.ndarray] = None  # (order, npix_l, npix_m)
+    coeffs: np.ndarray | None = None  # (order, npix_l, npix_m)
     # Fractional flux residual of the fit, when it was fitted rather than supplied
-    residual: Optional[float] = None
+    residual: float | None = None
 
     @property
     def nchan_model(self) -> int:
@@ -104,11 +103,11 @@ def evaluate_scale(coeffs: np.ndarray, freqs: np.ndarray, ref_freq: float) -> np
     log_ratio = np.log(freqs / ref_freq)
     trailing = (1,) * (coeffs.ndim - 1)
 
-    ln_scale = np.zeros((freqs.size,) + coeffs.shape[1:], dtype=np.float64)
+    ln_scale = np.zeros((freqs.size, *coeffs.shape[1:]), dtype=np.float64)
     power = np.ones_like(log_ratio)
     for order in range(coeffs.shape[0]):
         power = power * log_ratio  # x ** (order + 1)
-        ln_scale += power.reshape((-1,) + trailing) * coeffs[order]
+        ln_scale += power.reshape((-1, *trailing)) * coeffs[order]
     return np.exp(ln_scale)
 
 
@@ -259,7 +258,7 @@ def interpolate_planes_at(cube, fits_freqs: np.ndarray, ref_freq: float) -> np.n
     return planes[..., 0] * (1 - weight) + planes[..., 1] * weight
 
 
-def read_spi_maps(paths: List[str], shape: tuple) -> np.ndarray:
+def read_spi_maps(paths: list[str], shape: tuple) -> np.ndarray:
     """
     Read spectral-index (and higher-order) coefficient maps.
 

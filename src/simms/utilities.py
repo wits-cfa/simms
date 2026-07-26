@@ -1,6 +1,6 @@
+from collections.abc import Callable
 from itertools import combinations
 from types import NoneType
-from typing import Callable, List, Union
 
 import numpy as np
 from astropy import units
@@ -9,7 +9,7 @@ from numba import njit
 from simms.exceptions import SkymodelSchemaError
 
 
-class ObjDict(object):
+class ObjDict:
     def __init__(self, items):
         """
         Converts a dictionary into an object.
@@ -54,12 +54,12 @@ def radec2lm(ra0: float, dec0: float, ra: float | np.ndarray, dec: float | np.nd
     return l_coord, m_coord
 
 
-def get_noise(sefds: Union[List, float], dtime: int, dfreq: float):
+def get_noise(sefds: list | float, dtime: int, dfreq: float):
     """
     This function computes the noise given an SEFD/s.
     """
 
-    if isinstance(sefds, (int, float)):
+    if isinstance(sefds, int | float):
         noise = sefds / np.sqrt(2 * dfreq * dtime)
         return noise
 
@@ -112,8 +112,8 @@ def is_range_in_range(inner_range, outer_range):
 def quantity_to_value(
     coord: Callable | NoneType,
     value: str | int | float,
-    val_units: str = None,
-    target_units: str = None,
+    val_units: str | None = None,
+    target_units: str | None = None,
     null_value=None,
 ) -> int | float:
     """
@@ -137,15 +137,12 @@ def quantity_to_value(
         if val_units:
             try:
                 quant_value = value * getattr(units, val_units)
-            except AttributeError:
-                raise SkymodelSchemaError(f"Unknown parameter units '{val_units}'")
+            except AttributeError as exc:
+                raise SkymodelSchemaError(f"Unknown parameter units '{val_units}'") from exc
         else:
             quant_value = units.Quantity(value)
     elif is_numeric(value):
-        if val_units:
-            quant_value = coord(f"{value} {val_units}")
-        else:
-            quant_value = coord(value)
+        quant_value = coord(f"{value} {val_units}") if val_units else coord(value)
     else:
         quant_value = coord(value)
 

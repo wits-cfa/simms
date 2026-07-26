@@ -1,6 +1,6 @@
 import os.path
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import astropy.units as aunits
 import numpy as np
@@ -48,13 +48,13 @@ PTYPE_MAPPER = {
 
 @dataclass
 class SkymodelParameter:
-    info: Optional[str] = None
-    units: Optional[str] = None
-    alias: Optional[str] = None
-    ptype: Optional[str] = "number"
-    frame: Optional[str] = None
-    required: Optional[bool] = False
-    join: Optional[List[str]] = None
+    info: str | None = None
+    units: str | None = None
+    alias: str | None = None
+    ptype: str | None = "number"
+    frame: str | None = None
+    required: bool | None = False
+    join: list[str] | None = None
     value: Any = None
 
     def set_value(self, value: str | float | int):
@@ -85,7 +85,7 @@ class SkymodelParameter:
 @dataclass
 class ASCIISourceSchema:
     info: str
-    parameters: Dict[str, SkymodelParameter]
+    parameters: dict[str, SkymodelParameter]
 
     def __post_init__(self):
         # Filling in the dataclass defaults via OmegaConf.merge deep-copies the
@@ -215,7 +215,7 @@ class ASCIISource:
                 except ValueError as exc:
                     raise ASCIISourceError(
                         f"Cannot parse field '{field}' from its components {join_us} (joined as '{sexagesimal}'): {exc}"
-                    )
+                    ) from exc
                 setattr(self, field, joined)
 
     def value_or_default(self, field: str) -> int | float | str:
@@ -314,7 +314,7 @@ class ASCIISource:
 
         return bmatrix
 
-    def continuum_coefficients(self) -> List[float]:
+    def continuum_coefficients(self) -> list[float]:
         """
         Continuum polynomial coefficients, highest unset orders dropped.
 
@@ -380,7 +380,7 @@ class ASCIISkymodel:
     skymodel_file: str
     delimiter: str = None
     source_schema_file: str = None
-    sources: List[ASCIISource] = None
+    sources: list[ASCIISource] = None
 
     def __post_init__(self):
         self.source_schema_file = self.source_schema_file or DEFAULT_SOURCE_SCHEMA
@@ -410,7 +410,7 @@ class ASCIISkymodel:
             try:
                 point_source.is_valid(fields=[alias_to_field[key] for key in header], raise_exception=True)
             except ASCIISourceError as exc:
-                raise ASCIISkymodelError(f"ASCII Sky model file header is missig required fields: {exc}")
+                raise ASCIISkymodelError(f"ASCII Sky model file header is missig required fields: {exc}") from exc
 
             for counter, line in enumerate(stdr.readlines()):
                 # skip lines that are commented
@@ -429,7 +429,7 @@ class ASCIISkymodel:
                     )
 
                 source = ASCIISource(self.schema)
-                for param, value in zip(header, rowdata):
+                for param, value in zip(header, rowdata, strict=True):
                     source.set_source_param(alias_to_field[param], value)
                 # source has been fully set, finalise and add it to rest of the sources
                 source.finalise()

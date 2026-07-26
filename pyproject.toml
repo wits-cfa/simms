@@ -69,7 +69,7 @@ Changelog = "https://github.com/wits-cfa/simms/blob/main/CHANGES.md"
 
 ruff = [
     "pre-commit>=4.3.0",
-    "ruff>=0.12.9",
+    "ruff>=0.15.22,<0.16",  # keep in step with .pre-commit-config.yaml
 ]
 
 tests = [

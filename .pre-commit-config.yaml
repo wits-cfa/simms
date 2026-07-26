@@ -1,7 +1,10 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff version.
-    rev: v0.12.9
+    # Keep in step with the `ruff` dependency group in pyproject.toml: the hook and
+    # `uv run --group ruff ruff` must be the same version, or they disagree about which
+    # rules exist (UP038 was removed between 0.12 and 0.15, so a commit could pass one
+    # and fail the other).
+    rev: v0.15.22
     hooks:
       # Run the linter.
       - id: ruff

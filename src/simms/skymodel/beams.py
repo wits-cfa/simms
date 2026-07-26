@@ -134,7 +134,7 @@ class CosineTaperBeam:
     # -- constructors -------------------------------------------------------
 
     @classmethod
-    def from_csv(cls, path, name: str = "") -> "CosineTaperBeam":
+    def from_csv(cls, path, name: str = "") -> CosineTaperBeam:
         """Load a katbeam-format coefficient CSV.
 
         The file has two header rows (column names, then units) followed by rows of
@@ -151,7 +151,7 @@ class CosineTaperBeam:
         return cls(freqs_mhz, squint_deg, fwhm_deg, name=name or path.stem)
 
     @classmethod
-    def from_builtin(cls, name: str) -> "CosineTaperBeam":
+    def from_builtin(cls, name: str) -> CosineTaperBeam:
         """Load one of the bundled models in :data:`BUILTIN_BEAMS`."""
         if name not in BUILTIN_BEAMS:
             raise ValueError(f"Unknown built-in beam {name!r}; available: {list(BUILTIN_BEAMS)}")
@@ -159,7 +159,7 @@ class CosineTaperBeam:
             return cls.from_csv(p, name=name)
 
     @classmethod
-    def load(cls, spec: str) -> "CosineTaperBeam":
+    def load(cls, spec: str) -> CosineTaperBeam:
         """Load by built-in name if known, otherwise treat ``spec`` as a CSV path."""
         if spec in BUILTIN_BEAMS:
             return cls.from_builtin(spec)
@@ -227,7 +227,7 @@ class BeamProvider:
         providers with cross-polarisation (measured FITS cubes) override this.
         """
         g = self._eval(l_feed, m_feed, freqs)  # (nsrc, nchan, 2)
-        jones = np.zeros(g.shape[:2] + (2, 2), dtype=np.complex128)
+        jones = np.zeros((*g.shape[:2], 2, 2), dtype=np.complex128)
         jones[..., 0, 0] = g[..., 0]
         jones[..., 1, 1] = g[..., 1]
         return jones
@@ -312,7 +312,9 @@ def _ascending(grid, values, axis):
     return grid, values
 
 
-def _cattery_substitute(pattern: str, *, stype: str = None, corr: str = None, reim: str = None) -> str:
+def _cattery_substitute(
+    pattern: str, *, stype: str | None = None, corr: str | None = None, reim: str | None = None
+) -> str:
     """Apply the Cattery/DDFacet ``$(...)`` beam-filename substitutions (and uppercase forms).
 
     Mirrors DDFacet's ``--Beam-FITSFile``/heterogeneous-beam-json substitution rules (the
@@ -407,7 +409,7 @@ class FitsBeamProvider(BeamProvider):
 
     def _eval_jones(self, l_feed, m_feed, freqs):
         entries = self._interp_entries(l_feed, m_feed, freqs)
-        jones = np.zeros(entries.shape[:2] + (2, 2), dtype=np.complex128)
+        jones = np.zeros((*entries.shape[:2], 2, 2), dtype=np.complex128)
         if self.has_leakage:  # [HH, HV, VH, VV]
             jones[..., 0, 0] = entries[..., 0]
             jones[..., 0, 1] = entries[..., 1]
@@ -419,17 +421,17 @@ class FitsBeamProvider(BeamProvider):
         return jones
 
     @classmethod
-    def from_arrays(cls, l_grid, m_grid, freqs_hz, values, name: str = "") -> "FitsBeamProvider":
+    def from_arrays(cls, l_grid, m_grid, freqs_hz, values, name: str = "") -> FitsBeamProvider:
         """Build from explicit grids and a ``(nl, nm, nfreq, K)`` cube (K=2 [HH,VV] or 4 [HH,HV,VH,VV])."""
         return cls(l_grid, m_grid, freqs_hz, values, name=name)
 
     @classmethod
-    def from_fits(cls, path, name: str = "") -> "FitsBeamProvider":
+    def from_fits(cls, path, name: str = "") -> FitsBeamProvider:
         """Load a per-feed voltage beam cube.
 
         The primary HDU leading axis holds the feed voltages as real/imag pairs:
-        **4 planes** ``[HH, VV]×(real, imag)`` for a diagonal beam, or **8 planes**
-        ``[HH, HV, VH, VV]×(real, imag)`` for a full 2x2 Jones (leakage). A linear WCS
+        **4 planes** ``[HH, VV] x (real, imag)`` for a diagonal beam, or **8 planes**
+        ``[HH, HV, VH, VV] x (real, imag)`` for a full 2x2 Jones (leakage). A linear WCS
         gives the ``L``/``M`` axes in degrees (SIN direction cosines scaled to degrees,
         ``l_deg = 180/pi * l``) and the ``FREQ`` axis in Hz.
         """
@@ -440,7 +442,7 @@ class FitsBeamProvider(BeamProvider):
             data = np.asarray(hdul[0].data, dtype=np.float64)  # (4 or 8, nfreq, nm, nl)
         if data.ndim != 4 or data.shape[0] not in (4, 8):
             raise ValueError("FITS beam cube must have shape (4 or 8, nfreq, nm, nl): feed voltages real/imag.")
-        nplane, nfreq, nm, nl = data.shape
+        _nplane, nfreq, nm, nl = data.shape
 
         def _axis(fits_axis, n):
             crpix = hdr[f"CRPIX{fits_axis}"]
@@ -466,7 +468,7 @@ class FitsBeamProvider(BeamProvider):
         l_axis: str = "-X",
         m_axis: str = "Y",
         name: str = "",
-    ) -> "FitsBeamProvider":
+    ) -> FitsBeamProvider:
         """Load a Cattery-schema (MeqTrees Cattery / DDFacet ``--Beam-Model FITS``) 8-file beam set.
 
         ``pattern`` is either a bare prefix (as written by :func:`write_beam_fits_cattery`,
@@ -546,8 +548,8 @@ class FitsBeamProvider(BeamProvider):
 
         if pol_basis == "circular":
             s_inv = corr_basis_transform(True).conj().T
-            jones = np.einsum("ij,...jk->...ik", s_inv, values.reshape(values.shape[:3] + (2, 2)))
-            values = jones.reshape(values.shape[:3] + (4,))
+            jones = np.einsum("ij,...jk->...ik", s_inv, values.reshape((*values.shape[:3], 2, 2)))
+            values = jones.reshape((*values.shape[:3], 4))
 
         return cls(l_grid, m_grid, freqs_hz, values, name=name or pattern)
 
@@ -1159,7 +1161,7 @@ def write_beam_fits_cattery(
     v = beam.voltages(np.degrees(ll.ravel()), np.degrees(mm.ravel()), freqs_hz / 1e6)  # (nl*nm, nf, 2)
     v = v.reshape(nl, nm, nf, 2).transpose(2, 1, 0, 3)  # (nf, nm, nl, 2) = [H, V] voltages
 
-    jones = np.zeros(v.shape[:3] + (2, 2), dtype=np.complex128)  # (nf, nm, nl, 2, 2)
+    jones = np.zeros((*v.shape[:3], 2, 2), dtype=np.complex128)  # (nf, nm, nl, 2, 2)
     jones[..., 0, 0] = v[..., 0]
     jones[..., 1, 1] = v[..., 1]
     if pol_basis == "circular":
@@ -1182,7 +1184,7 @@ def write_beam_fits_cattery(
     hdr["BUNIT"] = "1"
 
     paths = []
-    for (i, j), corr in zip([(0, 0), (0, 1), (1, 0), (1, 1)], labels):
+    for (i, j), corr in zip([(0, 0), (0, 1), (1, 0), (1, 1)], labels, strict=True):
         plane = jones[..., i, j]
         for part, suffix in ((plane.real, "re"), (plane.imag, "im")):
             path = f"{prefix}_{corr}_{suffix}.fits"

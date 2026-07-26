@@ -894,7 +894,7 @@ def test_full_jones_leakage_matches_einsum_reference():
     m_grid = np.linspace(-0.08, 0.08, 81)
     freqs = np.array([1.4e9])
     diag = _jimbeam_cube(beam, l_grid, m_grid, freqs)  # (nl,nm,nfreq,2) = HH,VV (real)
-    cube4 = np.zeros(diag.shape[:3] + (4,), dtype=np.complex128)  # HH,HV,VH,VV
+    cube4 = np.zeros((*diag.shape[:3], 4), dtype=np.complex128)  # HH,HV,VH,VV
     cube4[..., 0] = diag[..., 0]
     cube4[..., 3] = diag[..., 1]
     cube4[..., 1] = 0.05 + 0.02j  # HV leakage

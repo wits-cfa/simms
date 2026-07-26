@@ -84,18 +84,21 @@ class InitTest:
     def __init__(self):
         self.test_files = []
 
-    def random_named_file(self, suffix: str = None):
+    def random_named_file(self, suffix: str | None = None):
         if not hasattr(self, "test_files"):
             self.test_files = []
 
-        file_obj = tempfile.NamedTemporaryFile(suffix=suffix, dir=TESTDIR, delete=False)
+        # Only a uniquely-named path is wanted, not an open handle: the caller writes the
+        # file itself (or hands the name to code that creates a directory there). The handle
+        # is closed on the next line, so SIM115's context manager would not help.
+        file_obj = tempfile.NamedTemporaryFile(suffix=suffix, dir=TESTDIR, delete=False)  # noqa: SIM115
         name = file_obj.name
         file_obj.close()
 
         self.test_files.append(name)
         return name
 
-    def random_named_directory(self, suffix: str = None):
+    def random_named_directory(self, suffix: str | None = None):
         if not hasattr(self, "test_files"):
             self.test_files = []
 

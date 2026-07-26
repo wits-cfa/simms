@@ -380,12 +380,13 @@ def test_apply_then_correct_ascii_is_identity(fx):
 
 def _read_ascii_flux(path, delimiter=None):
     flux = {}
-    for ln in open(path):
-        s = ln.strip()
-        if not s or s.startswith("#"):
-            continue
-        f = s.split(delimiter)
-        flux[f[0]] = float(f[3])  # name ra dec stokes_i
+    with open(path) as fh:
+        for ln in fh:
+            s = ln.strip()
+            if not s or s.startswith("#"):
+                continue
+            f = s.split(delimiter)
+            flux[f[0]] = float(f[3])  # name ra dec stokes_i
     return flux
 
 

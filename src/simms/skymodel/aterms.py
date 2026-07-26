@@ -274,10 +274,7 @@ class ATermModel:
         npix = self.ell.size
         freqs = np.array([freq], dtype=np.float64)
         chis = np.array([chi], dtype=np.float64)
-        if self.full_jones:
-            out = np.empty((npix, 2, 2), dtype=np.complex64)
-        else:
-            out = np.empty((npix, 2), dtype=np.complex64)
+        out = np.empty((npix, 2, 2), dtype=np.complex64) if self.full_jones else np.empty((npix, 2), dtype=np.complex64)
         for start in range(0, npix, EVAL_SLAB_PIXELS):
             sl = slice(start, min(start + EVAL_SLAB_PIXELS, npix))
             if self.full_jones:
@@ -576,7 +573,7 @@ def _beam_products(at: ATermModel, tp: int, tq: int, t_a: int, f_idx: int, bmats
             return
         ep_b = at.voltage_map(tp, t_b, f_idx)
         eq_b = at.voltage_map(tq, t_b, f_idx)
-        for first, second in zip(_jones_products(bmats, ep_a, eq_b), _jones_products(bmats, ep_b, eq_a)):
+        for first, second in zip(_jones_products(bmats, ep_a, eq_b), _jones_products(bmats, ep_b, eq_a), strict=True):
             yield first + second
         return
     gp_a = at.voltage_map(tp, t_a, f_idx)
@@ -653,7 +650,7 @@ def predict_aterm_block(prepared, uvw, times, antenna1, antenna2, epsilon, do_wg
     order = np.argsort(group_key, kind="stable")
     keys, starts = np.unique(group_key[order], return_index=True)
     bins = {}  # (k, tp, tq) -> row index array
-    for key, start, stop in zip(keys, starts, np.append(starts[1:], order.size)):
+    for key, start, stop in zip(keys, starts, np.append(starts[1:], order.size), strict=True):
         k, rem = divmod(int(key), ntype * ntype)
         tp, tq = divmod(rem, ntype)
         bins[(k, tp, tq)] = order[start:stop]
@@ -781,7 +778,7 @@ def _lerped_products(at, tp, tq, t_a, t_b, j0, j1, w, bmats, cache):
         yield from lo
         return
     hi = _knot_products(at, tp, tq, t_a, t_b, j1, bmats, cache)
-    for lo_c, hi_c in zip(lo, hi):
+    for lo_c, hi_c in zip(lo, hi, strict=True):
         yield (1.0 - w) * lo_c + w * hi_c
 
 
@@ -866,7 +863,7 @@ def _predict_segment_perchan(
     # over a loop variable.
     one = np.ones(1)
 
-    for local, (ch, freq, w) in enumerate(zip(chs, seg_freqs, wf)):
+    for local, (ch, freq, w) in enumerate(zip(chs, seg_freqs, wf, strict=True)):
         if is_poly:
             scale = evaluate_scale(prepared.spectrum.coeffs, np.array([freq]), prepared.spectrum.ref_freq)[0].ravel()
             bmats_corrs = [b * scale for b in poly_base]

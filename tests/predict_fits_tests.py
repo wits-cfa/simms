@@ -85,7 +85,7 @@ def brute_force_vis(image, header, uvw, chan_freqs, ncorr, polarisation, linear_
     ``image`` has shape (nstokes, npix_l, npix_m, nchan_model).
     """
     wcs = WCS(header).celestial
-    nstokes, npix_l, npix_m, nchan_model = image.shape
+    _nstokes, _npix_l, _npix_m, nchan_model = image.shape
     nrow, nchan = uvw.shape[0], chan_freqs.size
 
     support = np.abs(image).max(axis=(0, 3)) > 0

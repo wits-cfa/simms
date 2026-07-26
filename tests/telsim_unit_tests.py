@@ -191,7 +191,7 @@ def test_pointing_table_is_per_antenna_per_time(params):
     # Exactly one record per (antenna, timestamp) pair, over the main table's timestamps.
     pnt_times = np.asarray(ds_point.TIME.values)
     assert np.array_equal(np.unique(pnt_times), main_times)
-    keys = set(zip(ant_ids.tolist(), pnt_times.tolist()))
+    keys = set(zip(ant_ids.tolist(), pnt_times.tolist(), strict=True))
     assert len(keys) == ds_point.sizes["row"]
 
     # Every antenna points at the field centre, and TARGET (required by MSv2) agrees.
@@ -341,7 +341,7 @@ def check_circle_or_ellipse(u, v):
 
     initial_guess = [1, 0, 1, 0, 0, -(mean_distance**2)]
     result = least_squares(residuals, initial_guess, args=(u, v))
-    a, b, c, d, e, f = result.x
+    a, b, c, _d, _e, _f = result.x  # conic coefficients; only the quadratic terms are tested
 
     discriminant = b**2 - 4 * a * c
     is_circle = abs(a - c) < 0.01 * abs(a) and abs(b) < 0.01 * abs(a)

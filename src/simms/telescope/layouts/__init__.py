@@ -1,6 +1,5 @@
 import glob
 import os
-from typing import Dict
 
 from omegaconf import OmegaConf
 
@@ -19,7 +18,7 @@ def _per_antenna_telescope_names(arrayinfo, nant: int):
     return list(names)
 
 
-def simms_telescopes() -> Dict:
+def simms_telescopes() -> dict:
     """
     Returns a dictionary of known array layouts
     """
@@ -34,10 +33,7 @@ def simms_telescopes() -> Dict:
         ant_to_idx = {name: i for i, name in enumerate(allants)}
 
         allsizes = arrayinfo.size
-        if isinstance(allsizes, (float, int)):
-            allsizes = [allsizes] * anant
-        else:
-            allsizes = list(allsizes)
+        allsizes = [allsizes] * anant if isinstance(allsizes, float | int) else list(allsizes)
 
         alltelnames = _per_antenna_telescope_names(arrayinfo, anant)
 
@@ -102,7 +98,7 @@ def resolve_layout(layout: str):
     )
 
 
-def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, subarray_file: str = None) -> Dict:
+def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, subarray_file: str | None = None) -> dict:
     """
     Returns a dictionary of a custom array layout.
     """
@@ -114,10 +110,7 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
     anant = len(all_locations)
 
     allsizes = arrayinfo.size
-    if isinstance(allsizes, (float, int)):
-        allsizes = [allsizes] * anant
-    else:
-        allsizes = list(allsizes)
+    allsizes = [allsizes] * anant if isinstance(allsizes, float | int) else list(allsizes)
 
     alltelnames = _per_antenna_telescope_names(arrayinfo, anant)
 

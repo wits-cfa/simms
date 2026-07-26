@@ -260,10 +260,7 @@ def runit(opts):
 
     msds = xds_from_ms(ms, **ms_open, chunks=dict(row=row_chunks))[opts.spw_id]
 
-    if opts.sefd:
-        vis_noise = vis_noise_from_sefd_and_ms(ms, opts.sefd, opts.spw_id, opts.field_id)
-    else:
-        vis_noise = 0
+    vis_noise = vis_noise_from_sefd_and_ms(ms, opts.sefd, opts.spw_id, opts.field_id) if opts.sefd else 0
 
     spw_ds = xds_from_table(f"{ms}::SPECTRAL_WINDOW")[0]
     field_ds = xds_from_table(f"{ms}::FIELD")[0]
@@ -405,14 +402,14 @@ def runit(opts):
                     fs.append(glob.glob(f"{fits_dir}/*Q.fits")[0])
                     fs.append(glob.glob(f"{fits_dir}/*U.fits")[0])
                     fs.append(glob.glob(f"{fits_dir}/*V.fits")[0])
-                except IndexError:
-                    raise RuntimeError("Could not find all required FITS files in the specified directory")
+                except IndexError as exc:
+                    raise RuntimeError("Could not find all required FITS files in the specified directory") from exc
 
                 if len(fs) > 4:
                     raise RuntimeError("Too many FITS files found in the specified directory")
 
             elif not fs.endswith(".fits"):
-                raise IOError("Invalid FITS file specified")
+                raise OSError("Invalid FITS file specified")
         else:
             raise FileNotFoundError("FITS file/directory does not exist")
 

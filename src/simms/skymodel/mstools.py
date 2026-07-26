@@ -258,7 +258,7 @@ class PreparedSky:
         """Number of correlations actually carried through the kernel."""
         return self.bmat.shape[1]
 
-    def select_channels(self, chan_ids: np.ndarray) -> "PreparedSky":
+    def select_channels(self, chan_ids: np.ndarray) -> PreparedSky:
         """Restrict the model to a subset of channels, for channel-chunked prediction."""
         freqs = self.freqs[chan_ids]
         # Advanced-index the chan axis (3); trailing feed/Jones axes are kept as-is, so this
