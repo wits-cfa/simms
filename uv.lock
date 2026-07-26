@@ -737,8 +737,8 @@ wheels = [
 
 [[package]]
 name = "fitstoolz"
-version = "0.1.0b3"
-source = { url = "https://github.com/shinobi-dosho/fitstoolz/archive/ab42f6c0e3b39c2abcdf080f46d7bc94ccabff2f.tar.gz" }
+version = "0.1.0b4"
+source = { url = "https://github.com/shinobi-dosho/fitstoolz/archive/4158d262a5d4f2dc61efa7453f5f2cfea40a1374.tar.gz" }
 dependencies = [
     { name = "astropy" },
     { name = "click" },
@@ -748,12 +748,12 @@ dependencies = [
     { name = "stimela-ninja" },
     { name = "xarray" },
 ]
-sdist = { hash = "sha256:035c400ecc0a1651865e0013dc90d256eeb7774e5b1049e5e8e963a8342018b0" }
+sdist = { hash = "sha256:2a3adf4a053eb829e2d3f8ce80569372ca811cef281e587a1e4a3cd013b925a9" }
 
 [package.metadata]
 requires-dist = [
     { name = "astropy", specifier = ">=7.0,<8.0" },
-    { name = "click", specifier = ">=8.1" },
+    { name = "click", specifier = ">=8.3.3" },
     { name = "dask", extras = ["array"], specifier = ">=2023.1.1" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pydantic", specifier = ">=2.6" },
@@ -2822,12 +2822,12 @@ tests = [
 [package.metadata]
 requires-dist = [
     { name = "astropy" },
-    { name = "click", specifier = ">=8.1.3,<9.0" },
+    { name = "click", specifier = ">=8.3.3,<9.0" },
     { name = "codex-africanus", extras = ["complete"], specifier = ">=0.3.7,<1.0" },
     { name = "dask-ms", extras = ["xarray"], specifier = ">=0.2.18,<1.0" },
     { name = "ducc0" },
     { name = "ephem", specifier = ">=4.1,<5.0" },
-    { name = "fitstoolz", url = "https://github.com/shinobi-dosho/fitstoolz/archive/ab42f6c0e3b39c2abcdf080f46d7bc94ccabff2f.tar.gz" },
+    { name = "fitstoolz", url = "https://github.com/shinobi-dosho/fitstoolz/archive/4158d262a5d4f2dc61efa7453f5f2cfea40a1374.tar.gz" },
     { name = "numpy" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pyyaml", specifier = ">=6.0" },
