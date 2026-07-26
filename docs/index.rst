@@ -25,6 +25,7 @@ standalone ``primary-beam`` tool exposes the beam operations on their own.
 
    concepts/telsim
    concepts/skysim
+   concepts/beams
    concepts/schemas
    concepts/ms-conventions
 

@@ -1,10 +1,5 @@
-# This workflow will upload a Python Package using Twine when a release is created
+# This workflow will upload a Python Package when a release is created
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
 
 name: Upload Python Package
 
@@ -20,6 +15,27 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    # Publishing uses PyPI Trusted Publishing (OIDC): PyPI is configured to trust this
+    # repository/workflow/environment, and the upload is authorised by a short-lived token
+    # minted per run. There is no long-lived API token stored as a repository secret, so
+    # there is nothing to leak, rotate, or scope. `id-token: write` lets the job request
+    # that OIDC token; `contents: read` is all the checkout needs.
+    #
+    # This requires a one-off setup on PyPI, without which the upload step fails:
+    #   https://pypi.org/manage/project/simms/settings/publishing/
+    #   Owner: wits-cfa   Repository: simms
+    #   Workflow: python-publish.yml   Environment: pypi
+    # The GitHub environment named below must also exist (Settings -> Environments), and is
+    # where release approvals/protection rules would go.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/simms
+    # A job-level `permissions` block replaces the top-level one outright rather than adding
+    # to it, so `contents: read` has to be restated here or checkout loses it.
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
@@ -28,10 +44,12 @@ jobs:
         python-version: '3.12'
     - name: Install build tools
       run: |
-        python -m pip install --upgrade pip build twine
+        python -m pip install --upgrade pip build
     - name: Build package
       run: python -m build
+    - name: Check built artifacts
+      run: |
+        python -m pip install --upgrade twine
+        python -m twine check dist/*
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        password: ${{ secrets.SIMMS_3_PYPI_TOKEN }}

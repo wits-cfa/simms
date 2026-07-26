@@ -32,6 +32,17 @@ the primary beam:
 Use :func:`simms.skymodel.beams.read_pointing_centre` to get the beam centre
 rather than reading ``FIELD.PHASE_DIR`` directly.
 
+``POINTING`` is keyed by ``(ANTENNA_ID, TIME)``
+--------------------------------------------------
+
+The ``POINTING`` subtable has one row per antenna per timeslot -- ``nant x
+ntime`` rows -- not one row per main-table row. Writing it against main-table
+rows repeats each pointing ``nbl/nant`` times and, if ``ANTENNA_ID`` is left to
+its default of 0, leaves every antenna but the first with no pointing record at
+all. The beam centre above is then only defined for antenna 0, which happens to
+work while every antenna points the same way and breaks silently as soon as they
+do not.
+
 Spectral frame must be set
 -----------------------------
 
