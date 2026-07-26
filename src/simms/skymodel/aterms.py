@@ -859,6 +859,13 @@ def _predict_segment_perchan(
         if budget >= at.ncorr * at.ell.size * 16:  # complex128
             product_cache = _MapCache(budget)
 
+    # Unit channel weight: each pass here grids exactly one channel, so there is no
+    # frequency blend to weight (unlike the flat-spectrum path, which blends knots
+    # across the band). Loop-invariant, and `_accumulate` only reads it, so it is
+    # built once -- keeping it out of the loop also keeps `run` below from closing
+    # over a loop variable.
+    one = np.ones(1)
+
     for local, (ch, freq, w) in enumerate(zip(chs, seg_freqs, wf)):
         if is_poly:
             scale = evaluate_scale(prepared.spectrum.coeffs, np.array([freq]), prepared.spectrum.ref_freq)[0].ravel()
@@ -868,7 +875,6 @@ def _predict_segment_perchan(
         if max(np.abs(b).max() for b in bmats_corrs) <= skip_below:
             continue
         chan_freq = np.ascontiguousarray(seg_freqs[local : local + 1])
-        one = np.ones(1)
         chan_idx = np.array([ch])
 
         def run(rows, w_row, tp, tq, t_a, t_b, w=w, bmats_corrs=bmats_corrs, chan_freq=chan_freq, chan_idx=chan_idx):
