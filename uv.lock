@@ -710,8 +710,8 @@ wheels = [
 
 [[package]]
 name = "fitstoolz"
-version = "0.1.0b4"
-source = { url = "https://github.com/shinobi-dosho/fitstoolz/archive/4158d262a5d4f2dc61efa7453f5f2cfea40a1374.tar.gz" }
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "astropy" },
     { name = "click" },
@@ -721,17 +721,9 @@ dependencies = [
     { name = "stimela-ninja" },
     { name = "xarray" },
 ]
-sdist = { hash = "sha256:2a3adf4a053eb829e2d3f8ce80569372ca811cef281e587a1e4a3cd013b925a9" }
-
-[package.metadata]
-requires-dist = [
-    { name = "astropy", specifier = ">=7.0,<8.0" },
-    { name = "click", specifier = ">=8.3.3" },
-    { name = "dask", extras = ["array"], specifier = ">=2023.1.1" },
-    { name = "numpy", specifier = ">=2.0" },
-    { name = "pydantic", specifier = ">=2.6" },
-    { name = "stimela-ninja", specifier = ">=0.1.0b3" },
-    { name = "xarray", specifier = ">=2023.1.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/87/12/6d22b187cae3222cc7190aa524ee84340e806c3a6dde3b4fecf57a26e8c9/fitstoolz-0.1.0.tar.gz", hash = "sha256:838478a84b7b446d00c8aa3d89008ecc30477f24553f48f0c6f08ade53221ef9", size = 45338, upload-time = "2026-07-26T22:21:49.493Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/e9/d1a7686268eb4d9fd432248a7e4072c769d59d6ba0fe767e13a6e3fb9e5c/fitstoolz-0.1.0-py3-none-any.whl", hash = "sha256:79f4d620240da19af0a5b47ca376dcf1d5608dcde08cd7374f1c2044efc364ff", size = 22618, upload-time = "2026-07-26T22:21:48.464Z" },
 ]
 
 [[package]]
@@ -2038,14 +2030,14 @@ wheels = [
 
 [[package]]
 name = "prompt-toolkit"
-version = "3.0.52"
+version = "3.0.53"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "wcwidth" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a1/96/06e01a7b38dce6fe1db213e061a4602dd6032a8a97ef6c1a862537732421/prompt_toolkit-3.0.52.tar.gz", hash = "sha256:28cde192929c8e7321de85de1ddbe736f1375148b02f2e17edd840042b1be855", size = 434198, upload-time = "2025-08-27T15:24:02.057Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/ea/39b988c938f75cb75d7045b5c69f8bfed47ee2152c8837fb403de29d6fb8/prompt_toolkit-3.0.53.tar.gz", hash = "sha256:9ec8a0ad96d5c56148b3f914aa79c1564c3fde5d2e6b876e7bc327e353cf8fa6", size = 435492, upload-time = "2026-07-26T20:56:14.758Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/03/0d3ce49e2505ae70cf43bc5bb3033955d2fc9f932163e84dc0779cc47f48/prompt_toolkit-3.0.52-py3-none-any.whl", hash = "sha256:9aac639a3bbd33284347de5ad8d68ecc044b91a762dc39b7c21095fcd6a19955", size = 391431, upload-time = "2025-08-27T15:23:59.498Z" },
+    { url = "https://files.pythonhosted.org/packages/54/6f/84908cad2d6aa5144abcf7b42709fe4fdb459bc640ec7ac5786e7693dabc/prompt_toolkit-3.0.53-py3-none-any.whl", hash = "sha256:01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2", size = 392288, upload-time = "2026-07-26T20:56:12.512Z" },
 ]
 
 [[package]]
@@ -2751,7 +2743,7 @@ requires-dist = [
     { name = "dask-ms", extras = ["xarray"], specifier = ">=0.2.18,<1.0" },
     { name = "ducc0", specifier = ">=0.41.0" },
     { name = "ephem", specifier = ">=4.1,<5.0" },
-    { name = "fitstoolz", url = "https://github.com/shinobi-dosho/fitstoolz/archive/4158d262a5d4f2dc61efa7453f5f2cfea40a1374.tar.gz" },
+    { name = "fitstoolz", specifier = ">=0.1.0" },
     { name = "numpy" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pyyaml", specifier = ">=6.0" },
