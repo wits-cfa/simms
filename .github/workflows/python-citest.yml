@@ -17,6 +17,8 @@ env:
   # lock, so leaving it floating would leave a moving part in a workflow whose whole point
   # is that it does not move.
   UV_VERSION: "0.11.21"
+  # The version the lint and the CASA job run on. The test matrix below covers the whole
+  # supported range; linting three times would only report the same findings three times.
   PYTHON_VERSION: "3.12"
 
 # Both jobs install from uv.lock with `uv sync --locked`, which fails rather than
@@ -30,22 +32,36 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        # The whole range `requires-python` claims. uv.lock is a universal resolution, so
+        # every version installs the same pinned set -- the matrix tests that simms runs on
+        # each interpreter, not that each resolves differently.
+        python-version: ["3.11", "3.12", "3.13"]
+
     steps:
     - uses: actions/checkout@v4
     - name: Install uv
       uses: astral-sh/setup-uv@v9
       with:
         version: ${{ env.UV_VERSION }}
-        python-version: ${{ env.PYTHON_VERSION }}
+        python-version: ${{ matrix.python-version }}
         enable-cache: true
     - name: Install locked dependencies
-      run: uv sync --locked --no-default-groups --group tests
+      run: uv sync --locked --no-default-groups --group tests --python ${{ matrix.python-version }}
     - name: Lint
+      if: matrix.python-version == '3.12'
       run: |
         uv run --no-sync ruff check src tests
         uv run --no-sync ruff format --check src tests
     - name: Unit tests
       run: uv run --no-sync pytest tests/
+    - name: Smoke test CLI
+      run: |
+        uv run --no-sync simms telsim --help
+        uv run --no-sync simms skysim --help
+        uv run --no-sync simms primary-beam --help
 
   # The CASA round-trip (telsim MS -> tclean PSF -> skysim -> tclean image) is the only
   # test that checks a simms MS against the tooling users actually run; it is what caught
