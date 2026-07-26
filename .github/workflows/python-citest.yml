@@ -32,4 +32,37 @@ jobs:
       run: |
         pytest tests/
 
+  # The CASA round-trip (telsim MS -> tclean PSF -> skysim -> tclean image) is the only
+  # test that checks a simms MS against the tooling users actually run; it is what caught
+  # the undefined SPECTRAL_WINDOW.MEAS_FREQ_REF that made tclean fail. It cannot run in the
+  # job above: casatasks needs CASA's measures/ephemeris tables, and on a bare runner
+  # casaconfig refuses to populate an empty ~/.casa/data ("path must exist as a directory
+  # and it must be owned by the user"), so the test fails rather than skips. The dosho casa6
+  # image bakes that data in at /opt/casa/data with auto-update disabled, so this job needs
+  # no network access to CASA's data servers and is deterministic.
+  casa-roundtrip:
 
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/shinobi-dosho/casa6:6.7-d0.1.0
+
+    steps:
+    # The image has no git, so checkout falls back to the REST API tarball. That is fine
+    # here -- nothing in this job needs history.
+    - uses: actions/checkout@v4
+    - name: Install simms
+      run: |
+        # python-casacore first, and from pip: the image's apt python3-casacore is built
+        # against Debian's numpy 1.26, and once pip's numpy shadows it every measures call
+        # dies with "PycArray: failed to load the numpy API". The pip wheel is built for
+        # numpy 2.x. Installing simms afterwards then settles numpy to what numba accepts.
+        python3 -m pip install --break-system-packages --no-cache-dir --ignore-installed python-casacore
+        # --group needs pip >= 25.1, and the image ships Debian's pip 24.0, which pip cannot
+        # uninstall (no RECORD file). --ignore-installed puts the new pip in /usr/local,
+        # which precedes /usr/lib on sys.path, so `python3 -m pip` picks it up.
+        python3 -m pip install --break-system-packages --no-cache-dir --ignore-installed --upgrade pip
+        python3 -m pip install --break-system-packages --no-cache-dir .
+        python3 -m pip install --break-system-packages --no-cache-dir --group tests
+    - name: CASA round-trip
+      run: |
+        pytest tests/casa_roundtrip_tests.py -v

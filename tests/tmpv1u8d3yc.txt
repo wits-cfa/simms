@@ -1,0 +1,4 @@
+#format: name ra dec stokes_i
+A 0h0m0s -30d0m0s 5.0
+B 0h2m0s -30d0m0s 3.0
+C 0h0m0s -30d40m0s 2.0
