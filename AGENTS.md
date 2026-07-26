@@ -17,6 +17,23 @@ Use `uv` for everything — never call `python`/`pytest`/`ruff` directly.
 A pre-commit hook runs `ruff` + `ruff-format`; if it reformats a file the commit aborts, so
 re-stage and commit again.
 
+## Reading dependency source (important)
+
+**Never use a local sibling checkout as the source of truth for a dependency.** Repos such as
+`stimela-ninja`, `dosho`, `scabha`, `fitstoolz` and `msutils` may be checked out next to this
+one, but they are under active development — uncommitted work, feature branches, detached
+HEADs — so their working trees do not reflect `origin/main` or any release.
+
+Clone the dependency fresh from its remote into a scratch directory and read that instead:
+
+```
+git clone -q git@github.com:shinobi-dosho/stimela-ninja.git /tmp/<scratch>/ninja-src
+```
+
+Reading a local clone's `git remote -v` to find the URL is fine; reading its working tree is
+not. To see what changed against what is installed here, diff the fresh clone against the
+pinned release tag (`git diff v0.1.0b3..origin/main`), never against a local checkout.
+
 ## Tests
 
 - Test files must be named `*_tests.py` (pytest is configured with `python_files = ["*_tests.py"]`);
