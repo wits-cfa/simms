@@ -10,7 +10,6 @@ from astropy.coordinates import (
     Longitude,
     SpectralCoord,
 )
-from omegaconf import OmegaConf
 
 from simms import SCHEMADIR
 from simms.exceptions import (
@@ -29,7 +28,7 @@ from simms.skymodel.source_factory import (
     point_source,
     polarised_source,
 )
-from simms.utilities import ObjDict, quantity_to_value
+from simms.utilities import ObjDict, load_yaml, quantity_to_value
 
 DEFAULT_SOURCE_SCHEMA = os.path.join(SCHEMADIR, "source_schema.yaml")
 
@@ -88,14 +87,13 @@ class ASCIISourceSchema:
     parameters: dict[str, SkymodelParameter]
 
     def __post_init__(self):
-        # Filling in the dataclass defaults via OmegaConf.merge deep-copies the
-        # whole config, so it is done once for the schema and the resulting
-        # parameters are shared by every source. They are only used as scratch
-        # converters: set_source_param copies the converted value onto the source.
-        param_struct = OmegaConf.structured(SkymodelParameter)
-        self.parameters = ObjDict(
-            {key: SkymodelParameter(**OmegaConf.merge(param_struct, val)) for key, val in self.parameters.items()}
-        )
+        # SkymodelParameter is a dataclass whose every field has a default, so constructing
+        # it from a partial schema entry fills the rest in -- which is all the OmegaConf
+        # structured-merge this replaced was doing, minus a deep copy of the whole config.
+        # An unknown key now raises TypeError here rather than being merged in silently.
+        # These are shared scratch converters: set_source_param copies the converted value
+        # onto the source.
+        self.parameters = ObjDict({key: SkymodelParameter(**val) for key, val in self.parameters.items()})
 
 
 @dataclass
@@ -144,13 +142,13 @@ class ASCIISource:
         self.existing_fields.append(field)
 
     def alias_to_field_mapper(self):
-        mapper = OmegaConf.create({})
+        mapper = {}
         for key, val in self.schema.parameters.items():
             mapper[getattr(val, "alias", None) or key] = key
         return mapper
 
     def field_to_alias_mapper(self):
-        mapper = OmegaConf.create({})
+        mapper = {}
         for key, val in self.schema.parameters.items():
             mapper[key] = getattr(val, "alias", None) or key
         return mapper
@@ -384,7 +382,7 @@ class ASCIISkymodel:
 
     def __post_init__(self):
         self.source_schema_file = self.source_schema_file or DEFAULT_SOURCE_SCHEMA
-        schema = OmegaConf.load(self.source_schema_file)
+        schema = load_yaml(self.source_schema_file)
         self.schema = ASCIISourceSchema(**schema)
         sources = []
 

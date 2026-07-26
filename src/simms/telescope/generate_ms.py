@@ -8,16 +8,15 @@ import daskms
 import numpy as np
 from casacore.measures import measures
 from daskms import xds_to_table
-from omegaconf import OmegaConf
 from scipy import interpolate
 from tqdm.dask import TqdmCallback
 
 from simms import BIN, PCKGDIR
 from simms.constants import PI
 from simms.telescope import array_utilities as autils
-from simms.utilities import get_noise
+from simms.utilities import get_noise, load_yaml
 
-CORR_TYPES = OmegaConf.load(f"{PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
+CORR_TYPES = load_yaml(f"{PCKGDIR}/telescope/ms_corr_types.yaml").CORR_TYPES
 dm = measures()
 
 

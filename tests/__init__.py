@@ -3,7 +3,7 @@ import shutil
 import sys
 import tempfile
 
-from omegaconf import OmegaConf
+from simms.utilities import AttrDict
 
 TESTDIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -56,7 +56,7 @@ def skysim_opts(ms, ascii_sky=None, column="DATA", **overrides):
         "do_wstacking": True,
     }
     opts.update(overrides)
-    return OmegaConf.create(opts)
+    return AttrDict(opts)
 
 
 def simms_executable() -> str:

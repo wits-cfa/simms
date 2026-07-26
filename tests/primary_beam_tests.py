@@ -8,11 +8,11 @@ import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 from daskms import xds_from_table
-from omegaconf import OmegaConf
 
 from simms.apps import primary_beam
 from simms.skymodel.beams import CosineTaperBeam, FitsBeamProvider, JimBeamProvider
 from simms.telescope.generate_ms import create_ms
+from simms.utilities import AttrDict
 
 from . import InitTest
 from .predict_fits_tests import DEC0_DEG, RA0_DEG, make_header
@@ -50,7 +50,7 @@ def _opts(mode, **over):
         "log_level": "CRITICAL",
     }
     base.update(over)
-    return OmegaConf.create(base)
+    return AttrDict(base)
 
 
 class _Fixtures(InitTest):

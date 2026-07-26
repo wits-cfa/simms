@@ -3,10 +3,64 @@ from itertools import combinations
 from types import NoneType
 
 import numpy as np
+import yaml
 from astropy import units
 from numba import njit
 
 from simms.exceptions import SkymodelSchemaError
+
+
+class AttrDict(dict):
+    """A ``dict`` whose keys are also readable and writable as attributes.
+
+    Replaces the one thing simms actually used ``omegaconf`` for: config loaded from YAML
+    that later reads as ``cfg.antnames`` as well as ``cfg["antnames"]``. Nothing here needed
+    interpolation, struct mode, or merging, so a dict subclass covers it -- and being a real
+    ``dict`` means ``.get()``, ``in``, iteration and ``**`` all behave without special cases.
+
+    One deliberate difference from ``DictConfig``: a missing key raises ``AttributeError``
+    rather than returning ``None``, so ``hasattr`` answers the question it appears to ask.
+    """
+
+    def __init__(self, mapping=(), **kwargs):
+        super().__init__(mapping, **kwargs)
+        for key, value in self.items():
+            super().__setitem__(key, _wrap(value))
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}") from None
+
+    def __setattr__(self, name, value):
+        self[name] = _wrap(value)
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, _wrap(value))
+
+    def __delattr__(self, name):
+        try:
+            del self[name]
+        except KeyError:
+            raise AttributeError(name) from None
+
+
+def _wrap(value):
+    """Recursively present nested mappings as :class:`AttrDict`, so ``a.b.c`` works."""
+    if isinstance(value, AttrDict):
+        return value
+    if isinstance(value, dict):
+        return AttrDict(value)
+    if isinstance(value, list):
+        return [_wrap(item) for item in value]
+    return value
+
+
+def load_yaml(path) -> AttrDict:
+    """Load a YAML file as an :class:`AttrDict`."""
+    with open(path) as fh:
+        return _wrap(yaml.safe_load(fh) or {})
 
 
 class ObjDict:

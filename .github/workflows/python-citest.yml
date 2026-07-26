@@ -84,8 +84,9 @@ jobs:
       image: ghcr.io/shinobi-dosho/casa6:6.7-d0.1.0
 
     steps:
-    # The image has no git, so checkout falls back to the REST API tarball. That is fine
-    # here -- nothing in this job needs history.
+    # The image has no git, so checkout falls back to the REST API tarball. That is fine --
+    # nothing here needs history, and fitstoolz is pinned as an archive URL rather than a
+    # git source precisely so `uv sync` needs no git binary either (see [tool.uv.sources]).
     - uses: actions/checkout@v4
     - name: Install uv
       uses: astral-sh/setup-uv@v9

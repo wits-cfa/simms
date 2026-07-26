@@ -7,11 +7,10 @@ import yaml
 from astropy.constants import k_B
 from astropy.time import Time
 from casacore.measures import measures
-from omegaconf import OmegaConf
 
 from simms import BIN, constants
 from simms.telescope.layouts import custom_telescopes, resolve_layout
-from simms.utilities import ObjDict
+from simms.utilities import ObjDict, load_yaml
 
 log = logging.getLogger(BIN.telsim)
 
@@ -140,7 +139,7 @@ class Array:
             sefd = self.layout.get("sefd", None)
             self.sefd = sefd
             if self.sensitivity_file:
-                sensitivity_data = OmegaConf.load(self.sensitivity_file)
+                sensitivity_data = load_yaml(self.sensitivity_file)
                 if "sefd" in sensitivity_data:
                     self.sefd = sensitivity_data["sefd"]
 

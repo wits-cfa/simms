@@ -16,6 +16,7 @@ import logging
 import numpy as np
 
 from simms import BIN
+from simms.utilities import load_yaml
 
 log = logging.getLogger(BIN.primary_beam)
 
@@ -142,9 +143,7 @@ def _resolve_labels(opts, names):
     if opts.label:
         return [str(opts.label)] * nant
     if opts.label_map:
-        from omegaconf import OmegaConf
-
-        mapping = OmegaConf.to_container(OmegaConf.load(opts.label_map), resolve=True)
+        mapping = load_yaml(opts.label_map)
         missing = [n for n in names if n not in mapping]
         if missing:
             raise RuntimeError(f"--label-map has no entry for antennas: {missing[:5]}")

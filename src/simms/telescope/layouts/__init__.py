@@ -1,7 +1,7 @@
 import glob
 import os
 
-from omegaconf import OmegaConf
+from simms.utilities import AttrDict, load_yaml
 
 thisdir = os.path.dirname(__file__)
 
@@ -26,7 +26,7 @@ def simms_telescopes() -> dict:
     laysdict = {}
     for layout in lays:
         # Array name
-        arrayinfo = OmegaConf.load(layout)
+        arrayinfo = load_yaml(layout)
         allants = list(arrayinfo.antnames)
         all_locations = list(arrayinfo.antlocations)
         anant = len(all_locations)
@@ -61,15 +61,11 @@ def simms_telescopes() -> dict:
                 issubarray=True,
             )
 
-        # add main layout
-        if hasattr(arrayinfo, "name"):
-            lname = arrayinfo.name
-        else:
-            lname = os.path.basename(layout.BASENAME)
-            lname = ".".join(lname.split(".")[:-1])
+        # add main layout, keyed by its declared name (falling back to the file's stem)
+        lname = arrayinfo.get("name") or os.path.basename(layout).split(".")[0]
         laysdict[lname] = arrayinfo
 
-    return OmegaConf.create(laysdict)
+    return AttrDict(laysdict)
 
 
 def resolve_layout(layout: str):
@@ -87,10 +83,10 @@ def resolve_layout(layout: str):
 
     builtin = os.path.join(thisdir, f"{layout}.geodetic.yaml")
     if os.path.exists(builtin):
-        return OmegaConf.load(builtin), builtin
+        return load_yaml(builtin), builtin
 
     if os.path.exists(layout):
-        return OmegaConf.load(layout), layout
+        return load_yaml(layout), layout
 
     raise FileNotFoundError(
         f"Layout {layout!r} is neither a known telescope nor an existing layout file. "
@@ -158,7 +154,7 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
         anttelnames = [alltelnames[i] for i in user_idx]
 
     elif subarray_file:
-        subarray_data = OmegaConf.load(subarray_file)
+        subarray_data = load_yaml(subarray_file)
 
         if "antnames" in subarray_data:
             ant_to_idx = {name: i for i, name in enumerate(allants)}
@@ -183,7 +179,7 @@ def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, suba
         issubarray=True,
     )
 
-    return OmegaConf.create(laysdict)
+    return AttrDict(laysdict)
 
 
 SIMMS_TELESCOPES = simms_telescopes()

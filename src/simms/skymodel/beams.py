@@ -26,6 +26,7 @@ from pathlib import Path
 import numpy as np
 
 from simms import BIN
+from simms.utilities import load_yaml
 
 log = logging.getLogger(BIN.skysim)
 
@@ -590,9 +591,7 @@ def _build_provider(label: str, beam_config, beam_band: str) -> BeamProvider:
 
 def load_beam_config(path) -> dict:
     """Load a beam-config YAML mapping each ``TELESCOPE_NAME`` to a provider spec."""
-    from omegaconf import OmegaConf
-
-    return OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+    return load_yaml(path)
 
 
 def resolve_antenna_beams(telescope_names, mount, beam_config, beam_band: str = "L"):
