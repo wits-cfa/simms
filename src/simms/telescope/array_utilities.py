@@ -11,7 +11,7 @@ from casacore.measures import measures
 from omegaconf import OmegaConf
 
 from simms import BIN, constants
-from simms.telescope.layouts import SIMMS_TELESCOPES, custom_telescopes
+from simms.telescope.layouts import custom_telescopes, resolve_layout
 from simms.utilities import ObjDict
 
 log = logging.getLogger(BIN.telsim)
@@ -63,18 +63,13 @@ class Array:
             log.warning("VLA configuration not specified. Will default to the C configuration (vla-c).")
             layout = "vla-c"
 
-        if layout not in SIMMS_TELESCOPES:
-            fname = str(layout)
-            if fname.EXISTS:
-                self.layout = OmegaConf.load(fname)
-                if "centre" not in self.layout:
-                    centre = calculate_array_centre(self.layout.antlocations)
-                    write_centre_to_array_config(fname, centre)
-                    self.layout.centre = centre
-            else:
-                raise FileNotFoundError(f"Layout file {fname} not found.")
-        else:
-            self.layout = SIMMS_TELESCOPES[layout]
+        self.layout, layout_file = resolve_layout(layout)
+        # A user-supplied layout file need not declare the array centre; derive it and cache it
+        # back into the file. Built-in entries resolve to layout_file=None and are left alone.
+        if layout_file is not None and "centre" not in self.layout:
+            centre = calculate_array_centre(self.layout.antlocations)
+            write_centre_to_array_config(layout_file, centre)
+            self.layout.centre = centre
 
         if subarray_list:
             self.layout = custom_telescopes(layout=layout, subarray_list=subarray_list)

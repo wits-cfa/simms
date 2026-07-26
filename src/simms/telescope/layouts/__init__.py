@@ -76,14 +76,39 @@ def simms_telescopes() -> Dict:
     return OmegaConf.create(laysdict)
 
 
+def resolve_layout(layout: str):
+    """Resolve a layout name or a path to a layout YAML to ``(arrayinfo, path)``.
+
+    ``path`` is the file the layout was read from, or ``None`` for an entry already built in
+    :data:`SIMMS_TELESCOPES`. Resolving by name first is what makes a *named* subarray
+    (``meerkat``, ``skamid-aa1``, ...) usable here: those are registered as telescopes in
+    their own right, with their antennas already selected, and have no layout file of their
+    own -- so building ``<thisdir>/<layout>.geodetic.yaml`` cannot find them, and neither can
+    it find a user's layout file given by path.
+    """
+    if layout in SIMMS_TELESCOPES:
+        return SIMMS_TELESCOPES[layout], None
+
+    builtin = os.path.join(thisdir, f"{layout}.geodetic.yaml")
+    if os.path.exists(builtin):
+        return OmegaConf.load(builtin), builtin
+
+    if os.path.exists(layout):
+        return OmegaConf.load(layout), layout
+
+    raise FileNotFoundError(
+        f"Layout {layout!r} is neither a known telescope nor an existing layout file. "
+        f"Known telescopes: {', '.join(sorted(SIMMS_TELESCOPES))}."
+    )
+
+
 def custom_telescopes(layout: str, subarray_list=None, subarray_range=None, subarray_file: str = None) -> Dict:
     """
     Returns a dictionary of a custom array layout.
     """
-    layout_file = os.path.join(thisdir, f"{layout}.geodetic.yaml")
     laysdict = {}
 
-    arrayinfo = OmegaConf.load(layout_file)
+    arrayinfo, _ = resolve_layout(layout)
     allants = list(arrayinfo.antnames)
     all_locations = list(arrayinfo.antlocations)
     anant = len(all_locations)

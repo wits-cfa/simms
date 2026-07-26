@@ -1,3 +1,6 @@
+import os
+import shutil
+
 import click
 import numpy as np
 import pytest
@@ -7,7 +10,7 @@ from scipy.optimize import least_squares
 from shinobi.clickutil import build_options
 
 from simms.apps.telsim import _antenna_selection, telsim
-from simms.telescope import array_utilities
+from simms.telescope import array_utilities, layouts
 from simms.telescope.generate_ms import create_ms
 from simms.telescope.layouts import custom_telescopes
 
@@ -225,6 +228,41 @@ def test_subarray_range_accepts_comma_separated_indices():
     assert option.multiple
     assert option.type is click.STRING
     assert option.type.convert("0,9", None, None) == "0,9"
+
+
+@pytest.mark.parametrize(
+    "layout,kwargs,expect",
+    [
+        # A named subarray has no layout file of its own, so subarray selection on top of one
+        # used to fail with a missing <name>.geodetic.yaml.
+        ("meerkat", {"subarray_range": [0, 9]}, 10),
+        ("meerkat", {"subarray_list": ["M000", "M005"]}, 2),
+        ("skamid-aa1", {"subarray_range": [0, 3]}, 4),
+        # A plain built-in layout keeps working.
+        ("skamid", {"subarray_range": [0, 9]}, 10),
+    ],
+)
+def test_subarray_selection_on_named_subarrays(layout, kwargs, expect):
+    array = array_utilities.Array(layout=layout, **kwargs)
+    assert len(array.layout.antnames) == expect
+
+
+def test_layout_accepts_a_user_supplied_file(params):
+    # Layout resolution used to reach for a scabha `File.EXISTS` attribute that a plain str
+    # does not have, so passing a layout by path raised AttributeError before reading anything.
+    path = params.random_named_file(suffix=".yaml")
+    shutil.copy(os.path.join(os.path.dirname(layouts.__file__), "kat-7.geodetic.yaml"), path)
+
+    array = array_utilities.Array(layout=path)
+    assert len(array.layout.antnames) == params.nant
+
+    array = array_utilities.Array(layout=path, subarray_range=[0, 2])
+    assert len(array.layout.antnames) == 3
+
+
+def test_unknown_layout_names_the_known_telescopes():
+    with pytest.raises(FileNotFoundError, match="neither a known telescope nor an existing layout file"):
+        array_utilities.Array(layout="/no/such/layout.yaml")
 
 
 def test_subarray_list_rejects_unknown_antenna_by_name():
