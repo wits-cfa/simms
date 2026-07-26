@@ -14,7 +14,7 @@ from datetime import date
 
 sys.path.insert(0, os.path.abspath("../src"))
 
-from simms import __version__  # noqa: E402
+from simms import __version__
 
 # -- Project information -----------------------------------------------------
 

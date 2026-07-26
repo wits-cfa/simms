@@ -26,7 +26,16 @@ git clone https://github.com/wits-cfa/simms.git
 cd simms
 uv run --group tests python -m pytest
 uv run --group ruff ruff check src tests
+
+# enable the repo's pre-commit hook (once per clone)
+git config core.hooksPath .githooks
 ```
+
+The hook lives at [`.githooks/pre-commit`](https://github.com/wits-cfa/simms/blob/main/.githooks/pre-commit),
+tracked in the repo so it is reviewable in diffs and identical for everyone. Git
+will not let a repository install an executable hook by itself, hence the one
+`git config` command. It runs ruff through `uv run --group ruff`, the same way
+CI does, so the two cannot disagree about which version is in force.
 
 ## Testing
 
@@ -54,9 +63,12 @@ uv run --group tests python -m pytest
 ## Code style
 
 - **Lint must be clean**: `ruff check src tests` should report no errors.
-- `ruff format` is available for autoformatting; a pre-commit hook runs both
-  `ruff` and `ruff-format` -- if it reformats a file the commit aborts, so
-  re-stage and commit again.
+- `ruff format` is available for autoformatting; the pre-commit hook runs
+  `ruff check` and `ruff format --check` over the Python files a commit
+  touches. It reports rather than rewrites -- it cannot tell which hunks of a
+  file you staged, so reformatting in place would drag unstaged work into the
+  commit. On a formatting failure, run `uv run --group ruff ruff format src
+  tests`, re-stage, and commit again. `git commit --no-verify` bypasses it.
 - Use type hints and docstrings on public API -- they render into the Sphinx
   API reference via autodoc.
 - Match the surrounding code's naming, comment density, and idiom.
