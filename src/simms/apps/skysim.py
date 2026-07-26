@@ -703,7 +703,12 @@ def skysim(
     field_id: int = Field(0, description="Field ID.", json_schema_extra={"abbreviation": "fi"}),
     spw_id: int = Field(0, description="Spectral Window ID."),
     sefd: float | None = Field(None, description="Add noise using this SEFD value."),
-    seed: int | None = Field(None, description="Random seed for the thermal noise. Omit for a non-reproducible run."),
+    seed: int | None = Field(
+        None,
+        description="Random seed for the thermal noise. Omit for a non-reproducible run. The "
+        "realisation also depends on the row chunking, which --nworkers feeds into, so "
+        "reproducing a previous run needs the same --seed, --row-chunks and --nworkers.",
+    ),
     ascii_species: Literal["bdsf_gaul", "aegean", "wsclean"] | None = Field(
         None, description="Non-simms sky model type.", json_schema_extra={"abbreviation": "asp"}
     ),

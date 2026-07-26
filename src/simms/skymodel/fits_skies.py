@@ -1073,6 +1073,7 @@ def predict_fits_block(
     epsilon: float = 1e-7,
     do_wgridding: bool = True,
     nthreads: int = 1,
+    seed=None,
 ) -> np.ndarray:
     """
     Predict visibilities for one block of rows.
@@ -1097,6 +1098,11 @@ def predict_fits_block(
         Apply the w term with w-gridding.
     nthreads : int, optional
         Threads for the gridder. Default 1; dask supplies row parallelism.
+    seed : optional
+        Seed for the noise; see :func:`simms.skymodel.mstools.sim_noise`. ``None`` draws
+        fresh entropy. When looping over blocks, pass one shared
+        ``numpy.random.Generator`` rather than a repeated integer, or every block gets
+        the same realisation.
 
     Returns
     -------
@@ -1157,7 +1163,7 @@ def predict_fits_block(
         vis = np.stack(corrs, axis=-1)
 
     if noise_vis:
-        vis = add_noise(vis, noise_vis)
+        vis = add_noise(vis, noise_vis, seed=seed)
     if out_dtype is not None:
         vis = vis.astype(out_dtype, copy=False)
     return vis

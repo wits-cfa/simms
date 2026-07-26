@@ -146,6 +146,39 @@ def test_point_source_without_shape_columns(params, uvw):
     assert np.abs(vis).max() == pytest.approx(1.25, rel=1e-6)
 
 
+def test_noise_seed_reaches_the_predict_entry_points(params, uvw):
+    """`noise_vis` on the predict API drew from an unseeded RNG, so a caller had no way to
+    reproduce a run. Check the seed reaches the noise through the real call chain, and that
+    omitting it still gives a fresh draw each time.
+    """
+    sky = ASCIISkymodel(params.write_temp_file(POINTS), source_schema_file=SCHEMA)
+    common = dict(ncorr=2, ra0=RA0, dec0=DEC0, noise_vis=0.1)
+
+    seeded = compute_vis(sky, uvw, UNIFORM_FREQS, seed=4, **common)
+    same = compute_vis(sky, uvw, UNIFORM_FREQS, seed=4, **common)
+    other = compute_vis(sky, uvw, UNIFORM_FREQS, seed=5, **common)
+    unseeded = [compute_vis(sky, uvw, UNIFORM_FREQS, **common) for _ in range(2)]
+
+    assert np.array_equal(seeded, same)
+    assert not np.array_equal(seeded, other)
+    assert not np.array_equal(*unseeded)
+
+    # Noise is the only difference: the noiseless prediction is unchanged by the seed.
+    clean = compute_vis(sky, uvw, UNIFORM_FREQS, ncorr=2, ra0=RA0, dec0=DEC0)
+    assert np.abs(seeded - clean).max() < 1.0
+    assert not np.array_equal(seeded, clean)
+
+
+def test_predict_block_takes_a_seed(params, uvw):
+    sky = ASCIISkymodel(params.write_temp_file(POINTS), source_schema_file=SCHEMA)
+    prepared = prepare_skymodel(sky, UNIFORM_FREQS, RA0, DEC0, ncorr=2)
+    a = predict_block(prepared, uvw, noise_vis=0.1, seed=9)
+    b = predict_block(prepared, uvw, noise_vis=0.1, seed=9)
+    c = predict_block(prepared, uvw, noise_vis=0.1, seed=10)
+    assert np.array_equal(a, b)
+    assert not np.array_equal(a, c)
+
+
 def test_transient_lightcurve_is_independent_of_row_blocking(params):
     """Regression: the lightcurve was referenced to each row block's own first time."""
     model = "\n".join(

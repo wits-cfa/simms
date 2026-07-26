@@ -128,6 +128,27 @@ def scattered_image(npix, nsrc, rng, nchan=1, amp=1.0):
     return img
 
 
+def test_noise_seed_reaches_predict_fits_block(params, uvw):
+    """The FITS predict path added noise from an unseeded RNG, so a run could not be
+    reproduced. Same contract as the ASCII path.
+    """
+    npix, chan_freqs = 64, 1.4e9 + np.arange(2) * 2e7
+    plane = scattered_image(npix, 6, np.random.default_rng(3))
+    header = make_header(npix)
+    path = write_image(params, np.ascontiguousarray(plane[:, :, 0].T), header)
+    prepared = prepare_fits_sky(path, RA0, DEC0, chan_freqs, 2e7, 2, nrow=uvw.shape[0], backend="dft")
+
+    common = dict(uvw=uvw, noise_vis=0.05, epsilon=1e-11)
+    seeded = predict_fits_block(prepared, seed=2, **common)
+    same = predict_fits_block(prepared, seed=2, **common)
+    other = predict_fits_block(prepared, seed=3, **common)
+    unseeded = [predict_fits_block(prepared, **common) for _ in range(2)]
+
+    assert np.array_equal(seeded, same)
+    assert not np.array_equal(seeded, other)
+    assert not np.array_equal(*unseeded)
+
+
 # --------------------------------------------------------------------------- the core bug
 
 
