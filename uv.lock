@@ -3,10 +3,10 @@ revision = 3
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32'",
-    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version < '3.12' and sys_platform == 'emscripten'",
@@ -1027,10 +1027,10 @@ version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32'",
-    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
@@ -1083,10 +1083,10 @@ version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32'",
-    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
@@ -2726,10 +2726,10 @@ version = "1.18.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32'",
-    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
@@ -2825,14 +2825,14 @@ requires-dist = [
     { name = "click", specifier = ">=8.3.3,<9.0" },
     { name = "codex-africanus", extras = ["complete"], specifier = ">=0.3.7,<1.0" },
     { name = "dask-ms", extras = ["xarray"], specifier = ">=0.2.18,<1.0" },
-    { name = "ducc0" },
+    { name = "ducc0", specifier = ">=0.41.0" },
     { name = "ephem", specifier = ">=4.1,<5.0" },
     { name = "fitstoolz", url = "https://github.com/shinobi-dosho/fitstoolz/archive/4158d262a5d4f2dc61efa7453f5f2cfea40a1374.tar.gz" },
     { name = "numpy" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "scipy" },
-    { name = "stimela-ninja" },
+    { name = "stimela-ninja", url = "https://github.com/shinobi-dosho/stimela-ninja/archive/d5294749a7f2b74c506681da9de026b8ca76942c.tar.gz" },
     { name = "tqdm" },
 ]
 
@@ -3052,8 +3052,8 @@ wheels = [
 
 [[package]]
 name = "stimela-ninja"
-version = "0.1.0b3"
-source = { registry = "https://pypi.org/simple" }
+version = "0.1.0b4"
+source = { url = "https://github.com/shinobi-dosho/stimela-ninja/archive/d5294749a7f2b74c506681da9de026b8ca76942c.tar.gz" }
 dependencies = [
     { name = "click" },
     { name = "packaging" },
@@ -3062,9 +3062,16 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dc/5d/f46233f585e8d3a73f2f388a988399587b0e68c3978995dbc59b68b527a1/stimela_ninja-0.1.0b3.tar.gz", hash = "sha256:78c8da603dbe604a5f10a7a8a4d78e4a048728fdc42b7e16e227c8321edecdc8", size = 124535, upload-time = "2026-07-19T19:34:42.98Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/90/2b/f22f5e0f3acc6f8d0ce12820a38a2df48a0fdf4d8e8522cac571a4a7a35c/stimela_ninja-0.1.0b3-py3-none-any.whl", hash = "sha256:5421140d0d0af1e84b3278ac969046bc405dde32fe5ccf4082283f85b74565ce", size = 130372, upload-time = "2026-07-19T19:34:41.823Z" },
+sdist = { hash = "sha256:87cd3115821eaa2850db9f9357677ce605e8e2dc20275531a7ff0d2e0950a159" }
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1" },
+    { name = "packaging", specifier = ">=23" },
+    { name = "pydantic", specifier = ">=2.6" },
+    { name = "pydantic-settings", specifier = ">=2.2" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rich", specifier = ">=13.7" },
 ]
 
 [[package]]

@@ -27,9 +27,9 @@ dependencies = [
     "ephem>=4.1,<5.0",
     "pydantic>=2.6",
     "pyyaml>=6.0",
-    "stimela-ninja",
+    "stimela-ninja>=0.1.0b4",
     "codex-africanus[complete]>=0.3.7,<1.0",
-    "ducc0",
+    "ducc0>=0.41.0",
     "fitstoolz>=0.1.0b4",
 ]
 
@@ -73,6 +73,7 @@ prerelease = "if-necessary-or-explicit"
 # broken apt (its KERN PPA has no ca-certificates). A tarball is fetched over plain HTTP,
 # and pins the same commit just as immutably.
 fitstoolz = { url = "https://github.com/shinobi-dosho/fitstoolz/archive/4158d262a5d4f2dc61efa7453f5f2cfea40a1374.tar.gz" }
+stimela-ninja = { url = "https://github.com/shinobi-dosho/stimela-ninja/archive/d5294749a7f2b74c506681da9de026b8ca76942c.tar.gz" }
 
 [project.urls]
 Documentation = "https://simms.readthedocs.io"
