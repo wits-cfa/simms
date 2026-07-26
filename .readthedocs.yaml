@@ -4,21 +4,27 @@
 # Required
 version: 2
 
-# Set the version of Python and other tools you might need
+# Docs build from uv.lock -- the same pinned set CI installs -- rather than resolving fresh
+# from PyPI. Two reasons:
+#
+#  - Correctness: autodoc imports simms, so the API reference is only as accurate as the
+#    environment it is built in. A docs build that resolves its own dependencies can end up
+#    documenting a different simms from the one that was tested.
+#  - It is the only thing that works right now: fitstoolz is pinned in [tool.uv.sources] to
+#    the shinobi port, which is not on PyPI yet, so `pip install .` cannot satisfy
+#    `fitstoolz>=0.1.0b4` and fails outright.
+#
+# This replaces the `python.install` and `sphinx:` sections, so `-W` (previously
+# `sphinx.fail_on_warning`) is passed explicitly below and must stay. It also retires
+# docs/requirements.txt, which duplicated the `docs` dependency group and had to be kept in
+# sync by hand.
 build:
   os: ubuntu-24.04
   tools: {python: "3.12"}
-
-# Build documentation in the docs/ directory with Sphinx
-sphinx:
-  configuration: docs/conf.py
-  fail_on_warning: true
-
-# Install the package itself (so autodoc can import `simms`) plus the
-# documentation toolchain. Keep docs/requirements.txt in sync with the `docs`
-# dependency group in pyproject.toml.
-python:
-  install:
-    - method: pip
-      path: .
-    - requirements: docs/requirements.txt
+  jobs:
+    install:
+      - pip install uv==0.11.21
+      - uv sync --locked --no-default-groups --group docs
+    build:
+      html:
+        - uv run --no-sync sphinx-build -b html -W docs $READTHEDOCS_OUTPUT/html
