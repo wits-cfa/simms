@@ -16,6 +16,7 @@ import pytest
 from shinobi.clickutil import build_options
 
 from simms.apps import primary_beam, skysim, telsim
+from simms.apps.main import FLAG_ALIASES, cli
 from simms.skymodel import pb_ops
 from simms.telescope import generate_ms
 
@@ -112,13 +113,52 @@ def test_help_promising_comma_values_can_accept_them(cmd):
 @pytest.mark.parametrize("cmd", sorted(STEPS))
 def test_no_duplicate_flags(cmd):
     """Two fields claiming the same flag or abbreviation would let one silently shadow the
-    other, since click resolves by flag string.
+    other, since click resolves by flag string. Checked on the *assembled* command, so an
+    alias in FLAG_ALIASES colliding with a real flag fails here too.
     """
     seen = {}
-    for opt in build_options(STEPS[cmd].step.inputs_model):
-        for flag in opt.opts + opt.secondary_opts:
-            assert flag not in seen, f"{cmd}: {flag} claimed by both {seen[flag]} and {opt.name}"
-            seen[flag] = opt.name
+    for param in cli.commands[cmd].params:
+        for flag in param.opts + param.secondary_opts:
+            assert flag not in seen, f"{cmd}: {flag} claimed by both {seen[flag]} and {param.name}"
+            seen[flag] = param.name
+
+
+def test_flag_aliases_name_real_fields():
+    """An alias for a field that no longer exists would silently do nothing."""
+    for cmd, aliases in FLAG_ALIASES.items():
+        fields = set(STEPS[cmd].step.inputs_model.model_fields)
+        unknown = sorted(set(aliases) - fields)
+        assert not unknown, f"{cmd}: FLAG_ALIASES names fields that do not exist: {unknown}"
+
+
+def test_flag_aliases_resolve_to_the_same_field():
+    """Each alias is a second spelling of one option, not a separate parameter: both flags
+    must land on the same callback kwarg, or one of them would silently be discarded.
+    """
+    for cmd, aliases in FLAG_ALIASES.items():
+        params = {param.name: param for param in cli.commands[cmd].params}
+        for field, alias in aliases.items():
+            param = params[field]
+            assert alias in param.opts, f"{cmd}: {alias} is not registered on --{field.replace('_', '-')}"
+            assert param.name == field, f"{cmd}: {alias} changed the callback kwarg to {param.name!r}"
+
+
+def test_drifted_spellings_are_accepted_on_every_subcommand():
+    """The point of the aliases: a spelling that works on one subcommand is not rejected by
+    another. telsim/skysim/primary-beam each named these three concepts differently.
+    """
+    for spellings in (
+        ("--rowchunks", "--row-chunks"),
+        ("--startfreq", "--start-freq"),
+        ("--dfreq", "--chan-width"),
+    ):
+        commands = [
+            cmd for cmd in STEPS if any(flag in spellings for param in cli.commands[cmd].params for flag in param.opts)
+        ]
+        for cmd in commands:
+            flags = {flag for param in cli.commands[cmd].params for flag in param.opts}
+            missing = [spelling for spelling in spellings if spelling not in flags]
+            assert not missing, f"{cmd} accepts {set(spellings) - set(missing)} but not {missing}"
 
 
 @pytest.mark.parametrize("cmd", sorted(STEPS))
