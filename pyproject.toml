@@ -118,7 +118,7 @@ docs = [
 dev = [
     "jupyter",
     "matplotlib",
-    {include-group = "ruff"},
+    {include-group = "tests"},
 ]
 
 [tool.pytest.ini_options]

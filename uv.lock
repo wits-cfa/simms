@@ -2722,6 +2722,7 @@ casa = [
 dev = [
     { name = "jupyter" },
     { name = "matplotlib" },
+    { name = "pytest" },
     { name = "ruff" },
 ]
 docs = [
@@ -2764,6 +2765,7 @@ casa = [{ name = "casatasks", specifier = ">=6.6" }]
 dev = [
     { name = "jupyter" },
     { name = "matplotlib" },
+    { name = "pytest", specifier = ">=9.0.3" },
     { name = "ruff", specifier = ">=0.15.22,<0.16" },
 ]
 docs = [
