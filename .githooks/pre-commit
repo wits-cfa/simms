@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+#
+# simms pre-commit hook: run ruff's linter and formatter over the Python files a
+# commit touches. Tracked in the repo and enabled per clone with
+#
+#     git config core.hooksPath .githooks
+#
+# (see CONTRIBUTING.md). Git deliberately will not let a repository install an
+# executable hook by itself, so that one command is unavoidable -- but the
+# script is version-controlled, reviewable in diffs, and identical for
+# everyone, which is the part that actually matters.
+#
+# It installs nothing and pins nothing. It uses whatever ruff `uv run` resolves
+# for this project's `ruff` group, so it agrees with the lint CI job by
+# construction -- the same version, reading the same ruff.toml.
+#
+# Bypass with `git commit --no-verify` when you genuinely need to.
+
+set -uo pipefail
+
+# Staged Python files only. A docs- or YAML-only commit has nothing for ruff to
+# say about it, and charging it a uv resolve teaches people to reach for
+# --no-verify. Deletions (D) are excluded: the file is not there to check.
+files=()
+while IFS= read -r -d '' f; do
+    files+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.py' '*.pyi')
+
+[ ${#files[@]} -eq 0 ] && exit 0
+
+# ruff is resolved through uv, so there is no meaningful degraded mode without
+# it -- say so and get out of the way, rather than blocking a commit on a
+# missing tool.
+if ! command -v uv >/dev/null 2>&1; then
+    echo "pre-commit: 'uv' not on PATH -- skipping ruff." >&2
+    exit 0
+fi
+
+# --force-exclude: ruff ignores its own exclude settings for paths named
+# explicitly on the command line unless asked not to, and every path here is
+# named explicitly.
+#
+# Both checks read the working tree, not the staged blob -- the same
+# simplification the rest of git's hook ecosystem makes. Stage a hunk and leave
+# the rest of the file unstaged and you are checking the whole file.
+status=0
+
+# ruff's own -q: silent when a commit is clean, which is most of them; full
+# diagnostics on stderr when it is not.
+if ! uv run --quiet --group ruff ruff check -q --force-exclude -- "${files[@]}" >&2; then
+    cat >&2 <<'MSG'
+
+pre-commit: ruff check rejected the staged Python files.
+
+  fix:    uv run --group ruff ruff check --fix src tests
+  bypass: git commit --no-verify
+
+MSG
+    status=1
+fi
+
+# --check rather than a rewrite in place: this hook cannot see which hunks of a
+# file are staged, so reformatting would drag unstaged work into the commit --
+# or silently leave the committed blob unformatted while the working tree looks
+# fine. Reporting and letting you re-stage keeps that decision yours.
+if ! uv run --quiet --group ruff ruff format --check -q --force-exclude -- "${files[@]}" >&2; then
+    cat >&2 <<'MSG'
+
+pre-commit: the staged Python files are not ruff-formatted.
+
+  fix:    uv run --group ruff ruff format src tests, then re-stage
+  bypass: git commit --no-verify
+
+MSG
+    status=1
+fi
+
+exit $status

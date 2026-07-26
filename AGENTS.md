@@ -14,8 +14,10 @@ Use `uv` for everything — never call `python`/`pytest`/`ruff` directly.
 - Tests: `uv run --group tests python -m pytest` (a specific file: `... python -m pytest tests/<name>_tests.py`)
 - Lint/format: `uv run --group ruff ruff check src tests` and `uv run --group ruff ruff format <paths>`
 
-A pre-commit hook runs `ruff` + `ruff-format`; if it reformats a file the commit aborts, so
-re-stage and commit again.
+The repo ships a tracked git hook at `.githooks/pre-commit` that runs `ruff check` and
+`ruff format --check` over the staged Python files. Enable it once per clone with
+`git config core.hooksPath .githooks`. It reports rather than rewrites, so a formatting
+failure means running `ruff format` yourself and re-staging.
 
 ## Reading dependency source (important)
 

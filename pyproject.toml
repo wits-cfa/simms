@@ -83,9 +83,12 @@ Changelog = "https://github.com/wits-cfa/simms/blob/main/CHANGES.md"
 
 [dependency-groups]
 
+# The one place ruff's version is decided. The lint CI job and the .githooks/pre-commit
+# hook both run it through `uv run --group ruff`, so they cannot disagree about which
+# rules exist (UP038 was removed between 0.12 and 0.15, so a pinned-elsewhere hook could
+# pass while CI failed).
 ruff = [
-    "pre-commit>=4.3.0",
-    "ruff>=0.15.22,<0.16",  # keep in step with .pre-commit-config.yaml
+    "ruff>=0.15.22,<0.16",
 ]
 
 tests = [
