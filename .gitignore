@@ -133,7 +133,9 @@ ENV/
 env.bak/
 venv.bak/
 tenv/
-uv.lock
+# uv.lock IS committed: simms is an application-style tool whose numerical output must
+# be reproducible, and an unpinned transitive bump (numpy, astropy, ducc0) can change
+# results silently. CI installs from it with `uv sync --locked`.
 poetry.lock
 
 # Spyder project settings

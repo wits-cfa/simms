@@ -1,0 +1,58 @@
+# Dependabot configuration.
+#
+# This file governs *version* update PRs. Dependabot's security updates -- the automatic
+# PRs for known vulnerabilities -- are a repository setting rather than a key here, and are
+# enabled independently under Settings -> Code security.
+#
+# Note the deliberate asymmetry with the pinning added alongside this file: uv.lock is
+# committed and CI installs with `uv sync --locked` precisely so dependencies never move on
+# their own. Dependabot is the counterweight -- it proposes those moves as reviewable PRs,
+# with the full test suite (including the CASA round-trip) gating each one, instead of the
+# alternative of drifting silently or never updating at all.
+version: 2
+
+updates:
+  # Python dependencies, read from pyproject.toml and uv.lock. Dependabot updates the lock
+  # in the PR, so `uv sync --locked` in CI still holds and the run tests the exact set the
+  # PR proposes.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps"
+    groups:
+      # One PR for the routine churn. The numerical stack is deliberately excluded below:
+      # a numpy/scipy/astropy/ducc0/numba bump can move simms' output, so each deserves its
+      # own PR and its own look at the test results rather than being waved through in a
+      # batch of twenty.
+      minor-and-patch:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "numpy"
+          - "scipy"
+          - "astropy"
+          - "ducc0"
+          - "numba"
+          - "codex-africanus"
+          - "dask-ms"
+          - "python-casacore"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Workflow actions. These run with repository credentials, so a stale or yanked action is
+  # a supply-chain concern rather than a housekeeping one.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"

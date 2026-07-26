@@ -1,4 +1,4 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# This workflow installs the locked dependency set and runs the tests.
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
 name: CI tests
@@ -12,6 +12,19 @@ on:
 permissions:
   contents: read
 
+env:
+  # Pin the resolver as well as what it resolves: uv itself picks the Python and reads the
+  # lock, so leaving it floating would leave a moving part in a workflow whose whole point
+  # is that it does not move.
+  UV_VERSION: "0.11.21"
+  PYTHON_VERSION: "3.12"
+
+# Both jobs install from uv.lock with `uv sync --locked`, which fails rather than
+# re-resolving if the lock has drifted from pyproject.toml. That is deliberate: simms'
+# numbers must be reproducible, and an unpinned transitive bump (numpy, astropy, ducc0)
+# could otherwise change results silently between two runs of the same commit. A
+# dependency change is therefore only in effect once `uv lock` has been run and the
+# updated lock committed alongside it.
 jobs:
   build:
 
@@ -19,27 +32,35 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
+    - name: Install uv
+      uses: astral-sh/setup-uv@v9
       with:
-        python-version: "3.12"
-    - name: Install dependencies
+        version: ${{ env.UV_VERSION }}
+        python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+    - name: Install locked dependencies
+      run: uv sync --locked --no-default-groups --group tests
+    - name: Lint
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install .
-        python -m pip install --group tests
+        uv run --no-sync ruff check src tests
+        uv run --no-sync ruff format --check src tests
     - name: Unit tests
-      run: |
-        pytest tests/
+      run: uv run --no-sync pytest tests/
 
   # The CASA round-trip (telsim MS -> tclean PSF -> skysim -> tclean image) is the only
   # test that checks a simms MS against the tooling users actually run; it is what caught
   # the undefined SPECTRAL_WINDOW.MEAS_FREQ_REF that made tclean fail. It cannot run in the
   # job above: casatasks needs CASA's measures/ephemeris tables, and on a bare runner
   # casaconfig refuses to populate an empty ~/.casa/data ("path must exist as a directory
-  # and it must be owned by the user"), so the test fails rather than skips. The dosho casa6
-  # image bakes that data in at /opt/casa/data with auto-update disabled, so this job needs
-  # no network access to CASA's data servers and is deterministic.
+  # and it must be owned by the user"), so the test fails rather than skips.
+  #
+  # The dosho casa6 image is used *only* for that baked data: /opt/casa/data, with
+  # measures_auto_update and data_auto_update off via the CASASITECONFIG the image sets.
+  # Every Python dependency still comes from uv.lock, exactly as in the job above, so the
+  # two jobs run the same environment. Installing into uv's own venv also keeps the
+  # image's apt python3-casacore -- built against Debian's numpy 1.26, and a source of
+  # "PycArray: failed to load the numpy API" once a newer numpy shadows it -- off the path
+  # entirely.
   casa-roundtrip:
 
     runs-on: ubuntu-latest
@@ -50,19 +71,13 @@ jobs:
     # The image has no git, so checkout falls back to the REST API tarball. That is fine
     # here -- nothing in this job needs history.
     - uses: actions/checkout@v4
-    - name: Install simms
-      run: |
-        # python-casacore first, and from pip: the image's apt python3-casacore is built
-        # against Debian's numpy 1.26, and once pip's numpy shadows it every measures call
-        # dies with "PycArray: failed to load the numpy API". The pip wheel is built for
-        # numpy 2.x. Installing simms afterwards then settles numpy to what numba accepts.
-        python3 -m pip install --break-system-packages --no-cache-dir --ignore-installed python-casacore
-        # --group needs pip >= 25.1, and the image ships Debian's pip 24.0, which pip cannot
-        # uninstall (no RECORD file). --ignore-installed puts the new pip in /usr/local,
-        # which precedes /usr/lib on sys.path, so `python3 -m pip` picks it up.
-        python3 -m pip install --break-system-packages --no-cache-dir --ignore-installed --upgrade pip
-        python3 -m pip install --break-system-packages --no-cache-dir .
-        python3 -m pip install --break-system-packages --no-cache-dir --group tests
+    - name: Install uv
+      uses: astral-sh/setup-uv@v9
+      with:
+        version: ${{ env.UV_VERSION }}
+        python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+    - name: Install locked dependencies
+      run: uv sync --locked --no-default-groups --group tests --group casa
     - name: CASA round-trip
-      run: |
-        pytest tests/casa_roundtrip_tests.py -v
+      run: uv run --no-sync pytest tests/casa_roundtrip_tests.py -v
