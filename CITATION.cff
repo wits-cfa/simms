@@ -27,7 +27,7 @@ authors:
     email: "senkhxsi@gmail.com"
 version: "3.0beta3"
 license: GPL-3.0-only
-repository-code: "https://github.com/wits-cfa/simms"
+repository-code: "https://github.com/shinobi-dosho/simms"
 url: "https://simms.readthedocs.io"
 keywords:
   - radio astronomy

@@ -76,9 +76,9 @@ stimela-ninja = { url = "https://github.com/shinobi-dosho/stimela-ninja/archive/
 
 [project.urls]
 Documentation = "https://simms.readthedocs.io"
-Repository = "https://github.com/wits-cfa/simms.git"
-"Issue Tracker" = "https://github.com/wits-cfa/simms/issues"
-Changelog = "https://github.com/wits-cfa/simms/blob/main/CHANGES.md"
+Repository = "https://github.com/shinobi-dosho/simms.git"
+"Issue Tracker" = "https://github.com/shinobi-dosho/simms/issues"
+Changelog = "https://github.com/shinobi-dosho/simms/blob/main/CHANGES.md"
 
 [dependency-groups]
 

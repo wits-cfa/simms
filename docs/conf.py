@@ -65,7 +65,7 @@ html_title = f"simms {release}"
 html_static_path = ["_static"]
 
 html_theme_options = {
-    "source_repository": "https://github.com/wits-cfa/simms/",
+    "source_repository": "https://github.com/shinobi-dosho/simms/",
     "source_branch": "main",
     "source_directory": "docs/",
 }

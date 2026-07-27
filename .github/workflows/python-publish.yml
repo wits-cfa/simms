@@ -23,7 +23,7 @@ jobs:
     #
     # This requires a one-off setup on PyPI, without which the upload step fails:
     #   https://pypi.org/manage/project/simms/settings/publishing/
-    #   Owner: wits-cfa   Repository: simms
+    #   Owner: shinobi-dosho   Repository: simms
     #   Workflow: python-publish.yml   Environment: pypi
     # The GitHub environment named below must also exist (Settings -> Environments), and is
     # where release approvals/protection rules would go.

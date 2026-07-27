@@ -6,11 +6,11 @@ predicts model visibilities from a sky model into it, and `primary-beam`
 provides standalone beam operations.
 
 By participating you agree to abide by our
-[Code of Conduct](https://github.com/wits-cfa/simms/blob/main/CODE_OF_CONDUCT.md).
+[Code of Conduct](https://github.com/shinobi-dosho/simms/blob/main/CODE_OF_CONDUCT.md).
 
 ## Ways to contribute
 
-- **Report bugs** and request features via [issues](https://github.com/wits-cfa/simms/issues).
+- **Report bugs** and request features via [issues](https://github.com/shinobi-dosho/simms/issues).
 - **Improve documentation** under `docs/` or the docstrings that feed the API
   reference.
 - **Submit code** -- bug fixes, new telescope layouts, sky-model formats,
@@ -22,7 +22,7 @@ The project uses [uv](https://docs.astral.sh/uv/) for everything -- avoid
 calling `python`/`pytest`/`ruff` directly:
 
 ```bash
-git clone https://github.com/wits-cfa/simms.git
+git clone https://github.com/shinobi-dosho/simms.git
 cd simms
 uv run --group tests python -m pytest
 uv run --group ruff ruff check src tests
@@ -31,7 +31,7 @@ uv run --group ruff ruff check src tests
 git config core.hooksPath .githooks
 ```
 
-The hook lives at [`.githooks/pre-commit`](https://github.com/wits-cfa/simms/blob/main/.githooks/pre-commit),
+The hook lives at [`.githooks/pre-commit`](https://github.com/shinobi-dosho/simms/blob/main/.githooks/pre-commit),
 tracked in the repo so it is reviewable in diffs and identical for everyone. Git
 will not let a repository install an executable hook by itself, hence the one
 `git config` command. It runs ruff through `uv run --group ruff`, the same way
@@ -78,7 +78,7 @@ uv run --group tests python -m pytest
 The package works with `casacore` Measurement Sets and has a few load-bearing
 conventions around metadata (telescope-name column, phase vs. pointing
 centre, spectral frame) -- see the *MS conventions* section of
-[`CLAUDE.md`](https://github.com/wits-cfa/simms/blob/main/CLAUDE.md) (also
+[`CLAUDE.md`](https://github.com/shinobi-dosho/simms/blob/main/CLAUDE.md) (also
 readable as `AGENTS.md`) and the
 [MS conventions doc page](https://simms.readthedocs.io/en/latest/concepts/ms-conventions.html)
 before touching MS I/O code.
@@ -120,4 +120,4 @@ publishes a GitHub release, which triggers the publish workflow.
 ## License
 
 By contributing, you agree that your contributions are licensed under the
-project's [GPL-3.0 License](https://github.com/wits-cfa/simms/blob/main/LICENSE).
+project's [GPL-3.0 License](https://github.com/shinobi-dosho/simms/blob/main/LICENSE).

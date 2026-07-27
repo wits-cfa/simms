@@ -24,7 +24,7 @@ To install the latest development version:
 
 .. code-block:: console
 
-    $ pip install git+https://github.com/wits-cfa/simms.git
+    $ pip install git+https://github.com/shinobi-dosho/simms.git
 
 Either way, this installs the ``simms`` command-line tool and the importable
 ``simms`` package.
@@ -37,7 +37,7 @@ everything, rather than calling ``python``/``pytest``/``ruff`` directly:
 
 .. code-block:: console
 
-    $ git clone https://github.com/wits-cfa/simms.git
+    $ git clone https://github.com/shinobi-dosho/simms.git
     $ cd simms
     $ uv run --group tests python -m pytest
     $ uv run --group ruff ruff check src tests
