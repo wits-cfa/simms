@@ -258,7 +258,7 @@ def create_ms(
             (num_rows, num_chans, num_corr), chunks=(num_row_chunks, num_chans, num_corr)
         )
 
-        # Lifted from https://github.com/SpheMakh/msutils/blob/master/MSUtils/ClassESW.py
+        # Lifted from https://github.com/shinobi-dosho/msutils/blob/v1.2.0/MSUtils/ClassESW.py
         if noise_freqs:
 
             def freqs_hz(freqs):
