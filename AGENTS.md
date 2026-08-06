@@ -1,10 +1,14 @@
-# simms
+# simms -- design conventions
 
 Radio-interferometry simulator. `telsim` builds a Measurement Set from a telescope layout;
 `skysim` predicts model visibilities from a sky model into an MS; `primary-beam` provides
 standalone beam operations. Single CLI entry point `simms` (`simms.apps.main:cli`), with
 subcommands wired in `src/simms/apps/` (one module + one `<name>.yaml` cab per subcommand).
 Src layout: the importable package lives under `src/simms/`, not at the repo root.
+
+Organisation-wide conventions live in
+[`shinobi-dosho/.github`](https://github.com/shinobi-dosho/.github/blob/main/AGENTS.md) — this file states what is
+specific to `simms` and wins where the two disagree.
 
 ## Environment & commands
 
@@ -70,8 +74,52 @@ other tables ship as ordinary bundled package data.
 ## Git
 
 - Branch off `main` for changes; open PRs against `main` (repo `shinobi-dosho/simms`).
-- Do not end commit messages with an agent-attribution trailer. Several different agents
-  work on this repo, so naming one is inaccurate, and nothing in a commit backs the claim.
+- End commit messages with the agent's attribution trailer, and keep it off the PR body --
+  see *Attribution: commit trailers yes, PR trailers no* below.
 - `gh pr edit --body` can fail on this repo with a Projects-classic GraphQL error; edit the body
   via `gh api -X PATCH repos/shinobi-dosho/simms/pulls/<n> -F body=@file` instead (capital `-F`;
   lowercase `-f` sets the body to the literal string `@file`).
+
+## Reviewing changes: check the tree, not just the diff
+
+A claim that something "doesn't exist" or "is unused" should be verified against
+the actual tree before acting on it — a symbol absent from the diff is usually
+present in the repo.
+
+## Attribution: commit trailers yes, PR trailers no
+
+A commit made with an assistant's help says so in a trailer on the
+**commit message**. Use whatever trailer the agent emits by default --
+Claude Code, for instance, ends a commit with
+
+```
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+An agent with no default of its own uses the same form, naming itself and
+the model behind it, with an address:
+
+```
+Co-authored-by: <AGENT> <MODEL> <EMAIL>
+```
+
+— e.g. `Co-authored-by: Codex GPT-5 <noreply@openai.com>`. One line, last
+in the message, after any `Co-authored-by:` for real people. The address
+is not decoration: GitHub only renders a trailer as co-authorship when it
+carries an `<email>`, so without one the credit stays plain text in the
+message body. Credit is the point — these tools do real work here, and
+the history should say so.
+
+**Pull request descriptions carry no trailer at all** — no
+`Co-authored-by:`, no "Generated with", no tool badge. A PR body is
+review material: it exists to tell a reviewer what changed and why, and
+what to check. Provenance already lives on every commit the PR contains,
+where it is attached to the specific change rather than repeated once
+per PR, so a trailer in the description is duplication in the one place
+that has no room for it. Agents default to adding one; delete it.
+
+Neither form is a substitute for the message itself. A commit that
+explains a decision badly does not improve by naming the model that
+helped make it — see the existing history for the standard: what
+changed, what it deviates from and why, and what a reviewer should not
+assume held still.

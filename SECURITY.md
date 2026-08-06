@@ -5,10 +5,10 @@
 simms is pre-1.0 software. Security fixes are applied to the latest `3.0betaN`
 release only; there are no long-term-support branches yet.
 
-| Version        | Supported          |
-| -------------- | ------------------- |
+| Version | Supported |
+| ------- | --------- |
 | latest `3.0beta*` | :white_check_mark: |
-| older          | :x:                 |
+| older       | :x: |
 
 ## Reporting a vulnerability
 

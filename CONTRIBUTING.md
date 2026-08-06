@@ -8,6 +8,18 @@ provides standalone beam operations.
 By participating you agree to abide by our
 [Code of Conduct](https://github.com/shinobi-dosho/simms/blob/main/CODE_OF_CONDUCT.md).
 
+## Scope and philosophy
+
+simms **simulates**: `telsim` builds a Measurement Set from a telescope layout,
+`skysim` predicts model visibilities from a sky model into an MS, and
+`primary-beam` provides standalone beam operations. It does not calibrate,
+image, or otherwise process real observations — those belong to the tools built
+for them. A feature that would turn simms into a processing package is out of
+scope, however useful.
+
+Read [`AGENTS.md`](https://github.com/shinobi-dosho/simms/blob/main/AGENTS.md) before touching anything under
+*MS conventions* — those are load-bearing and easy to get wrong.
+
 ## Ways to contribute
 
 - **Report bugs** and request features via [issues](https://github.com/shinobi-dosho/simms/issues).
@@ -110,6 +122,10 @@ is needed.
 ### Commit messages
 
 Write clear, descriptive commit messages explaining *why* a change is made.
+
+Provenance for an assistant-assisted commit goes in a commit trailer and never
+in the PR description — see
+[*Attribution: commit trailers yes, PR trailers no*](https://github.com/shinobi-dosho/simms/blob/main/AGENTS.md#attribution-commit-trailers-yes-pr-trailers-no).
 
 ## Versioning and releases
 
